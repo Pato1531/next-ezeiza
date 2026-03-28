@@ -19,19 +19,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const supabase = createClient()
 
   useEffect(() => {
-    // Verificar sesión activa al cargar
+    let timeout: NodeJS.Timeout
+
     const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.user) {
-        await cargarUsuario(session.user.id)
+      try {
+        // Timeout de 8 segundos — si no responde, limpiar sesión
+        timeout = setTimeout(async () => {
+          console.warn('Sesión timeout — limpiando cookies')
+          await supabase.auth.signOut()
+          setUsuario(null)
+          setLoading(false)
+        }, 8000)
+
+        const { data: { session }, error } = await supabase.auth.getSession()
+        clearTimeout(timeout)
+
+        if (error || !session?.user) {
+          // Sesión inválida — limpiar y mostrar login
+          await supabase.auth.signOut()
+          setUsuario(null)
+          setLoading(false)
+          return
+        }
+
+        if (session?.user) {
+          const ok = await cargarUsuario(session.user.id)
+          if (!ok) {
+            // Usuario no encontrado en la tabla — sesión rota
+            await supabase.auth.signOut()
+            setUsuario(null)
+          }
+        }
+      } catch (e) {
+        clearTimeout(timeout)
+        await supabase.auth.signOut()
+        setUsuario(null)
+      } finally {
+        clearTimeout(timeout)
+        setLoading(false)
       }
-      setLoading(false)
     }
+
     getSession()
 
-    // Escuchar cambios de auth
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        if (event === 'SIGNED_OUT') {
+          setUsuario(null)
+          setLoading(false)
+          return
+        }
         if (session?.user) {
           await cargarUsuario(session.user.id)
         } else {
@@ -41,17 +78,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     )
 
-    return () => subscription.unsubscribe()
+    return () => {
+      clearTimeout(timeout)
+      subscription.unsubscribe()
+    }
   }, [])
 
-  const cargarUsuario = async (uid: string) => {
-    const { data, error } = await supabase
-      .from('usuarios')
-      .select('*')
-      .eq('id', uid)
-      .single()
+  const cargarUsuario = async (uid: string): Promise<boolean> => {
+    try {
+      const { data, error } = await supabase
+        .from('usuarios')
+        .select('*')
+        .eq('id', uid)
+        .single()
 
-    if (data && !error) setUsuario(data as Usuario)
+      if (data && !error) {
+        setUsuario(data as Usuario)
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
   }
 
   const login = async (email: string, password: string) => {
