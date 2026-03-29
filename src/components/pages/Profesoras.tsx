@@ -55,33 +55,39 @@ export default function Profesoras() {
     setGuardando(true)
     const initials = `${form.nombre[0]}${form.apellido[0]}`.toUpperCase()
     const { id, activo, activa, ...datos } = form
-    if (!id) {
-      const nueva = await agregar({ ...datos, initials, activa: true })
-      if (nueva) irADetalle((nueva as any).id)
-      else irALista()
-    } else {
-      await actualizar(id, { ...datos, initials })
-      irADetalle(id)
-    }
+    const t = setTimeout(() => { setGuardando(false); if (id) irADetalle(id); else irALista() }, 6000)
+    try {
+      if (!id) {
+        const nueva = await agregar({ ...datos, initials, activa: true })
+        clearTimeout(t)
+        if (nueva) irADetalle((nueva as any).id)
+        else irALista()
+      } else {
+        actualizar(id, { ...datos, initials })
+        clearTimeout(t)
+        irADetalle(id)
+      }
+    } catch { clearTimeout(t); if (id) irADetalle(id); else irALista() }
     setGuardando(false)
   }
 
   const eliminar = async () => {
     if (!selId) return
-    const sb = createClient()
-    await sb.from('profesoras').update({ activa: false }).eq('id', selId)
     setConfirmDelete(false)
     setSelId(null)
-    await recargar()
     setVista('lista')
+    const sb = createClient()
+    sb.from('profesoras').update({ activa: false }).eq('id', selId)
+      .then(() => recargar()).catch(() => {})
   }
 
   const guardarLic = async () => {
     if (!selId) return
-    const sb = createClient()
-    const { data } = await sb.from('licencias_profesoras').insert({ ...lic, profesora_id: selId }).select().single()
-    if (data) setLicencias(prev => [...prev, data])
     setModalLic(false)
+    const sb = createClient()
+    sb.from('licencias_profesoras').insert({ ...lic, profesora_id: selId }).select().single()
+      .then(({ data }) => { if (data) setLicencias(prev => [...prev, data]) })
+      .catch(() => {})
   }
 
   // No bloquear con loading
