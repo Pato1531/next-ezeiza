@@ -60,25 +60,6 @@ export default function Profesoras() {
       if (nueva) irADetalle((nueva as any).id)
       else irALista()
     } else {
-      const profActual = profesoras.find(p => p.id === id)
-      // Registrar historial si cambiaron horas o tarifa
-      if (profActual && (
-        profActual.horas_semana !== datos.horas_semana ||
-        profActual.tarifa_hora !== datos.tarifa_hora
-      )) {
-        const sb = createClient()
-        await sb.from('horas_historial').insert({
-          profesora_id: id,
-          profesora_nombre: `${datos.nombre} ${datos.apellido}`,
-          horas_anterior: profActual.horas_semana,
-          horas_nueva: datos.horas_semana,
-          tarifa_anterior: profActual.tarifa_hora,
-          tarifa_nueva: datos.tarifa_hora,
-          vigente_desde: new Date().toISOString().split('T')[0],
-          motivo: 'Actualización manual',
-          registrado_por_nombre: usuario?.nombre,
-        })
-      }
       await actualizar(id, { ...datos, initials })
       irADetalle(id)
     }
@@ -136,13 +117,13 @@ export default function Profesoras() {
       <div style={{fontSize:'20px',fontWeight:700,marginBottom:'20px'}}>{form?.id ? 'Editar docente' : 'Nueva docente'}</div>
       <Card>
         <Row2>
-          <Field2 label="Nombre *"><Input value={form?.nombre||''} onChange={v=>setForm({...form,nombre:v})} /></Field2>
-          <Field2 label="Apellido *"><Input value={form?.apellido||''} onChange={v=>setForm({...form,apellido:v})} /></Field2>
+          <Field2 label="Nombre *"><Input value={form?.nombre||''} onChange={(v:string)=>setForm({...form,nombre:v})} /></Field2>
+          <Field2 label="Apellido *"><Input value={form?.apellido||''} onChange={(v:string)=>setForm({...form,apellido:v})} /></Field2>
         </Row2>
-        <Field2 label="Email"><Input type="email" value={form?.email||''} onChange={v=>setForm({...form,email:v})} /></Field2>
+        <Field2 label="Email"><Input type="email" value={form?.email||''} onChange={(v:string)=>setForm({...form,email:v})} /></Field2>
         <Row2>
-          <Field2 label="Edad"><Input type="number" value={form?.edad||''} onChange={v=>setForm({...form,edad:+v})} /></Field2>
-          <Field2 label="Teléfono"><Input value={form?.telefono||''} onChange={v=>setForm({...form,telefono:v})} /></Field2>
+          <Field2 label="Edad"><Input type="number" value={form?.edad||''} onChange={(v:string)=>setForm({...form,edad:+v})} /></Field2>
+          <Field2 label="Teléfono"><Input value={form?.telefono||''} onChange={(v:string)=>setForm({...form,telefono:v})} /></Field2>
         </Row2>
         <Row2>
           <Field2 label="Nivel">
@@ -150,7 +131,7 @@ export default function Profesoras() {
               {NIVELES.map(n=><option key={n}>{n}</option>)}
             </select>
           </Field2>
-          <Field2 label="Tarifa/hora ($)"><Input type="number" value={form?.tarifa_hora||''} onChange={v=>setForm({...form,tarifa_hora:+v})} /></Field2>
+          <Field2 label="Tarifa/hora ($)"><Input type="number" value={form?.tarifa_hora||''} onChange={(v:string)=>setForm({...form,tarifa_hora:+v})} /></Field2>
         </Row2>
         <Field2 label="Horas por semana"><input type="number" step="0.5" min="0" value={form?.horas_semana||''} onChange={e=>setForm({...form,horas_semana:parseFloat(e.target.value)||0})} style={IS} /></Field2>
       </Card>
@@ -272,7 +253,7 @@ export default function Profesoras() {
             <Field2 label="Desde"><input style={IS} type="date" value={lic.fecha_desde} onChange={e=>setLic({...lic,fecha_desde:e.target.value})} /></Field2>
             <Field2 label="Hasta"><input style={IS} type="date" value={lic.fecha_hasta} onChange={e=>setLic({...lic,fecha_hasta:e.target.value})} /></Field2>
           </Row2>
-          <Field2 label="Observaciones"><Input value={lic.observaciones} onChange={v=>setLic({...lic,observaciones:v})} placeholder="Opcional..." /></Field2>
+          <Field2 label="Observaciones"><Input value={lic.observaciones} onChange={(v:string)=>setLic({...lic,observaciones:v})} placeholder="Opcional..." /></Field2>
           <div style={{display:'flex',gap:'10px',marginTop:'8px'}}>
             <BtnG style={{flex:1}} onClick={() => setModalLic(false)}>Cancelar</BtnG>
             <BtnP style={{flex:2}} onClick={guardarLic}>Guardar</BtnP>
