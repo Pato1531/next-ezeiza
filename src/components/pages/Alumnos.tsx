@@ -56,26 +56,20 @@ export default function Alumnos() {
   const mesActual = MESES_LISTA[new Date().getMonth()]
   const mesFiltroNombre = MESES_LISTA[mesFiltro]
 
-  // Recargar pagos cuando cambia el mes del filtro
+  // Cargar pagos del mes y cursos en un solo efecto
   useEffect(() => {
     if (!alumnos.length) return
     const sb = createClient()
-    sb.from('pagos_alumnos').select('alumno_id').eq('mes', mesFiltroNombre).eq('anio', new Date().getFullYear())
-      .then(({ data }) => {
-        setAlumnosConPagoMes(new Set((data || []).map((r: any) => r.alumno_id)))
-      })
+    const anio = new Date().getFullYear()
+    Promise.all([
+      sb.from('pagos_alumnos').select('alumno_id').eq('mes', mesFiltroNombre).eq('anio', anio),
+      sb.from('cursos_alumnos').select('alumno_id')
+    ]).then(([pagosRes, cursosRes]) => {
+      setAlumnosConPagoMes(new Set((pagosRes.data || []).map((r: any) => r.alumno_id)))
+      const conCurso = new Set((cursosRes.data || []).map((r: any) => r.alumno_id))
+      setAlumnosSinCurso(new Set(alumnos.map(a => a.id).filter(id => !conCurso.has(id))))
+    }).catch(() => {})
   }, [mesFiltro, alumnos.length])
-
-  // Cargar qué alumnos no tienen curso asignado
-  useEffect(() => {
-    if (!alumnos.length) return
-    const sb = createClient()
-    sb.from('cursos_alumnos').select('alumno_id').then(({ data }) => {
-      const conCurso = new Set((data || []).map((r: any) => r.alumno_id))
-      const sinCurso = new Set(alumnos.map(a => a.id).filter(id => !conCurso.has(id)))
-      setAlumnosSinCurso(sinCurso)
-    })
-  }, [alumnos.length])
   const [modalPago, setModalPago] = useState(false)
   const [motivoBaja, setMotivoBaja] = useState('')
   const [motivoLibre, setMotivoLibre] = useState('')
@@ -126,27 +120,25 @@ export default function Alumnos() {
     if (!sel) return
     setGuardandoBaja(true)
     const sb = createClient()
-    const { data: cursosAlumno } = await sb.from('cursos_alumnos')
-      .select('cursos(nombre, nivel)').eq('alumno_id', sel.id)
-    const cursoNombre = (cursosAlumno?.[0] as any)?.cursos?.nombre || '—'
-    const nivel = (cursosAlumno?.[0] as any)?.cursos?.nivel || sel.nivel
-    await sb.from('bajas_alumnos').insert({
-      alumno_id: sel.id,
-      alumno_nombre: sel.nombre,
-      alumno_apellido: sel.apellido,
-      curso_nombre: cursoNombre,
-      nivel,
-      cuota_mensual: sel.cuota_mensual,
-      motivo: motivoBaja === 'Otro' ? motivoLibre : motivoBaja,
-      fecha_baja: new Date().toISOString().split('T')[0],
-    })
-    // Quitar de todos los cursos
-    await sb.from('cursos_alumnos').delete().eq('alumno_id', sel.id)
-    // Desactivar alumno
-    await sb.from('alumnos').update({ activo: false }).eq('id', sel.id)
+    try {
+      await Promise.all([
+        sb.from('bajas_alumnos').insert({
+          alumno_id: sel.id,
+          alumno_nombre: sel.nombre,
+          alumno_apellido: sel.apellido,
+          curso_nombre: '—',
+          nivel: sel.nivel,
+          cuota_mensual: sel.cuota_mensual,
+          motivo: motivoBaja === 'Otro' ? motivoLibre : motivoBaja,
+          fecha_baja: new Date().toISOString().split('T')[0],
+        }),
+        sb.from('cursos_alumnos').delete().eq('alumno_id', sel.id),
+        sb.from('alumnos').update({ activo: false }).eq('id', sel.id)
+      ])
+      await recargar()
+    } catch (e) { console.error(e) }
     setGuardandoBaja(false)
     setSelId(null)
-    await recargar()
     setVista('lista')
   }
 
