@@ -518,37 +518,34 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
 
   useEffect(() => {
     const sb = createClient()
-    // Cargar curso actual del alumno
     sb.from('cursos_alumnos')
       .select('curso_id, cursos(id, nombre, nivel, dias, hora_inicio, hora_fin)')
       .eq('alumno_id', a.id)
-      .then(({ data }) => {
+      .then(({ data, error }) => {
+        if (error) { setCursoActual(null); return }
         if (data && data.length > 0) setCursoActual((data[0] as any).cursos)
         else setCursoActual(null)
       })
-
+      .catch(() => setCursoActual(null))
   }, [a.id])
 
   const asignarCurso = async (cursoId: string) => {
     setAsignando(true)
     const nuevo = todosLosCursos.find((c:any) => c.id === cursoId)
-    try {
-      const res = await fetch('/api/asignar-curso', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ alumno_id: a.id, curso_id: cursoId })
-      })
-      const json = await res.json()
-      console.log('Asignar curso response:', json)
-      setCursoActual(nuevo || { id: cursoId, nombre: 'Curso asignado' })
-      // Notificar al módulo de cursos que recargue
-      window.dispatchEvent(new CustomEvent('curso-alumno-updated'))
-    } catch (e) {
-      console.error('Error asignando curso:', e)
-      setCursoActual(nuevo || { id: cursoId })
-    }
+    // Actualizar UI inmediatamente (optimistic)
+    setCursoActual(nuevo || { id: cursoId })
     setModalAsignarCurso(false)
     setAsignando(false)
+    // Guardar en DB en background
+    const sb = createClient()
+    sb.from('cursos_alumnos').delete().eq('alumno_id', a.id)
+      .then(() => sb.from('cursos_alumnos').insert({
+        curso_id: cursoId,
+        alumno_id: a.id,
+        fecha_ingreso: new Date().toISOString().split('T')[0]
+      }))
+      .then(() => window.dispatchEvent(new CustomEvent('curso-alumno-updated')))
+      .catch(e => console.error('Error guardando curso:', e))
   }
 
   const guardarPago = async () => {
