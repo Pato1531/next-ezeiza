@@ -220,7 +220,14 @@ export default function Cursos() {
 }
 
 function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, onVolver, onEditar, onEliminar, confirmDelete, onCancelDelete, onConfirmDelete, onAsistenciaRapida }: any) {
-  const { alumnosCurso, agregar: agregarAlumno, quitar: quitarAlumno } = useCursoAlumnos(c.id)
+  const { alumnosCurso, agregar: agregarAlumno, quitar: quitarAlumno, recargar: recargarAlumnos } = useCursoAlumnos(c.id)
+
+  // Escuchar cuando se asigna un alumno desde otro módulo
+  useEffect(() => {
+    const handler = () => recargarAlumnos()
+    window.addEventListener('curso-alumno-updated', handler)
+    return () => window.removeEventListener('curso-alumno-updated', handler)
+  }, [recargarAlumnos])
   const { clases, agregar: agregarClase } = useClases(c.id)
   const [modalClase, setModalClase] = useState(false)
   const [modalAlumno, setModalAlumno] = useState(false)
