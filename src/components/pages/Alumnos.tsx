@@ -114,21 +114,6 @@ export default function Alumnos() {
       if (nuevo) irADetalle((nuevo as any).id)
       else irALista()
     } else {
-      // Registrar historial si cambió la cuota
-      const alumnoActual = alumnos.find(a => a.id === id)
-      if (alumnoActual && alumnoActual.cuota_mensual !== datos.cuota_mensual) {
-        const sb = createClient()
-        await sb.from('cuotas_historial').insert({
-          alumno_id: id,
-          alumno_nombre: datos.nombre,
-          alumno_apellido: datos.apellido,
-          cuota_anterior: alumnoActual.cuota_mensual,
-          cuota_nueva: datos.cuota_mensual,
-          vigente_desde: new Date().toISOString().split('T')[0],
-          motivo: 'Actualización manual',
-          registrado_por_nombre: usuario?.nombre,
-        })
-      }
       await actualizar(id, datos)
       irADetalle(id)
     }
@@ -529,25 +514,14 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
   const asignarCurso = async (cursoId: string) => {
     setAsignando(true)
     const sb = createClient()
-    const nuevo = todosLosCursos.find(c => c.id === cursoId)
-    // Registrar historial si había curso anterior
-    if (cursoActual && cursoActual.id !== cursoId) {
-      await sb.from('historial_cursos').insert({
-        alumno_id: a.id,
-        alumno_nombre: `${a.nombre} ${a.apellido}`,
-        curso_anterior_id: cursoActual.id,
-        curso_anterior_nombre: cursoActual.nombre,
-        curso_nuevo_id: cursoId,
-        curso_nuevo_nombre: nuevo?.nombre || '',
-        motivo: 'Cambio de curso',
-        fecha: new Date().toISOString().split('T')[0],
-      })
+    const nuevo = todosLosCursos.find((c:any) => c.id === cursoId)
+    try {
+      await sb.from('cursos_alumnos').delete().eq('alumno_id', a.id)
+      await sb.from('cursos_alumnos').insert({ curso_id: cursoId, alumno_id: a.id, fecha_ingreso: new Date().toISOString().split('T')[0] })
+      setCursoActual(nuevo)
+    } catch (e) {
+      console.error('Error asignando curso:', e)
     }
-    // Quitar curso anterior si tiene
-    await sb.from('cursos_alumnos').delete().eq('alumno_id', a.id)
-    // Asignar nuevo
-    await sb.from('cursos_alumnos').insert({ curso_id: cursoId, alumno_id: a.id, fecha_ingreso: new Date().toISOString().split('T')[0] })
-    setCursoActual(nuevo)
     setModalAsignarCurso(false)
     setAsignando(false)
   }
