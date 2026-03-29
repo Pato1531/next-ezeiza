@@ -109,9 +109,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const logout = async () => {
-    await supabase.auth.signOut()
+    try {
+      await supabase.auth.signOut()
+    } catch (e) {}
     setUsuario(null)
-    window.location.href = '/'
+    window.location.replace('/')
   }
 
   const puedeVerModulo = (modulo: string) =>
