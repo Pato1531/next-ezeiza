@@ -1,14 +1,20 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import LoginPage from '@/components/LoginPage'
 import AppShell from '@/components/AppShell'
 
 export default function Home() {
   const { usuario, loading } = useAuth()
+  const [timedOut, setTimedOut] = useState(false)
 
-  if (loading) {
+  useEffect(() => {
+    const t = setTimeout(() => setTimedOut(true), 6000)
+    return () => clearTimeout(t)
+  }, [])
+
+  if (loading && !timedOut) {
     return (
       <div style={{
         minHeight: '100vh',
