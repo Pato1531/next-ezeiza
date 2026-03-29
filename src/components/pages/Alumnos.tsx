@@ -60,7 +60,7 @@ export default function Alumnos() {
   useEffect(() => {
     if (!alumnos.length) return
     const sb = createClient()
-    sb.from('pagos').select('alumno_id').eq('mes', mesFiltroNombre).eq('anio', new Date().getFullYear())
+    sb.from('pagos_alumnos').select('alumno_id').eq('mes', mesFiltroNombre).eq('anio', new Date().getFullYear())
       .then(({ data }) => {
         setAlumnosConPagoMes(new Set((data || []).map((r: any) => r.alumno_id)))
       })
@@ -291,33 +291,33 @@ export default function Alumnos() {
       <div style={{fontSize:'20px',fontWeight:700,marginBottom:'20px'}}>{form?.id ? 'Editar alumno' : 'Nuevo alumno'}</div>
       <Card>
         <Row2>
-          <Field2 label="Nombre *"><Input value={form?.nombre||''} onChange={v=>setForm({...form,nombre:v})} /></Field2>
-          <Field2 label="Apellido *"><Input value={form?.apellido||''} onChange={v=>setForm({...form,apellido:v})} /></Field2>
+          <Field2 label="Nombre *"><Input value={form?.nombre||''} onChange={(v:string)=>setForm({...form,nombre:v})} /></Field2>
+          <Field2 label="Apellido *"><Input value={form?.apellido||''} onChange={(v:string)=>setForm({...form,apellido:v})} /></Field2>
         </Row2>
         <Row2>
-          <Field2 label="Edad"><Input type="number" value={form?.edad||''} onChange={v=>setForm({...form,edad:+v})} /></Field2>
-          <Field2 label="Teléfono"><Input value={form?.telefono||''} onChange={v=>setForm({...form,telefono:v})} /></Field2>
+          <Field2 label="Edad"><Input type="number" value={form?.edad||''} onChange={(v:string)=>setForm({...form,edad:+v})} /></Field2>
+          <Field2 label="Teléfono"><Input value={form?.telefono||''} onChange={(v:string)=>setForm({...form,telefono:v})} /></Field2>
         </Row2>
-        <Field2 label="Email"><Input type="email" value={form?.email||''} onChange={v=>setForm({...form,email:v})} /></Field2>
+        <Field2 label="Email"><Input type="email" value={form?.email||''} onChange={(v:string)=>setForm({...form,email:v})} /></Field2>
         <Row2>
           <Field2 label="Nivel">
-            <select style={IS} value={form?.nivel||'Básico'} onChange={e=>setForm({...form,nivel:e.target.value})}>
+            <select style={IS} value={form?.nivel||'Básico'} onChange={(e:any)=>setForm({...form,nivel:e.target.value})}>
               {NIVELES.map(n=><option key={n}>{n}</option>)}
             </select>
           </Field2>
-          <Field2 label="Cuota mensual ($)"><Input type="number" value={form?.cuota_mensual||''} onChange={v=>setForm({...form,cuota_mensual:+v})} /></Field2>
+          <Field2 label="Cuota mensual ($)"><Input type="number" value={form?.cuota_mensual||''} onChange={(v:string)=>setForm({...form,cuota_mensual:+v})} /></Field2>
         </Row2>
         <Field2 label="¿Es menor de edad?">
-          <select style={IS} value={form?.es_menor?'si':'no'} onChange={e=>setForm({...form,es_menor:e.target.value==='si'})}>
+          <select style={IS} value={form?.es_menor?'si':'no'} onChange={(e:any)=>setForm({...form,es_menor:e.target.value==='si'})}>
             <option value="no">No</option>
             <option value="si">Sí</option>
           </select>
         </Field2>
         {form?.es_menor && <>
-          <Field2 label="Nombre padre/madre"><Input value={form?.padre_nombre||''} onChange={v=>setForm({...form,padre_nombre:v})} /></Field2>
+          <Field2 label="Nombre padre/madre"><Input value={form?.padre_nombre||''} onChange={(v:string)=>setForm({...form,padre_nombre:v})} /></Field2>
           <Row2>
-            <Field2 label="Tel. contacto"><Input value={form?.padre_telefono||''} onChange={v=>setForm({...form,padre_telefono:v})} /></Field2>
-            <Field2 label="Email contacto"><Input value={form?.padre_email||''} onChange={v=>setForm({...form,padre_email:v})} /></Field2>
+            <Field2 label="Tel. contacto"><Input value={form?.padre_telefono||''} onChange={(v:string)=>setForm({...form,padre_telefono:v})} /></Field2>
+            <Field2 label="Email contacto"><Input value={form?.padre_email||''} onChange={(v:string)=>setForm({...form,padre_email:v})} /></Field2>
           </Row2>
         </>}
       </Card>
@@ -741,14 +741,14 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
             {MESES.map(m=><option key={m}>{m}</option>)}
           </select>
         </Field2>
-        <Field2 label="Monto ($)"><Input type="number" value={pago.monto||''} onChange={v=>setPago({...pago,monto:+v})} /></Field2>
+        <Field2 label="Monto ($)"><Input type="number" value={pago.monto||''} onChange={(v:string)=>setPago({...pago,monto:+v})} /></Field2>
         <Field2 label="Método">
           <select style={IS} value={pago.metodo} onChange={e=>setPago({...pago,metodo:e.target.value})}>
             <option>Efectivo</option><option>Transferencia</option><option>MercadoPago</option>
           </select>
         </Field2>
         <Field2 label="Fecha"><input style={IS} type="date" value={pago.fecha_pago} onChange={e=>setPago({...pago,fecha_pago:e.target.value})} /></Field2>
-        <Field2 label="Observaciones"><Input value={pago.observaciones} onChange={v=>setPago({...pago,observaciones:v})} placeholder="Opcional..." /></Field2>
+        <Field2 label="Observaciones"><Input value={pago.observaciones} onChange={(v:string)=>setPago({...pago,observaciones:v})} placeholder="Opcional..." /></Field2>
         <div style={{display:'flex',gap:'10px',marginTop:'8px'}}>
           <BtnG style={{flex:1}} onClick={() => setModalPago(false)}>Cancelar</BtnG>
           <BtnP style={{flex:2}} onClick={guardarPago} disabled={guardandoPago}>{guardandoPago?'Guardando...':'Registrar pago'}</BtnP>
@@ -812,7 +812,7 @@ function PagosMasivos({ alumnos, onVolver }: any) {
       observaciones: `Pago masivo registrado`,
     }))
 
-    const { error } = await sb.from('pagos').upsert(inserts, { onConflict: 'alumno_id,mes,anio' })
+    const { error } = await sb.from('pagos_alumnos').upsert(inserts, { onConflict: 'alumno_id,mes,anio' })
     if (error) { alert('Error: ' + error.message); setGuardando(false); return }
 
     setGuardando(false)
