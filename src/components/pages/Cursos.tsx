@@ -480,11 +480,36 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
       </Card>}
 
       {tab === 'alumnos' && <div>
-        {puedeEditar && alumnosDisponibles.length > 0 && (
-          <div style={{display:'flex',justifyContent:'flex-end',marginBottom:'12px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
+          <button onClick={() => {
+            const win = window.open('','_blank'); if(!win) return
+            win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Alumnos - ${c.nombre}</title>
+            <style>body{font-family:sans-serif;padding:24px;font-size:13px}h1{color:#652f8d;font-size:18px}
+            table{width:100%;border-collapse:collapse;margin:16px 0}
+            th{border-bottom:2px solid #652f8d;padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:#652f8d;letter-spacing:.05em}
+            td{padding:9px 8px;border-bottom:1px solid #f0edf5}
+            .logo{font-size:18px;font-weight:700}.logo span{color:#652f8d}
+            </style></head><body>
+            <div style="display:flex;justify-content:space-between;border-bottom:2px solid #652f8d;padding-bottom:12px;margin-bottom:18px">
+              <div class="logo"><span>Next</span> Ezeiza</div>
+              <div style="font-size:12px;color:#9b8eaa">${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
+            </div>
+            <h1>${c.nombre}</h1>
+            <p style="color:#9b8eaa;font-size:12px">${c.nivel} · ${c.dias||'—'} · ${c.hora_inicio?.slice(0,5)||'—'}–${c.hora_fin?.slice(0,5)||'—'} · ${alumnosCurso.length} alumnos</p>
+            <table>
+              <tr><th>#</th><th>Nombre</th><th>Apellido</th><th>Nivel</th><th>Cuota</th></tr>
+              ${alumnosCurso.map((a:any,i:number)=>`<tr><td>${i+1}</td><td>${a.nombre}</td><td>${a.apellido}</td><td>${a.nivel}</td><td>$${a.cuota_mensual?.toLocaleString('es-AR')||'—'}</td></tr>`).join('')}
+            </table>
+            <script>window.onload=()=>window.print()<\/script></body></html>`)
+            win.document.close()
+          }} style={{padding:'8px 14px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'12px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 16v1a1 1 0 001 1h10a1 1 0 001-1v-1M7 10l3 3 3-3M10 3v10"/></svg>
+            Descargar lista
+          </button>
+          {puedeEditar && alumnosDisponibles.length > 0 && (
             <BtnP sm onClick={() => setModalAlumno(true)}>+ Agregar alumno</BtnP>
-          </div>
-        )}
+          )}
+        </div>
         <Card>
           <SL style={{marginBottom:'14px'}}>Alumnos inscriptos ({alumnosCurso.length})</SL>
           {alumnosCurso.length === 0 && <div style={{textAlign:'center',padding:'16px',color:'var(--text3)'}}>Sin alumnos asignados</div>}
@@ -633,7 +658,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
       </ModalSheet>}
 
       {modalAlumno && <ModalSheet title="Agregar alumno al curso" onClose={() => setModalAlumno(false)}>
-        <BuscadorModal alumnos={alumnosDisponibles} onSelect={async (a:any) => { await agregarAlumno(a.id); setModalAlumno(false) }} />
+        <BuscadorModal alumnos={alumnosDisponibles} onSelect={(a:any) => { agregarAlumno(a.id); setModalAlumno(false) }} />
         {alumnosDisponibles.length === 0 && <div style={{textAlign:'center',padding:'16px',color:'var(--text3)'}}>Todos los alumnos ya están inscriptos</div>}
       </ModalSheet>}
     </div>
@@ -1137,20 +1162,4 @@ const BtnP = ({children,sm,onClick,style,disabled}:any) => <button onClick={onCl
 const BtnG = ({children,sm,onClick,style}:any) => <button onClick={onClick} style={{padding:sm?'9px 14px':'12px 20px',background:'transparent',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:sm?'13px':'14px',fontWeight:600,cursor:'pointer',...style}}>{children}</button>
 const BtnDanger = ({children,sm,onClick}:any) => <button onClick={onClick} style={{padding:sm?'7px 13px':'9px 14px',background:'var(--redl)',color:'var(--red)',border:'1.5px solid #f5c5c5',borderRadius:'10px',fontSize:sm?'12px':'13px',fontWeight:600,cursor:'pointer'}}>{children}</button>
 const ListItem = ({children,onClick}:any) => <div onClick={onClick} style={{display:'flex',alignItems:'center',gap:'12px',padding:'14px 16px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',marginBottom:'10px',cursor:'pointer'}} onMouseEnter={e=>(e.currentTarget.style.borderColor='var(--v)')} onMouseLeave={e=>(e.currentTarget.style.borderColor='var(--border)')}>{children}</div>
-const Av = ({color,size,children}:any) => <div style={{width:size,height:size,borderRadius:Math.round(size*.32)+'px',background:color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:size*.28+'px',fontWeight:700,color:'#fff',flexShrink:0}}>{children}</div>
-const Kpi = ({val,label,color='var(--text)'}:any) => <div style={{background:'var(--white)',padding:'12px 8px',textAlign:'center'}}><div style={{fontSize:'18px',fontWeight:700,color}}>{val}</div><div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>{label}</div></div>
-const TabBtn = ({children,active,onClick}:any) => <button onClick={onClick} style={{padding:'9px 16px',borderRadius:'20px',fontSize:'13px',fontWeight:600,cursor:'pointer',border:'1.5px solid',borderColor:active?'var(--v)':'var(--border)',background:active?'var(--v)':'var(--white)',color:active?'#fff':'var(--text2)',whiteSpace:'nowrap'}}>{children}</button>
-const Row2 = ({children}:any) => <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}}>{children}</div>
-const Field2 = ({label,children}:any) => <div style={{marginBottom:'11px'}}><div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>{label}</div>{children}</div>
-const FieldRO = ({label,value}:any) => <Field2 label={label}><div style={{padding:'8px 11px',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'13px',background:'var(--bg)',color:'var(--text2)'}}>{value}</div></Field2>
-const Card = ({children}:any) => <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'18px',marginBottom:'14px'}}>{children}</div>
-const Chevron = () => <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="var(--text3)" strokeWidth="2"><path d="M7 5l5 5-5 5"/></svg>
-const ModalSheet = ({title,children,onClose}:any) => (
-  <div style={{position:'fixed',inset:0,background:'rgba(20,0,40,.45)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:200}} onClick={e=>{if(e.target===e.currentTarget)onClose()}}>
-    <div style={{background:'var(--white)',borderRadius:'24px 24px 0 0',padding:'28px 20px 32px',width:'100%',maxWidth:'480px',maxHeight:'90vh',overflowY:'auto'}}>
-      <div style={{width:'40px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 20px'}} />
-      <div style={{fontSize:'18px',fontWeight:700,marginBottom:'20px'}}>{title}</div>
-      {children}
-    </div>
-  </div>
-)
+const Av = ({color,size,children}:any) => <div style={{width:size,height:size,borderRadius:Math.round(size*.32)+'px',background:color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:size*.28+'px',fontWeight:700,color:'#fff',flexShrink:
