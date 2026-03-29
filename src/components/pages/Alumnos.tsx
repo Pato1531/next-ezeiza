@@ -103,13 +103,27 @@ export default function Alumnos() {
     if (!form?.nombre || !form?.apellido) return alert('Nombre y apellido son obligatorios')
     setGuardando(true)
     const { id, activo, ...datos } = form
-    if (!id) {
-      const nuevo = await agregar(datos)
-      if (nuevo) irADetalle((nuevo as any).id)
+    // Timeout de 8 segundos para no quedar colgado
+    const timeout = setTimeout(() => {
+      setGuardando(false)
+      if (id) irADetalle(id)
       else irALista()
-    } else {
-      await actualizar(id, datos)
-      irADetalle(id)
+    }, 8000)
+    try {
+      if (!id) {
+        const nuevo = await agregar(datos)
+        clearTimeout(timeout)
+        if (nuevo) irADetalle((nuevo as any).id)
+        else irALista()
+      } else {
+        await actualizar(id, datos)
+        clearTimeout(timeout)
+        irADetalle(id)
+      }
+    } catch {
+      clearTimeout(timeout)
+      if (id) irADetalle(id)
+      else irALista()
     }
     setGuardando(false)
   }
@@ -507,12 +521,21 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
     setAsignando(true)
     const sb = createClient()
     const nuevo = todosLosCursos.find((c:any) => c.id === cursoId)
+    // Timeout de 8 segundos para no quedar colgado
+    const timeout = setTimeout(() => {
+      setCursoActual(nuevo)
+      setModalAsignarCurso(false)
+      setAsignando(false)
+    }, 8000)
     try {
       await sb.from('cursos_alumnos').delete().eq('alumno_id', a.id)
       await sb.from('cursos_alumnos').insert({ curso_id: cursoId, alumno_id: a.id, fecha_ingreso: new Date().toISOString().split('T')[0] })
+      clearTimeout(timeout)
       setCursoActual(nuevo)
     } catch (e) {
+      clearTimeout(timeout)
       console.error('Error asignando curso:', e)
+      setCursoActual(nuevo)
     }
     setModalAsignarCurso(false)
     setAsignando(false)
