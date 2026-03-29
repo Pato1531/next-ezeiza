@@ -37,7 +37,7 @@ export default function Comunicados() {
     setForm({ titulo:'', contenido:'', rol_destino:'todos' })
   }
 
-  if (loading) return <Loader />
+  // Sin bloqueo de loading
 
   return (
     <div className="fade-in">
