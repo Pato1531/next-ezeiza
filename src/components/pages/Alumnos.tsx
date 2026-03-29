@@ -47,6 +47,7 @@ export default function Alumnos() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const [soloSinCurso, setSoloSinCurso] = useState(false)
+  const [soloSinCuota, setSoloSinCuota] = useState(false)
   const [filtroPago, setFiltroPago] = useState<'todos'|'pagaron'|'no_pagaron'>('todos')
   const [mesFiltro, setMesFiltro] = useState(new Date().getMonth())
   const [alumnosSinCurso, setAlumnosSinCurso] = useState<Set<string>>(new Set())
@@ -109,16 +110,14 @@ export default function Alumnos() {
         if (nuevo) irADetalle((nuevo as any).id)
         else irALista()
       } else {
-        // Usar API route para actualizar
-        const res = await fetch('/api/actualizar-alumno', {
+        // Actualizar store local inmediatamente (optimistic)
+        await actualizar(id, datos)
+        // Guardar en DB via API route en background
+        fetch('/api/actualizar-alumno', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, datos })
-        })
-        if (res.ok) {
-          // Actualizar store local
-          await actualizar(id, datos)
-        }
+        }).catch(e => console.error('Error API actualizar:', e))
         irADetalle(id)
       }
     } catch (e) {
@@ -168,10 +167,11 @@ export default function Alumnos() {
   const filtrados = alumnos.filter(a => {
     const matchBusq = !busqueda || `${a.nombre} ${a.apellido} ${a.nivel}`.toLowerCase().includes(busqueda.toLowerCase())
     const matchSinCurso = !soloSinCurso || alumnosSinCurso.has(a.id)
+    const matchSinCuota = !soloSinCuota || !a.cuota_mensual || a.cuota_mensual === 0
     const matchPago = filtroPago === 'todos' ? true
       : filtroPago === 'pagaron' ? alumnosConPagoMes.has(a.id)
       : !alumnosConPagoMes.has(a.id)
-    return matchBusq && matchSinCurso && matchPago
+    return matchBusq && matchSinCurso && matchSinCuota && matchPago
   })
 
   if (loading || (usuario?.rol === 'profesora' && loadingProf)) return <Loader />
@@ -232,14 +232,25 @@ export default function Alumnos() {
         </div>
       )}
 
-      {/* Filtro sin curso */}
-      <div style={{display:'flex',gap:'8px',marginBottom:'14px',alignItems:'center'}}>
+      {/* Filtros rapidos */}
+      <div style={{display:'flex',gap:'8px',marginBottom:'14px',alignItems:'center',flexWrap:'wrap'}}>
         <button onClick={() => setSoloSinCurso(!soloSinCurso)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'7px 14px',borderRadius:'20px',fontSize:'12.5px',fontWeight:600,cursor:'pointer',border:'1.5px solid',borderColor:soloSinCurso?'var(--amber)':'var(--border)',background:soloSinCurso?'var(--amberl)':'var(--white)',color:soloSinCurso?'var(--amber)':'var(--text2)',transition:'all .15s'}}>
           <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="10" cy="10" r="8"/><path d="M10 6v4M10 14h.01"/></svg>
-          Sin curso asignado
+          Sin curso
           {alumnosSinCurso.size > 0 && <span style={{background:soloSinCurso?'var(--amber)':'var(--border)',color:soloSinCurso?'#fff':'var(--text2)',borderRadius:'20px',padding:'1px 7px',fontSize:'11px',fontWeight:700}}>{alumnosSinCurso.size}</span>}
         </button>
-        {soloSinCurso && <button onClick={() => setSoloSinCurso(false)} style={{fontSize:'12px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}}>✕ Limpiar</button>}
+        <button onClick={() => setSoloSinCuota(!soloSinCuota)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'7px 14px',borderRadius:'20px',fontSize:'12.5px',fontWeight:600,cursor:'pointer',border:'1.5px solid',borderColor:soloSinCuota?'var(--red)':'var(--border)',background:soloSinCuota?'var(--redl)':'var(--white)',color:soloSinCuota?'var(--red)':'var(--text2)',transition:'all .15s'}}>
+          <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2H4a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/><path d="M14 2v6h6"/></svg>
+          Sin cuota
+          {alumnos.filter((a:any) => !a.cuota_mensual || a.cuota_mensual === 0).length > 0 && (
+            <span style={{background:soloSinCuota?'var(--red)':'var(--border)',color:soloSinCuota?'#fff':'var(--text2)',borderRadius:'20px',padding:'1px 7px',fontSize:'11px',fontWeight:700}}>
+              {alumnos.filter((a:any) => !a.cuota_mensual || a.cuota_mensual === 0).length}
+            </span>
+          )}
+        </button>
+        {(soloSinCurso || soloSinCuota) && (
+          <button onClick={() => { setSoloSinCurso(false); setSoloSinCuota(false) }} style={{fontSize:'12px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}}>✕ Limpiar</button>
+        )}
       </div>
       {filtrados.map(a => {
         const col = NIVEL_COL[a.nivel]
@@ -529,11 +540,11 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
       })
       const json = await res.json()
       console.log('Asignar curso response:', json)
-      // Actualizar pantalla siempre, independientemente de la respuesta
       setCursoActual(nuevo || { id: cursoId, nombre: 'Curso asignado' })
+      // Notificar al módulo de cursos que recargue
+      window.dispatchEvent(new CustomEvent('curso-alumno-updated'))
     } catch (e) {
       console.error('Error asignando curso:', e)
-      // Aun con error, actualizar pantalla optimisticamente
       setCursoActual(nuevo || { id: cursoId })
     }
     setModalAsignarCurso(false)
