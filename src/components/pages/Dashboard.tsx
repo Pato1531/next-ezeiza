@@ -51,7 +51,7 @@ export default function Dashboard() {
     setAlumnosSinCurso(alumnos.filter(a => !idsConCurso.has(a.id)).length)
 
     // Cuotas pendientes del mes actual
-    const { data: pagos } = await sb.from('pagos').select('alumno_id, mes, anio').eq('mes', mesActual).eq('anio', today.getFullYear())
+    const { data: pagos } = await sb.from('pagos_alumnos').select('alumno_id, mes, anio').eq('mes', mesActual).eq('anio', today.getFullYear())
     const alumnosConPago = new Set((pagos||[]).map((p:any) => p.alumno_id))
     setCuotasPendientes(alumnos.filter(a => !alumnosConPago.has(a.id)).length)
 
