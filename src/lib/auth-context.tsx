@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react'
 import { createClient, Usuario, Rol, puedeVer } from '@/lib/supabase'
 
 interface AuthContextType {
@@ -16,28 +16,31 @@ const AuthContext = createContext<AuthContextType | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [usuario, setUsuario] = useState<Usuario | null>(null)
   const [loading, setLoading] = useState(true)
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null)
   const supabase = createClient()
 
+  const cancelTimeout = () => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current)
+      timeoutRef.current = null
+    }
+  }
+
   useEffect(() => {
-    let timeout: NodeJS.Timeout
-
     const getSession = async () => {
-      try {
-        // Timeout de 8 segundos — si no responde, limpiar sesión
-        timeout = setTimeout(async () => {
-          console.warn('Sesión timeout — limpiando cookies')
-          try { await supabase.auth.signOut() } catch {}
-          setUsuario(null)
-          setLoading(false)
-          window.location.replace('/')
-        }, 5000)
+      timeoutRef.current = setTimeout(() => {
+        console.warn('Sesion timeout - limpiando')
+        supabase.auth.signOut().catch(() => {})
+        setUsuario(null)
+        setLoading(false)
+      }, 5000)
 
+      try {
         const { data: { session }, error } = await supabase.auth.getSession()
-        clearTimeout(timeout)
+        cancelTimeout()
 
         if (error || !session?.user) {
-          // Sesión inválida — limpiar y mostrar login
-          await supabase.auth.signOut()
+          await supabase.auth.signOut().catch(() => {})
           setUsuario(null)
           setLoading(false)
           return
@@ -46,17 +49,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (session?.user) {
           const ok = await cargarUsuario(session.user.id)
           if (!ok) {
-            // Usuario no encontrado en la tabla — sesión rota
-            await supabase.auth.signOut()
+            await supabase.auth.signOut().catch(() => {})
             setUsuario(null)
           }
         }
-      } catch (e) {
-        clearTimeout(timeout)
-        await supabase.auth.signOut()
+      } catch {
+        cancelTimeout()
+        await supabase.auth.signOut().catch(() => {})
         setUsuario(null)
       } finally {
-        clearTimeout(timeout)
+        cancelTimeout()
         setLoading(false)
       }
     }
@@ -65,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
+        cancelTimeout()
         if (event === 'SIGNED_OUT') {
           setUsuario(null)
           setLoading(false)
@@ -80,7 +83,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     )
 
     return () => {
-      clearTimeout(timeout)
+      cancelTimeout()
       subscription.unsubscribe()
     }
   }, [])
@@ -104,15 +107,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const login = async (email: string, password: string) => {
+    cancelTimeout()
+    setLoading(true)
     const { error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) return { error: 'Usuario o contraseña incorrectos.' }
+    if (error) {
+      setLoading(false)
+      return { error: 'Usuario o contrasena incorrectos.' }
+    }
     return {}
   }
 
   const logout = async () => {
-    try {
-      await supabase.auth.signOut()
-    } catch (e) {}
+    cancelTimeout()
+    try { await supabase.auth.signOut() } catch {}
     setUsuario(null)
     window.location.replace('/')
   }
