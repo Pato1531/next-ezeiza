@@ -386,14 +386,17 @@ export function useHistorialCursos(alumnoId?: string) {
   const [data, setData] = useState<any[]>([])
 
   useEffect(() => {
-    const sb = supabase
-    let q = sb.from('historial_cursos').select('*').order('fecha', { ascending: false })
-    if (alumnoId) q = (q as any).eq('alumno_id', alumnoId)
-    q.then(({ data }) => setData(data ?? []))
+    if (!alumnoId) return // No cargar sin alumnoId
+    supabase.from('historial_cursos').select('*')
+      .eq('alumno_id', alumnoId)
+      .order('fecha', { ascending: false })
+      .limit(10)
+      .then(({ data, error }) => { if (!error) setData(data ?? []) })
+      .catch(() => {})
   }, [alumnoId])
 
   const registrar = async (h: any) => {
-    await supabase.from('historial_cursos').insert(h)
+    supabase.from('historial_cursos').insert(h).catch(() => {})
   }
 
   return { historial: data, registrar }
@@ -402,16 +405,20 @@ export function useHistorialCursos(alumnoId?: string) {
 // ── CUOTAS HISTORIAL ──
 export function useCuotasHistorial(alumnoId?: string) {
   const [data, setData] = useState<any[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
-    let q = supabase.from('cuotas_historial').select('*').order('vigente_desde', { ascending: false })
-    if (alumnoId) q = (q as any).eq('alumno_id', alumnoId)
-    q.limit(50).then(({ data }) => { setData(data ?? []); setIsLoading(false) })
+    if (!alumnoId) return // No cargar sin alumnoId
+    supabase.from('cuotas_historial').select('*')
+      .eq('alumno_id', alumnoId)
+      .order('vigente_desde', { ascending: false })
+      .limit(10)
+      .then(({ data, error }) => { if (!error) setData(data ?? []) })
+      .catch(() => {})
   }, [alumnoId])
 
   const registrarCambio = async (cambio: any) => {
-    await supabase.from('cuotas_historial').insert(cambio)
+    supabase.from('cuotas_historial').insert(cambio).catch(() => {})
   }
 
   return { historial: data, loading: isLoading, registrarCambio }
