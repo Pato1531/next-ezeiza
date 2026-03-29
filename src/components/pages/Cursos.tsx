@@ -78,21 +78,10 @@ export default function Cursos() {
     if (!id) {
       const { data: nuevo, error } = await sb.from('cursos').insert({...datos, activo:true}).select().single()
       if (error) { alert('Error: ' + error.message); setGuardando(false); return }
-      // Sincronizar al horario
-      if (nuevo && datos.dias && datos.hora_inicio && datos.hora_fin) {
-        const diasMap: Record<string,number> = {'Lun':0,'Mar':1,'Mié':2,'Jue':3,'Vie':4,'Sáb':5}
-        for (const dia of datos.dias.split(' / ').filter(Boolean)) {
-          const diaNum = diasMap[dia]
-          if (diaNum !== undefined) {
-            await sb.from('horario').insert({ curso_id: nuevo.id, curso_nombre: nuevo.nombre, profesora_id: datos.profesora_id||null, dia_semana: diaNum, hora_inicio: datos.hora_inicio+':00', hora_fin: datos.hora_fin+':00', activo: true })
-          }
-        }
-      }
       if (nuevo) irADetalle(nuevo.id)
       else irALista()
     } else {
       await actualizar(id, datos)
-      await sb.from('horario').update({ curso_nombre: datos.nombre, profesora_id: datos.profesora_id }).eq('curso_id', id)
       irADetalle(id)
     }
     setGuardando(false)
@@ -242,8 +231,10 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
 
   const eliminarClase = async (claseId: string) => {
     const sb = createClient()
-    await sb.from('asistencia_clases').delete().eq('clase_id', claseId)
-    await sb.from('clases').delete().eq('id', claseId)
+    await Promise.all([
+      sb.from('asistencia_clases').delete().eq('clase_id', claseId),
+      sb.from('clases').delete().eq('id', claseId)
+    ])
     setClasesLocal(prev => prev.filter(cl => cl.id !== claseId))
     setConfirmDelClase(null)
   }
@@ -350,7 +341,9 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
   useEffect(() => {
     if (!clases.length) return
     const sb = createClient()
-    sb.from('asistencia_clases').select('*').in('clase_id', clases.map((cl:any)=>cl.id))
+    // Solo cargar asistencia de las ultimas 10 clases para evitar sobrecarga
+    const claseIds = clases.slice(0, 10).map((cl:any) => cl.id)
+    sb.from('asistencia_clases').select('clase_id, alumno_id, estado').in('clase_id', claseIds)
       .then(({data}) => {
         if (!data) return
         const map: Record<string,Record<string,string>> = {}
