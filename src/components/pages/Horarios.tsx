@@ -38,7 +38,7 @@ export default function Horarios() {
     } catch { return `rgba(100,100,100,${a})` }
   }
 
-  if (loading) return <Loader />
+  // Sin bloqueo de loading
 
   const slots = cursos.flatMap((curso:any) => {
     const dias = parseDias(curso.dias || '')
