@@ -29,7 +29,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           await supabase.auth.signOut()
           setUsuario(null)
           setLoading(false)
-        }, 8000)
+        }, 5000)
 
         const { data: { session }, error } = await supabase.auth.getSession()
         clearTimeout(timeout)
