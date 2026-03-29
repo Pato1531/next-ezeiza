@@ -523,11 +523,22 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
       .eq('alumno_id', a.id)
       .then(({ data, error }) => {
         if (error) { setCursoActual(null); return }
-        if (data && data.length > 0) setCursoActual((data[0] as any).cursos)
-        else setCursoActual(null)
+        if (data && data.length > 0) {
+          const cursoData = (data[0] as any).cursos
+          if (cursoData) {
+            setCursoActual(cursoData)
+          } else {
+            // El join falló — buscar el curso en el store global por curso_id
+            const cursoId = data[0].curso_id
+            const cursoDelStore = todosLosCursos.find((c:any) => c.id === cursoId)
+            setCursoActual(cursoDelStore || null)
+          }
+        } else {
+          setCursoActual(null)
+        }
       })
       .catch(() => setCursoActual(null))
-  }, [a.id])
+  }, [a.id, todosLosCursos.length])
 
   const asignarCurso = async (cursoId: string) => {
     setAsignando(true)
