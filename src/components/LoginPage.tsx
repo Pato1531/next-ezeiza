@@ -39,7 +39,8 @@ export default function LoginPage() {
   const handleLimpiar = () => {
     limpiarSesion()
     setLimpiado(true)
-    setTimeout(() => setLimpiado(false), 3000)
+    // Recargar automáticamente después de 1.5 segundos
+    setTimeout(() => window.location.reload(), 1500)
   }
 
   return (
@@ -88,7 +89,7 @@ export default function LoginPage() {
 
         <button onClick={handleLimpiar}
           style={{ width: '100%', padding: '10px', marginTop: '10px', background: 'transparent', color: limpiado ? 'var(--green)' : 'var(--text3)', border: 'none', borderRadius: '10px', fontSize: '13px', cursor: 'pointer' }}>
-          {limpiado ? 'Sesion limpiada - intenta ingresar' : 'Problemas para ingresar? Toca aca'}
+          {limpiado ? '✓ Listo — recargá la página para ingresar' : '¿Problemas para ingresar? Tocá acá'}
         </button>
       </div>
     </div>
