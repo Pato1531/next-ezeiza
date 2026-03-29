@@ -84,7 +84,7 @@ export default function Profesoras() {
     setModalLic(false)
   }
 
-  if (loading) return <Loader />
+  // No bloquear con loading
 
   // ── LISTA ──
   if (vista === 'lista') return (
