@@ -6,10 +6,11 @@ import type { Profesora, Alumno, Curso, Clase, HorarioItem, Pago, AsistenciaClas
 
 const supabase = createClient()
 
-// ── STORE GLOBAL — datos compartidos entre todos los componentes ──
-// Los datos se cargan UNA sola vez y se reutilizan en toda la app
+// ── STORE GLOBAL ──
+// Datos en memoria compartidos entre todos los componentes
+// Nunca muestran loading si ya hay datos previos
 const store: Record<string, any[]> = {}
-const loading: Record<string, boolean> = {}
+const loadingKeys: Set<string> = new Set()
 const listeners: Record<string, Set<()=>void>> = {}
 
 function notify(key: string) {
@@ -19,40 +20,43 @@ function notify(key: string) {
 function subscribe(key: string, fn: ()=>void) {
   if (!listeners[key]) listeners[key] = new Set()
   listeners[key].add(fn)
-  return () => listeners[key].delete(fn)
+  return () => listeners[key]?.delete(fn)
 }
 
 async function loadOnce(key: string, loader: ()=>Promise<any[]>) {
-  if (store[key] !== undefined) return // ya está cargado
-  if (loading[key]) return // ya está cargando
-  loading[key] = true
+  if (store[key] !== undefined) return
+  if (loadingKeys.has(key)) return
+  loadingKeys.add(key)
   try {
     const data = await loader()
     store[key] = data
     notify(key)
-  } catch {
-    store[key] = []
+  } catch (e) {
+    store[key] = store[key] ?? [] // mantener datos anteriores si hay error
     notify(key)
   } finally {
-    loading[key] = false
+    loadingKeys.delete(key)
   }
 }
 
 function useStore<T>(key: string, loader: ()=>Promise<T[]>): [T[], boolean] {
+  // Si ya hay datos en el store, usar esos inmediatamente — sin loading
   const [data, setData] = useState<T[]>(store[key] ?? [])
-  const [isLoading, setIsLoading] = useState(store[key] === undefined)
+  // Solo mostrar loading si NO hay datos previos
+  const [isLoading, setIsLoading] = useState(!store[key])
 
   useEffect(() => {
+    // Si ya hay datos, mostrarlos inmediatamente
+    if (store[key] !== undefined) {
+      setData(store[key])
+      setIsLoading(false)
+    }
     const unsub = subscribe(key, () => {
       setData(store[key] ?? [])
       setIsLoading(false)
     })
-    if (store[key] !== undefined) {
-      setData(store[key])
-      setIsLoading(false)
-    } else {
-      loadOnce(key, loader)
-    }
+    // Cargar en background si no hay datos
+    loadOnce(key, loader)
     return unsub
   }, [key])
 
@@ -184,18 +188,24 @@ export function useCursoAlumnos(cursoId: string) {
   useEffect(() => { cargar() }, [cargar])
 
   const agregar = async (alumnoId: string) => {
-    const { error } = await supabase.from('cursos_alumnos').insert({
+    // Buscar alumno en el store global para actualizar UI inmediatamente
+    const alumnoStore = (store['alumnos'] || []).find((a: any) => a.id === alumnoId)
+    if (alumnoStore) setData(prev => [...prev, alumnoStore]) // optimistic update
+    // Guardar en DB en background
+    supabase.from('cursos_alumnos').insert({
       curso_id: cursoId, alumno_id: alumnoId,
       fecha_ingreso: new Date().toISOString().split('T')[0]
-    })
-    if (!error) await cargar()
-    return !error
+    }).then(({ error }) => {
+      if (error) { console.error('Error agregando alumno:', error); cargar() }
+    }).catch(() => cargar())
+    return true
   }
 
   const quitar = async (alumnoId: string) => {
-    const { error } = await supabase.from('cursos_alumnos').delete().eq('curso_id', cursoId).eq('alumno_id', alumnoId)
-    if (!error) setData(prev => prev.filter(a => a.id !== alumnoId))
-    return !error
+    setData(prev => prev.filter(a => a.id !== alumnoId)) // optimistic update
+    supabase.from('cursos_alumnos').delete().eq('curso_id', cursoId).eq('alumno_id', alumnoId)
+      .catch(() => cargar())
+    return true
   }
 
   return { alumnosCurso: data, agregar, quitar, recargar: cargar }
