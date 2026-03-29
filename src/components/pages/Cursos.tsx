@@ -99,7 +99,7 @@ export default function Cursos() {
     setVista('lista')
   }
 
-  if (loading || (usuario?.rol === 'profesora' && loadingProf)) return <Loader />
+  // No bloquear con loading — mostrar contenido aunque esté cargando
 
   // ── LISTA ──
   if (vista === 'lista') {
