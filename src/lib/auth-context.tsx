@@ -90,24 +90,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const cargarUsuario = async (uid: string): Promise<boolean> => {
     try {
-      console.log('Cargando usuario:', uid)
       const { data, error } = await supabase
         .from('usuarios')
         .select('*')
         .eq('id', uid)
         .single()
 
-      console.log('Usuario data:', data, 'error:', error)
       if (data && !error) {
         setUsuario(data as Usuario)
         return true
       }
       return false
-    } catch (e) {
-      console.error('Error cargarUsuario:', e)
+    } catch {
       return false
     }
   }
+
   const login = async (email: string, password: string) => {
     cancelTimeout()
     setLoading(true)
@@ -130,9 +128,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     cancelTimeout()
-    try { await supabase.auth.signOut() } catch {}
     setUsuario(null)
-    window.location.replace('/')
+    try { 
+      await supabase.auth.signOut()
+    } catch {}
+    // Limpiar todo el storage de supabase
+    try {
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('sb-')) localStorage.removeItem(k)
+      })
+    } catch {}
+    window.location.href = window.location.origin
   }
 
   const puedeVerModulo = (modulo: string) =>
