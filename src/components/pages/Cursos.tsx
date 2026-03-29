@@ -73,30 +73,40 @@ export default function Cursos() {
   const guardar = async () => {
     if (!form?.nombre) return alert('El nombre es obligatorio')
     setGuardando(true)
-    const sb = createClient()
     const { id, activo, ...datos } = form
-    if (!id) {
-      const { data: nuevo, error } = await sb.from('cursos').insert({...datos, activo:true}).select().single()
-      if (error) { alert('Error: ' + error.message); setGuardando(false); return }
-      if (nuevo) irADetalle(nuevo.id)
-      else irALista()
-    } else {
-      await actualizar(id, datos)
-      irADetalle(id)
-    }
+    // Timeout de 6 segundos — nunca quedar tildado
+    const t = setTimeout(() => { setGuardando(false); if (id) irADetalle(id); else irALista() }, 6000)
+    try {
+      if (!id) {
+        const sb = createClient()
+        const { data: nuevo } = await sb.from('cursos').insert({...datos, activo:true}).select().single()
+        clearTimeout(t)
+        if (nuevo) irADetalle(nuevo.id)
+        else irALista()
+      } else {
+        // Actualizar local inmediatamente, guardar en background
+        actualizar(id, datos)
+        clearTimeout(t)
+        irADetalle(id)
+      }
+    } catch { clearTimeout(t); if (id) irADetalle(id); else irALista() }
     setGuardando(false)
   }
 
   const eliminar = async () => {
     if (!selId) return
-    const sb = createClient()
-    await sb.from('cursos').update({ activo: false }).eq('id', selId)
-    await sb.from('horario').update({ activo: false }).eq('curso_id', selId)
     setConfirmDelete(false)
     setSelId(null)
-    await recargar()
-    window.dispatchEvent(new Event('horario-actualizado'))
     setVista('lista')
+    // Guardar en background
+    const sb = createClient()
+    Promise.all([
+      sb.from('cursos').update({ activo: false }).eq('id', selId),
+      sb.from('horario').update({ activo: false }).eq('curso_id', selId)
+    ]).then(() => {
+      recargar()
+      window.dispatchEvent(new Event('horario-actualizado'))
+    }).catch(() => recargar())
   }
 
   // No bloquear con loading — mostrar contenido aunque esté cargando
@@ -258,23 +268,22 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
     setModalEditClase(true)
   }
 
-  const guardarEditClase = async () => {
+  const guardarEditClase = () => {
     if (!claseEditando) return
-    setGuardandoEdit(true)
-    const sb = createClient()
-    await sb.from('clases').update({
-      fecha: claseEditando.fecha,
-      tema: claseEditando.tema,
-      observacion_coordinadora: claseEditando.descripcion,
-    }).eq('id', claseEditando.id)
-    // Actualizar local
+    // Actualizar local inmediatamente
     setClasesLocal(prev => prev.map(cl => cl.id === claseEditando.id
       ? { ...cl, fecha: claseEditando.fecha, tema: claseEditando.tema, observacion_coordinadora: claseEditando.descripcion }
       : cl
     ))
-    setGuardandoEdit(false)
     setModalEditClase(false)
     setClaseEditando(null)
+    // Guardar en background
+    const sb = createClient()
+    sb.from('clases').update({
+      fecha: claseEditando.fecha,
+      tema: claseEditando.tema,
+      observacion_coordinadora: claseEditando.descripcion,
+    }).eq('id', claseEditando.id).catch(e => console.error('Error editando clase:', e))
   }
 
   const generarReporte = () => {
@@ -365,16 +374,15 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
       const continuar = window.confirm('⚠️ No completaste la descripción de los temas vistos.\n\n¿Querés guardar igual? Podés editarla después.')
       if (!continuar) return
     }
-    setGuardando(true)
-    await agregarClase({
+    // Cerrar modal inmediatamente - guardar en background
+    setModalClase(false)
+    setNuevaClase({ fecha: hoy(), tema:'', descripcion:'' })
+    agregarClase({
       curso_id: c.id,
       fecha: nuevaClase.fecha,
       tema: nuevaClase.tema,
       observacion_coordinadora: nuevaClase.descripcion
-    })
-    setGuardando(false)
-    setModalClase(false)
-    setNuevaClase({ fecha: hoy(), tema:'', descripcion:'' })
+    }).catch(e => console.error('Error guardando clase:', e))
   }
 
   const toggleAsist = async (claseId: string, alumnoId: string, est: 'P'|'A'|'T') => {
