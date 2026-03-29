@@ -26,9 +26,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // Timeout de 8 segundos — si no responde, limpiar sesión
         timeout = setTimeout(async () => {
           console.warn('Sesión timeout — limpiando cookies')
-          await supabase.auth.signOut()
+          try { await supabase.auth.signOut() } catch {}
           setUsuario(null)
           setLoading(false)
+          window.location.replace('/')
         }, 5000)
 
         const { data: { session }, error } = await supabase.auth.getSession()
