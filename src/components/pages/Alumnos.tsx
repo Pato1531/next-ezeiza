@@ -174,7 +174,7 @@ export default function Alumnos() {
     return matchBusq && matchSinCurso && matchSinCuota && matchPago
   })
 
-  if (loading || (usuario?.rol === 'profesora' && loadingProf)) return <Loader />
+  // No bloquear con loading — mostrar contenido aunque esté cargando
 
   // ── LISTA ──
   if (vista === 'lista') return (
