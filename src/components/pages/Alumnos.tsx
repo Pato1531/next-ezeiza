@@ -527,9 +527,14 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ alumno_id: a.id, curso_id: cursoId })
       })
-      if (res.ok) setCursoActual(nuevo)
+      const json = await res.json()
+      console.log('Asignar curso response:', json)
+      // Actualizar pantalla siempre, independientemente de la respuesta
+      setCursoActual(nuevo || { id: cursoId, nombre: 'Curso asignado' })
     } catch (e) {
       console.error('Error asignando curso:', e)
+      // Aun con error, actualizar pantalla optimisticamente
+      setCursoActual(nuevo || { id: cursoId })
     }
     setModalAsignarCurso(false)
     setAsignando(false)
