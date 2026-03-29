@@ -109,11 +109,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     cancelTimeout()
     setLoading(true)
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       setLoading(false)
       return { error: 'Usuario o contrasena incorrectos.' }
     }
+    // Cargar usuario directamente sin esperar onAuthStateChange
+    if (data?.user) {
+      const ok = await cargarUsuario(data.user.id)
+      if (!ok) {
+        setLoading(false)
+        return { error: 'Usuario no encontrado en el sistema.' }
+      }
+    }
+    setLoading(false)
     return {}
   }
 
