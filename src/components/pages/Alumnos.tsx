@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useAlumnos, usePagos, useMiProfesora, useHistorialCursos, useCuotasHistorial } from '@/lib/hooks'
+import { useAlumnos, usePagos, useMiProfesora, useHistorialCursos, useCuotasHistorial, useCursos } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 
@@ -507,7 +507,7 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
   const { historial: histCuotas } = useCuotasHistorial(a.id)
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [cursoActual, setCursoActual] = useState<any>(null)
-  const [todosLosCursos, setTodosLosCursos] = useState<any[]>([])
+  const { cursos: todosLosCursos } = useCursos()
   const [modalAsignarCurso, setModalAsignarCurso] = useState(false)
   const [asignando, setAsignando] = useState(false)
   const [busqCurso, setBusqCurso] = useState('')
@@ -523,9 +523,7 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
         if (data && data.length > 0) setCursoActual((data[0] as any).cursos)
         else setCursoActual(null)
       })
-    // Cargar todos los cursos disponibles
-    sb.from('cursos').select('id, nombre, nivel, dias, hora_inicio, hora_fin').eq('activo', true).order('nombre')
-      .then(({ data }) => setTodosLosCursos(data || []))
+
   }, [a.id])
 
   const asignarCurso = async (cursoId: string) => {
