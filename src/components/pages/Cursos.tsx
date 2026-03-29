@@ -158,7 +158,7 @@ export default function Cursos() {
       <BtnG sm onClick={() => form?.id ? irADetalle(form.id) : irALista()} style={{marginBottom:'20px'}}>← Cancelar</BtnG>
       <div style={{fontSize:'20px',fontWeight:700,marginBottom:'20px'}}>{form?.id ? 'Editar curso' : 'Nuevo curso'}</div>
       <Card>
-        <Field2 label="Nombre del curso *"><Input value={form?.nombre||''} onChange={v=>setForm({...form,nombre:v})} placeholder="Ej: Intermediate B" /></Field2>
+        <Field2 label="Nombre del curso *"><Input value={form?.nombre||''} onChange={(v:string)=>setForm({...form,nombre:v})} placeholder="Ej: Intermediate B" /></Field2>
         <Row2>
           <Field2 label="Nivel">
             <select style={IS} value={form?.nivel||'Básico'} onChange={e=>setForm({...form,nivel:e.target.value})}>
@@ -592,7 +592,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
 
       {modalEditClase && claseEditando && <ModalSheet title="Editar clase" onClose={() => setModalEditClase(false)}>
         <Field2 label="Fecha"><input style={IS} type="date" value={claseEditando.fecha} onChange={e=>setClaseEditando({...claseEditando,fecha:e.target.value})} /></Field2>
-        <Field2 label="Tema"><Input value={claseEditando.tema||''} onChange={v=>setClaseEditando({...claseEditando,tema:v})} placeholder="Ej: Unit 5 — Reading comprehension" /></Field2>
+        <Field2 label="Tema"><Input value={claseEditando.tema||''} onChange={(v:string)=>setClaseEditando({...claseEditando,tema:v})} placeholder="Ej: Unit 5 — Reading comprehension" /></Field2>
         <Field2 label="Descripción de los temas vistos">
           <textarea
             value={claseEditando.descripcion||''}
@@ -610,7 +610,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
 
       {modalClase && <ModalSheet title="Nueva clase" onClose={() => setModalClase(false)}>
         <Field2 label="Fecha"><input style={IS} type="date" value={nuevaClase.fecha} onChange={e=>setNuevaClase({...nuevaClase,fecha:e.target.value})} /></Field2>
-        <Field2 label="Tema"><Input value={nuevaClase.tema} onChange={v=>setNuevaClase({...nuevaClase,tema:v})} placeholder="Ej: Unit 5 — Reading comprehension" /></Field2>
+        <Field2 label="Tema"><Input value={nuevaClase.tema} onChange={(v:string)=>setNuevaClase({...nuevaClase,tema:v})} placeholder="Ej: Unit 5 — Reading comprehension" /></Field2>
         <Field2 label="Descripción de los temas vistos">
           <textarea
             value={nuevaClase.descripcion}
@@ -1112,12 +1112,15 @@ function BuscadorModal({ alumnos, onSelect }: any) {
       </div>
       <div style={{maxHeight:'320px',overflowY:'auto'}}>
         {filtrados.map((a:any) => (
-          <div key={a.id} onClick={() => onSelect(a)}
-            style={{display:'flex',alignItems:'center',gap:'12px',padding:'10px',border:'1.5px solid var(--border)',borderRadius:'12px',marginBottom:'6px',cursor:'pointer'}}
+          <div key={a.id}
+            style={{display:'flex',alignItems:'center',gap:'12px',padding:'10px',border:'1.5px solid var(--border)',borderRadius:'12px',marginBottom:'6px'}}
             onMouseEnter={e=>(e.currentTarget.style.borderColor='var(--v)')}
             onMouseLeave={e=>(e.currentTarget.style.borderColor='var(--border)')}>
             <Av color={a.color} size={32}>{a.nombre[0]}{a.apellido[0]}</Av>
-            <div><div style={{fontWeight:600,fontSize:'14px'}}>{a.nombre} {a.apellido}</div><div style={{fontSize:'12px',color:'var(--text2)'}}>{a.nivel}</div></div>
+            <div style={{flex:1}}><div style={{fontWeight:600,fontSize:'14px'}}>{a.nombre} {a.apellido}</div><div style={{fontSize:'12px',color:'var(--text2)'}}>{a.nivel}</div></div>
+            <button onClick={() => onSelect(a)} style={{padding:'7px 16px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+              + Agregar
+            </button>
           </div>
         ))}
         {filtrados.length === 0 && <div style={{textAlign:'center',padding:'16px',color:'var(--text3)'}}>No se encontraron alumnos</div>}
