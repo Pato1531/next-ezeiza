@@ -285,17 +285,7 @@ export default function LoginPage() {
           {loading ? 'Ingresando...' : 'Ingresar'}
         </button>
 
-        {/* Info para demo */}
-        <div style={{
-          marginTop: '20px', padding: '14px', background: 'var(--vl)',
-          borderRadius: '12px', fontSize: '12px', color: 'var(--text2)', lineHeight: 1.6,
-        }}>
-          <strong style={{ color: 'var(--v)' }}>Usuarios de prueba:</strong><br />
-          director@nextezeiza.edu · contraseña: <code>1234</code><br />
-          laura@nextezeiza.edu (Coordinadora)<br />
-          maria@nextezeiza.edu (Secretaria)<br />
-          ana@nextezeiza.edu (Profesora)
-        </div>
+
       </div>
     </div>
   )
