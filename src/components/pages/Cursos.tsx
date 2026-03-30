@@ -605,7 +605,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
         <div style={{fontSize:'12px',color:'var(--text3)',textAlign:'center',marginTop:'6px'}}>P = Presente · A = Ausente · T = Tarde</div>
       </div>}
 
-      {tab === 'examenes' && <ExamenesTab cursoId={c.id} alumnosCurso={alumnosCurso} puedeEditar={puedeEditar} />}
+      {tab === 'examenes' && <ExamenesTab cursoId={c.id} alumnosCurso={alumnosCurso} puedeEditar={puedeEditar} puedeCrearExamen={true} />}
 
       {confirmDelete && <ModalSheet title="¿Eliminar curso?" onClose={onCancelDelete}>
         <p style={{fontSize:'14px',color:'var(--text2)',marginBottom:'20px'}}>Esta acción desactiva el curso y lo elimina del horario.</p>
@@ -674,7 +674,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
 }
 
 // ── EXAMENES TAB ──
-function ExamenesTab({ cursoId, alumnosCurso, puedeEditar }: any) {
+function ExamenesTab({ cursoId, alumnosCurso, puedeEditar, puedeCrearExamen }: any) {
   const { examenes, agregar, eliminar, recargar } = useExamenes(cursoId)
   const [selExamen, setSelExamen] = useState<any|null>(null)
   const [confirmDelExamen, setConfirmDelExamen] = useState<string|null>(null)
@@ -725,7 +725,7 @@ function ExamenesTab({ cursoId, alumnosCurso, puedeEditar }: any) {
       <SL style={{marginBottom:'10px'}}>Exámenes oficiales</SL>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'20px'}}>
         {/* MIDTERM */}
-        <div onClick={() => midterm ? setSelExamen(midterm) : crearPredefinido('midterm')}
+        <div onClick={() => midterm ? setSelExamen(midterm) : (puedeCrearExamen ? crearPredefinido('midterm') : null)}
           style={{background:midterm?'var(--vl)':'var(--white)',border:`1.5px solid ${midterm?'var(--v)':'var(--border)'}`,borderRadius:'16px',padding:'16px',cursor:'pointer',transition:'all .15s'}}
           onMouseEnter={e=>(e.currentTarget.style.borderColor='var(--v)')}
           onMouseLeave={e=>(e.currentTarget.style.borderColor=midterm?'var(--v)':'var(--border)')}>
@@ -747,7 +747,7 @@ function ExamenesTab({ cursoId, alumnosCurso, puedeEditar }: any) {
         </div>
 
         {/* FINAL */}
-        <div onClick={() => final ? setSelExamen(final) : crearPredefinido('final')}
+        <div onClick={() => final ? setSelExamen(final) : (puedeCrearExamen ? crearPredefinido('final') : null)}
           style={{background:final?'var(--vl)':'var(--white)',border:`1.5px solid ${final?'var(--v)':'var(--border)'}`,borderRadius:'16px',padding:'16px',cursor:'pointer',transition:'all .15s'}}
           onMouseEnter={e=>(e.currentTarget.style.borderColor='var(--v)')}
           onMouseLeave={e=>(e.currentTarget.style.borderColor=final?'var(--v)':'var(--border)')}>
@@ -772,7 +772,7 @@ function ExamenesTab({ cursoId, alumnosCurso, puedeEditar }: any) {
       {/* EXÁMENES LIBRES */}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
         <SL>Otros exámenes / Tests</SL>
-        {puedeEditar && <BtnP sm onClick={crearLibre} disabled={creando}>+ Nuevo test</BtnP>}
+        {puedeCrearExamen && <BtnP sm onClick={crearLibre} disabled={creando}>+ Nuevo test</BtnP>}
       </div>
       {libres.length === 0 && (
         <div style={{textAlign:'center',padding:'20px',color:'var(--text3)',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',fontSize:'13px'}}>
