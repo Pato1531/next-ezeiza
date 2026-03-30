@@ -547,14 +547,14 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
     setCursoActual(nuevo || { id: cursoId })
     setModalAsignarCurso(false)
     setAsignando(false)
-    // Guardar en DB en background
+    // Guardar en DB en background - primero borrar curso anterior, luego insertar nuevo
     const sb = createClient()
     sb.from('cursos_alumnos').delete().eq('alumno_id', a.id)
-      .then(() => sb.from('cursos_alumnos').insert({
+      .then(() => sb.from('cursos_alumnos').upsert({
         curso_id: cursoId,
         alumno_id: a.id,
         fecha_ingreso: new Date().toISOString().split('T')[0]
-      }))
+      }, { onConflict: 'curso_id,alumno_id', ignoreDuplicates: false }))
       .then(() => window.dispatchEvent(new CustomEvent('curso-alumno-updated')))
       .catch(e => console.error('Error guardando curso:', e))
   }
