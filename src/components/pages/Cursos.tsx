@@ -675,6 +675,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
 
 // ── EXAMENES TAB ──
 function ExamenesTab({ cursoId, alumnosCurso, puedeEditar, puedeCrearExamen }: any) {
+  const sb = createClient()
   const { examenes, agregar, eliminar, recargar } = useExamenes(cursoId)
   const [selExamen, setSelExamen] = useState<any|null>(null)
   const [confirmDelExamen, setConfirmDelExamen] = useState<string|null>(null)
@@ -780,16 +781,31 @@ function ExamenesTab({ cursoId, alumnosCurso, puedeEditar, puedeCrearExamen }: a
         </div>
       )}
       {libres.map(ex => (
-        <div key={ex.id} onClick={() => setSelExamen(ex)}
-          style={{display:'flex',alignItems:'center',gap:'12px',padding:'14px 16px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',marginBottom:'8px',cursor:'pointer'}}
+        <div key={ex.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'14px 16px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',marginBottom:'8px'}}
           onMouseEnter={e=>(e.currentTarget.style.borderColor='var(--v)')}
           onMouseLeave={e=>(e.currentTarget.style.borderColor='var(--border)')}>
           <div style={{fontSize:'20px'}}>📄</div>
-          <div style={{flex:1}}>
+          <div style={{flex:1,cursor:'pointer'}} onClick={() => setSelExamen(ex)}>
             <div style={{fontSize:'15px',fontWeight:600}}>{ex.nombre}</div>
             <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'2px'}}>{fmtFecha(ex.fecha)}</div>
           </div>
-          <Chevron />
+          {puedeCrearExamen && (
+            <div style={{display:'flex',gap:'6px',flexShrink:0}}>
+              <button onClick={async () => {
+                const nuevoNombre = prompt('Nuevo nombre del test:', ex.nombre)
+                if (!nuevoNombre || nuevoNombre === ex.nombre) return
+                await sb.from('examenes').update({ nombre: nuevoNombre }).eq('id', ex.id)
+                recargar()
+              }} style={{padding:'5px 10px',background:'var(--vl)',color:'var(--v)',border:'1px solid var(--v)',borderRadius:'7px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
+                Editar
+              </button>
+              <button onClick={() => setConfirmDelExamen(ex.id)}
+                style={{padding:'5px 10px',background:'var(--redl)',color:'var(--red)',border:'1px solid #f5c5c5',borderRadius:'7px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
+                Eliminar
+              </button>
+            </div>
+          )}
+          {!puedeCrearExamen && <Chevron />}
         </div>
       ))}
 
