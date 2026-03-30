@@ -210,12 +210,17 @@ export function useCursoAlumnos(cursoId: string) {
   const agregar = async (alumnoId: string) => {
     // Buscar alumno en el store global para actualizar UI inmediatamente
     const alumnoStore = (store['alumnos'] || []).find((a: any) => a.id === alumnoId)
-    if (alumnoStore) setData(prev => [...prev, alumnoStore]) // optimistic update
-    // Guardar en DB en background
-    supabase.from('cursos_alumnos').insert({
+    if (alumnoStore) setData(prev => {
+      // Evitar duplicados en UI
+      if (prev.find(a => a.id === alumnoId)) return prev
+      return [...prev, alumnoStore]
+    })
+    // Usar upsert para evitar errores de duplicado en DB
+    supabase.from('cursos_alumnos').upsert({
       curso_id: cursoId, alumno_id: alumnoId,
       fecha_ingreso: new Date().toISOString().split('T')[0]
-    }).then(({ error }) => {
+    }, { onConflict: 'curso_id,alumno_id', ignoreDuplicates: true })
+    .then(({ error }) => {
       if (error) { console.error('Error agregando alumno:', error); cargar() }
     }).catch(() => cargar())
     return true
