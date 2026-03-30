@@ -67,6 +67,26 @@ export function invalidateStore(key: string) {
   delete store[key]
 }
 
+// Auto-recargar datos críticos cada 60 segundos
+// Esto asegura que todos los usuarios vean cambios recientes
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    // Solo invalidar si hay listeners activos (alguien está viendo esa sección)
+    ['alumnos', 'cursos', 'profesoras'].forEach(key => {
+      if (listeners[key]?.size > 0 && store[key] !== undefined) {
+        delete store[key]
+        loadOnce(key, async () => {
+          const { data } = await supabase.from(key === 'profesoras' ? 'profesoras' : key)
+            .select('*')
+            .eq(key === 'profesoras' ? 'activa' : 'activo', true)
+            .order(key === 'alumnos' ? 'apellido' : 'nombre')
+          return data ?? []
+        })
+      }
+    })
+  }, 60000) // cada 60 segundos
+}
+
 // ── PROFESORAS ──
 export function useProfesoras() {
   const [data, isLoading] = useStore<Profesora>('profesoras', async () => {
@@ -275,11 +295,30 @@ export function useMiProfesora() {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    const user = supabase.auth.getUser()
-    user.then(({ data: { user } }) => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
       if (!user) { setIsLoading(false); return }
-      supabase.from('profesoras').select('*').eq('email', user.email).single()
-        .then(({ data }) => { setData(data ?? null); setIsLoading(false) })
+      // Buscar por email en profesoras (insensitive)
+      supabase.from('profesoras').select('*')
+        .ilike('email', user.email || '')
+        .limit(1)
+        .then(({ data: rows }) => {
+          if (rows && rows.length > 0) {
+            setData(rows[0])
+            setIsLoading(false)
+            return
+          }
+          // Fallback: buscar por nombre desde tabla usuarios
+          supabase.from('usuarios').select('nombre').eq('id', user.id).single()
+            .then(({ data: u }) => {
+              if (!u) { setIsLoading(false); return }
+              const nombre = u.nombre.split(' ')[0]
+              supabase.from('profesoras').select('*').ilike('nombre', `%${nombre}%`).limit(1)
+                .then(({ data: rows2 }) => {
+                  setData(rows2?.[0] ?? null)
+                  setIsLoading(false)
+                })
+            })
+        })
     })
   }, [])
 
