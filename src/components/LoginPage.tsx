@@ -20,6 +20,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [limpiado, setLimpiado] = useState(false)
 
   const handleSubmit = async () => {
     if (!email || !password) return
@@ -27,14 +28,18 @@ export default function LoginPage() {
     setError('')
     limpiarSesion()
     const result = await login(email, password)
-    if (result.error) {
-      setError('Usuario o contraseña incorrectos.')
-    }
+    if (result.error) setError('Usuario o contraseña incorrectos.')
     setLoading(false)
   }
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSubmit()
+  }
+
+  const handleLimpiar = () => {
+    limpiarSesion()
+    setLimpiado(true)
+    setTimeout(() => window.location.reload(), 1500)
   }
 
   return (
@@ -79,6 +84,11 @@ export default function LoginPage() {
         <button onClick={handleSubmit} disabled={loading || !email || !password}
           style={{ width: '100%', padding: '15px', background: loading ? 'var(--text3)' : 'var(--v)', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '16px', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', marginTop: '8px' }}>
           {loading ? 'Ingresando...' : 'Ingresar'}
+        </button>
+
+        <button onClick={handleLimpiar}
+          style={{ width: '100%', padding: '10px', marginTop: '10px', background: 'transparent', color: limpiado ? 'var(--green)' : 'var(--text3)', border: 'none', borderRadius: '10px', fontSize: '13px', cursor: 'pointer' }}>
+          {limpiado ? '✓ Listo — recargá la página para ingresar' : '¿Problemas para ingresar? Tocá acá'}
         </button>
       </div>
     </div>
