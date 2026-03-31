@@ -1,4 +1,4 @@
- 'use client'
+'use client'
 import { useState, useEffect } from 'react'
 import { useProfesoras, useHorasHistorial, useLiquidaciones } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
@@ -406,6 +406,7 @@ function LiquidacionTab({ prof, licencias }: any) {
   }, [prof.id])
 
   const base = (prof.horas_semana || 0) * 4 * (prof.tarifa_hora || 0)
+  const [montoCoord, setMontoCoord] = useState(prof.monto_coordinacion || 0)
 
   // Reemplazos que hizo ESTA docente (aparece como reemplazante en licencias de otras)
   const reemplazosHechos = licComoReemplazo
@@ -418,7 +419,7 @@ function LiquidacionTab({ prof, licencias }: any) {
     s + (l.reemplazo_horas > 0 ? l.reemplazo_horas : (l.dias || 0)) * (prof.tarifa_hora || 0), 0)
 
   const descLicFinal = descLic > 0 ? descLic : totalDescuentoAusencias
-  const total = base + totalReemplazosHechos + ajuste - descLicFinal
+  const total = base + totalReemplazosHechos + (prof.es_coordinadora ? montoCoord : 0) + ajuste - descLicFinal
 
   const confirmarLiquidacion = async () => {
     setGuardandoLiq(true)
@@ -491,6 +492,35 @@ function LiquidacionTab({ prof, licencias }: any) {
           </div>
         )}
       </div>
+
+      {/* COORDINACION */}
+      {prof.es_coordinadora && (
+        <div style={{margin:'6px 0 6px',padding:'14px',background:'#f2e8f9',borderRadius:'12px',border:'1.5px solid var(--v)'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
+            <div>
+              <div style={{fontSize:'13px',fontWeight:700,color:'var(--v)'}}>Monto de Coordinación</div>
+              <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'1px'}}>Adicional fijo por rol de coordinadora</div>
+            </div>
+            <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+              <span style={{fontSize:'13px',fontWeight:600,color:'var(--text2)'}}>$</span>
+              <input
+                type="number"
+                min="0"
+                value={montoCoord||''}
+                onChange={e => {
+                  const val = Math.abs(parseFloat(e.target.value)||0)
+                  setMontoCoord(val)
+                  // Guardar en DB
+                  createClient().from('profesoras').update({ monto_coordinacion: val }).eq('id', prof.id).catch(()=>{})
+                }}
+                placeholder="0"
+                style={{width:'120px',padding:'7px 10px',border:'1.5px solid var(--v)',borderRadius:'8px',fontSize:'14px',fontWeight:600,textAlign:'right',fontFamily:'Inter,sans-serif',outline:'none',color:'var(--text)',background:'var(--white)'}}
+              />
+            </div>
+          </div>
+          {montoCoord > 0 && <div style={{fontSize:'12px',fontWeight:600,color:'var(--v)',textAlign:'right'}}>+${montoCoord.toLocaleString('es-AR')}</div>}
+        </div>
+      )}
 
       {/* LICENCIAS */}
       <div style={{margin:'6px 0 14px',padding:'14px',background:'#fff5f5',borderRadius:'12px',border:'1.5px solid #f5c5c5'}}>
