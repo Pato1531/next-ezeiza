@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useProfesoras, useHorasHistorial, useLiquidaciones } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
@@ -24,7 +24,7 @@ export default function Profesoras() {
   const [guardando, setGuardando] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [modalLic, setModalLic] = useState(false)
-  const [lic, setLic] = useState({ tipo:'Licencia médica', fecha_desde:hoy(), fecha_hasta:hoy(), observaciones:'', reemplazo_nombre:'', reemplazo_horas:0, es_paga:false })
+  const [lic, setLic] = useState({ tipo:'Licencia médica', fecha_desde:hoy(), fecha_hasta:hoy(), observaciones:'', reemplazo_nombre:'', reemplazo_horas:0, es_paga:false, reemplazo_profesora_id:'' })
   const [licEditando, setLicEditando] = useState<any>(null)
   const [modalEditLic, setModalEditLic] = useState(false)
   const [licencias, setLicencias] = useState<any[]>([])
@@ -104,6 +104,7 @@ export default function Profesoras() {
       es_paga: licEditando.es_paga,
       reemplazo_nombre: licEditando.reemplazo_nombre,
       reemplazo_horas: licEditando.reemplazo_horas,
+      reemplazo_profesora_id: licEditando.reemplazo_profesora_id || null,
       observaciones: licEditando.observaciones,
     }).eq('id', licEditando.id).catch(e => console.error('Error editando licencia:', e))
   }
@@ -298,10 +299,18 @@ export default function Profesoras() {
               <option value="no">No</option>
             </select>
           </Field2>
-          <Field2 label="Docente reemplazo (opcional)">
-            <Input value={licEditando.reemplazo_nombre||''} onChange={(v:string)=>setLicEditando({...licEditando,reemplazo_nombre:v})} placeholder="Nombre del reemplazo..." />
+          <Field2 label={licEditando.tipo==='Reemplazo docente'?'Docente que reemplazó *':'Docente reemplazo (opcional)'}>
+            <select style={IS} value={licEditando.reemplazo_profesora_id||''} onChange={e => {
+              const p = profesoras.find((x:any) => x.id === e.target.value)
+              setLicEditando({...licEditando, reemplazo_profesora_id: e.target.value, reemplazo_nombre: p ? p.nombre+' '+p.apellido : ''})
+            }}>
+              <option value="">— Seleccionar docente —</option>
+              {profesoras.filter((p:any) => p.id !== selId).map((p:any) => (
+                <option key={p.id} value={p.id}>{p.nombre} {p.apellido}</option>
+              ))}
+            </select>
           </Field2>
-          {licEditando.reemplazo_nombre && <Field2 label="Horas dictadas por reemplazo">
+          {(licEditando.reemplazo_profesora_id||licEditando.reemplazo_nombre) && <Field2 label="Horas dictadas por reemplazo">
             <input style={IS} type="number" min="0" value={licEditando.reemplazo_horas||0} onChange={e=>setLicEditando({...licEditando,reemplazo_horas:Number(e.target.value)})} />
           </Field2>}
           <Field2 label="Observaciones"><Input value={licEditando.observaciones||''} onChange={(v:string)=>setLicEditando({...licEditando,observaciones:v})} placeholder="Opcional..." /></Field2>
@@ -335,14 +344,22 @@ export default function Profesoras() {
               <option value="no">No</option>
             </select>
           </Field2>
-          <Field2 label="Docente reemplazo (opcional)">
-            <Input value={lic.reemplazo_nombre} onChange={(v:string)=>setLic({...lic,reemplazo_nombre:v})} placeholder="Nombre del reemplazo..." />
+          <Field2 label={lic.tipo === 'Reemplazo docente' ? 'Docente que reemplazó *' : 'Docente reemplazo (opcional)'}>
+            <select style={IS} value={lic.reemplazo_profesora_id||''} onChange={e => {
+              const p = profesoras.find((x:any) => x.id === e.target.value)
+              setLic({...lic, reemplazo_profesora_id: e.target.value, reemplazo_nombre: p ? p.nombre+' '+p.apellido : ''})
+            }}>
+              <option value="">— Seleccionar docente —</option>
+              {profesoras.filter((p:any) => p.id !== selId).map((p:any) => (
+                <option key={p.id} value={p.id}>{p.nombre} {p.apellido}</option>
+              ))}
+            </select>
           </Field2>
-          {lic.reemplazo_nombre && <Field2 label="Horas dictadas por reemplazo">
+          {lic.reemplazo_profesora_id && <Field2 label="Horas dictadas por reemplazo">
             <input style={IS} type="number" min="0" value={lic.reemplazo_horas} onChange={e=>setLic({...lic,reemplazo_horas:Number(e.target.value)})} placeholder="0" />
           </Field2>}
-          {lic.reemplazo_nombre && <div style={{padding:'10px 12px',background:'var(--vl)',borderRadius:'10px',fontSize:'12px',color:'var(--v)',marginBottom:'8px'}}>
-            💡 Las horas del reemplazo <strong>se suman</strong> a la liquidación del director como costo extra.
+          {lic.reemplazo_profesora_id && <div style={{padding:'10px 12px',background:'var(--vl)',borderRadius:'10px',fontSize:'12px',color:'var(--v)',marginBottom:'8px'}}>
+            💡 Suma en liquidación de {lic.reemplazo_nombre} y resta en la docente ausente.
           </div>}
           <Field2 label="Observaciones"><Input value={lic.observaciones} onChange={(v:string)=>setLic({...lic,observaciones:v})} placeholder="Opcional..." /></Field2>
           <div style={{display:'flex',gap:'10px',marginTop:'8px'}}>
@@ -371,25 +388,31 @@ function LiquidacionTab({ prof, licencias }: any) {
 
   const { liquidaciones, guardar: guardarLiq } = useLiquidaciones(prof.id)
   const { historial: histHoras } = useHorasHistorial(prof.id)
+  const [licComoReemplazo, setLicComoReemplazo] = useState<any[]>([])
+
+  useEffect(() => {
+    if (!prof.id) return
+    createClient().from('licencias_profesoras')
+      .select('*, profesoras!licencias_profesoras_profesora_id_fkey(nombre,apellido,tarifa_hora)')
+      .eq('reemplazo_profesora_id', prof.id)
+      .then(({ data }) => setLicComoReemplazo(data || []))
+      .catch(() => {})
+  }, [prof.id])
 
   const base = (prof.horas_semana || 0) * 4 * (prof.tarifa_hora || 0)
-  // Licencias impagas — descuentan de la liquidación de la profesora
-  const totalLicImpaga = licencias.reduce((s: number, l: any) => {
-    if (!l.es_paga) return s + (l.dias || 0) * (prof.tarifa_hora || 0)
-    return s
-  }, 0)
-  // Licencias pagas — el director paga igual a la profe + el costo del reemplazo
-  const totalLicPaga = licencias.reduce((s: number, l: any) => {
-    if (l.es_paga && l.reemplazo_nombre && l.reemplazo_horas > 0) return s + (l.reemplazo_horas * (prof.tarifa_hora || 0))
-    return s
-  }, 0)
-  // Reemplazos en licencias impagas — costo extra para el director
-  const totalReemplazos = licencias.reduce((s: number, l: any) => {
-    if (!l.es_paga && l.reemplazo_nombre && l.reemplazo_horas > 0) return s + (l.reemplazo_horas * (prof.tarifa_hora || 0))
-    return s
-  }, 0)
-  const descLicFinal = descLic > 0 ? descLic : totalLicImpaga
-  const total = base + ajuste - descLicFinal
+
+  // Reemplazos que hizo ESTA docente (aparece como reemplazante en licencias de otras)
+  const reemplazosHechos = licComoReemplazo
+  const totalReemplazosHechos = reemplazosHechos.reduce((s:number, l:any) =>
+    s + (l.reemplazo_horas || 0) * (prof.tarifa_hora || 0), 0)
+
+  // Descuento por ausencias impagas de esta docente
+  const ausenciasImpagas = licencias.filter((l:any) => !l.es_paga)
+  const totalDescuentoAusencias = ausenciasImpagas.reduce((s:number, l:any) =>
+    s + (l.dias || 0) * (prof.tarifa_hora || 0), 0)
+
+  const descLicFinal = descLic > 0 ? descLic : totalDescuentoAusencias
+  const total = base + totalReemplazosHechos + ajuste - descLicFinal
 
   const confirmarLiquidacion = async () => {
     setGuardandoLiq(true)
@@ -477,7 +500,7 @@ function LiquidacionTab({ prof, licencias }: any) {
               min="0"
               value={descLic||''}
               onChange={e => setDescLic(Math.abs(parseFloat(e.target.value)||0))}
-              placeholder={totalLicImpaga>0?totalLicImpaga.toString():'0'}
+              placeholder={totalDescuentoAusencias>0?totalDescuentoAusencias.toString():'0'}
               style={{width:'110px',padding:'7px 10px',border:'1.5px solid #f5c5c5',borderRadius:'8px',fontSize:'14px',fontWeight:600,textAlign:'right',fontFamily:'Inter,sans-serif',outline:'none',color:'var(--text)',background:'var(--white)'}}
             />
           </div>
@@ -491,10 +514,27 @@ function LiquidacionTab({ prof, licencias }: any) {
         />
         {licencias.length > 0 && (
           <div style={{marginTop:'8px',fontSize:'11px',color:'var(--text3)'}}>
-            {licencias.length} licencia(s) registrada(s) · Descuento automático impagas: ${totalLicImpaga.toLocaleString('es-AR')}
+            {licencias.length} licencia(s) · Descuento automático ausencias impagas: ${totalDescuentoAusencias.toLocaleString('es-AR')}
           </div>
         )}
       </div>
+
+      {/* REEMPLAZOS REALIZADOS */}
+      {totalReemplazosHechos > 0 && (
+        <div style={{margin:'6px 0 14px',padding:'14px',background:'var(--greenl)',borderRadius:'12px',border:'1.5px solid var(--green)'}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <div>
+              <div style={{fontSize:'13px',fontWeight:700,color:'var(--green)'}}>+ Reemplazos realizados</div>
+              {reemplazosHechos.map((l:any,i:number) => (
+                <div key={i} style={{fontSize:'11px',color:'var(--text2)',marginTop:'3px'}}>
+                  {(l.profesoras as any)?.nombre} {(l.profesoras as any)?.apellido} · {l.fecha_desde} · {l.reemplazo_horas}hs × ${prof.tarifa_hora?.toLocaleString('es-AR')}/h
+                </div>
+              ))}
+            </div>
+            <div style={{fontSize:'18px',fontWeight:700,color:'var(--green)',flexShrink:0}}>+${totalReemplazosHechos.toLocaleString('es-AR')}</div>
+          </div>
+        </div>
+      )}
 
       {/* TOTAL */}
       <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',background:'var(--vl)',borderRadius:'12px',padding:'16px',border:'2px solid var(--v)'}}>
