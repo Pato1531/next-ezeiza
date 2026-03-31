@@ -20,27 +20,30 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [limpiado, setLimpiado] = useState(false)
 
   const handleSubmit = async () => {
     if (!email || !password) return
     setLoading(true)
     setError('')
+    // Limpiar sesión vieja antes de intentar
     limpiarSesion()
     const result = await login(email, password)
-    if (result.error) setError(result.error)
+    if (result.error) {
+      // Si falla, limpiar de nuevo y reintentar automáticamente una vez
+      limpiarSesion()
+      await new Promise(r => setTimeout(r, 800))
+      const retry = await login(email, password)
+      if (retry.error) {
+        setError('Usuario o contraseña incorrectos.')
+        setLoading(false)
+        return
+      }
+    }
     setLoading(false)
   }
 
   const handleKey = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter') handleSubmit()
-  }
-
-  const handleLimpiar = () => {
-    limpiarSesion()
-    setLimpiado(true)
-    // Recargar automáticamente después de 1.5 segundos
-    setTimeout(() => window.location.reload(), 1500)
   }
 
   return (
@@ -57,12 +60,12 @@ export default function LoginPage() {
             <span style={{ color: 'var(--v)' }}>Next</span> Ezeiza
           </div>
           <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '.08em', textTransform: 'uppercase' }}>
-            Instituto de Ingles - Panel de gestion
+            Instituto de Inglés · Panel de gestión
           </div>
         </div>
 
         <div style={{ fontSize: '18px', fontWeight: 600, marginBottom: '4px' }}>Bienvenido</div>
-        <div style={{ fontSize: '14px', color: 'var(--text2)', marginBottom: '24px' }}>Ingresa con tus credenciales</div>
+        <div style={{ fontSize: '14px', color: 'var(--text2)', marginBottom: '24px' }}>Ingresá con tus credenciales</div>
 
         {error && (
           <div style={{ background: 'var(--redl)', color: 'var(--red)', borderRadius: '10px', padding: '10px 14px', fontSize: '13px', marginBottom: '14px', border: '1px solid #f5c5c5' }}>
@@ -77,20 +80,19 @@ export default function LoginPage() {
         </div>
 
         <div style={{ marginBottom: '16px' }}>
-          <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '.05em' }}>Contrasena</label>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={handleKey} placeholder="..."
+          <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '.05em' }}>Contraseña</label>
+          <input type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={handleKey} placeholder="••••••••"
             style={{ width: '100%', padding: '14px 16px', border: password ? '1.5px solid var(--v)' : '1.5px solid var(--border)', borderRadius: '12px', fontSize: '15px', outline: 'none', background: 'var(--white)', color: 'var(--text)' }} />
         </div>
 
         <button onClick={handleSubmit} disabled={loading || !email || !password}
           style={{ width: '100%', padding: '15px', background: loading ? 'var(--text3)' : 'var(--v)', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '16px', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', marginTop: '8px' }}>
-          {loading ? 'Ingresando...' : 'Ingresar'}
+          {loading ? 'Verificando...' : 'Ingresar'}
         </button>
 
-        <button onClick={handleLimpiar}
-          style={{ width: '100%', padding: '10px', marginTop: '10px', background: 'transparent', color: limpiado ? 'var(--green)' : 'var(--text3)', border: 'none', borderRadius: '10px', fontSize: '13px', cursor: 'pointer' }}>
-          {limpiado ? '✓ Listo — recargá la página para ingresar' : '¿Problemas para ingresar? Tocá acá'}
-        </button>
+        <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--text3)', textAlign: 'center' }}>
+          Si tenés problemas para entrar, cerrá sesión y volvé a ingresar.
+        </div>
       </div>
     </div>
   )
