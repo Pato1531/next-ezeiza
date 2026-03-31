@@ -207,7 +207,8 @@ export default function Profesoras() {
         <div style={{display:'flex',gap:'6px',marginBottom:'18px',overflowX:'auto'}}>
           <TabBtn active={tab==='datos'} onClick={() => setTab('datos')}>Datos</TabBtn>
           <TabBtn active={tab==='asistencia'} onClick={() => setTab('asistencia')}>Asistencia</TabBtn>
-          {puedeEditar && <>\n            <TabBtn active={tab==='licencias'} onClick={() => setTab('licencias')}>Licencias</TabBtn>
+          {puedeEditar && <>
+            <TabBtn active={tab==='licencias'} onClick={() => setTab('licencias')}>Licencias</TabBtn>
             <TabBtn active={tab==='liquidacion'} onClick={() => setTab('liquidacion')}>Liquidación</TabBtn>
           </>}
           {!puedeEditar && puedeCargarLicencias && (
@@ -476,7 +477,7 @@ function LiquidacionTab({ prof, licencias }: any) {
               min="0"
               value={descLic||''}
               onChange={e => setDescLic(Math.abs(parseFloat(e.target.value)||0))}
-              placeholder={totalLic>0?totalLic.toString():'0'}
+              placeholder={totalLicImpaga>0?totalLicImpaga.toString():'0'}
               style={{width:'110px',padding:'7px 10px',border:'1.5px solid #f5c5c5',borderRadius:'8px',fontSize:'14px',fontWeight:600,textAlign:'right',fontFamily:'Inter,sans-serif',outline:'none',color:'var(--text)',background:'var(--white)'}}
             />
           </div>
@@ -490,7 +491,7 @@ function LiquidacionTab({ prof, licencias }: any) {
         />
         {licencias.length > 0 && (
           <div style={{marginTop:'8px',fontSize:'11px',color:'var(--text3)'}}>
-            {licencias.length} licencia(s) registrada(s) · Descuento automático injustificadas: ${totalLic.toLocaleString('es-AR')}
+            {licencias.length} licencia(s) registrada(s) · Descuento automático impagas: ${totalLicImpaga.toLocaleString('es-AR')}
           </div>
         )}
       </div>
