@@ -65,6 +65,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     getSession()
 
+    // Refrescar sesión cuando la app vuelve al foco (celular/desktop)
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!session) {
+          setUsuario(null)
+        } else {
+          // Refrescar token silenciosamente
+          await supabase.auth.refreshSession()
+        }
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         cancelTimeout()
@@ -85,6 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelTimeout()
       subscription.unsubscribe()
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [])
 
