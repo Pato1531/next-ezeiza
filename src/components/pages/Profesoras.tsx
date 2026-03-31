@@ -10,7 +10,7 @@ const IS = { width:'100%', padding:'10px 12px', border:'1.5px solid var(--border
 const NIVELES = ['Básico','Intermedio','Advanced','Cambridge']
 const COLORES = ['#652f8d','#2d7a4f','#1a6b8a','#c0392b','#b45309','#1B6B4A','#7d3aab','#2d5016']
 const MESES_S = ['Ene','Feb','Mar','Abr','May','Jun']
-const TIPOS_LIC = ['Licencia médica','Licencia personal','Ausencia justificada','Ausencia injustificada','Vacaciones']
+const TIPOS_LIC = ['Licencia médica','Licencia personal','Ausencia justificada','Ausencia injustificada','Vacaciones','Reemplazo docente']
 
 type Vista = 'lista' | 'detalle' | 'form'
 
@@ -25,6 +25,8 @@ export default function Profesoras() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [modalLic, setModalLic] = useState(false)
   const [lic, setLic] = useState({ tipo:'Licencia médica', fecha_desde:hoy(), fecha_hasta:hoy(), observaciones:'', reemplazo_nombre:'', reemplazo_horas:0, es_paga:false })
+  const [licEditando, setLicEditando] = useState<any>(null)
+  const [modalEditLic, setModalEditLic] = useState(false)
   const [licencias, setLicencias] = useState<any[]>([])
 
   const puedeEditar = usuario?.rol === 'director'
@@ -86,8 +88,30 @@ export default function Profesoras() {
     setModalLic(false)
     const sb = createClient()
     sb.from('licencias_profesoras').insert({ ...lic, profesora_id: selId }).select().single()
-      .then(({ data }) => { if (data) setLicencias(prev => [...prev, data]) })
-      .catch(() => {})
+      .then(({ data }) => { if (data) setLicencias(prev => [data, ...prev]) })
+      .catch(e => console.error('Error guardando licencia:', e))
+  }
+
+  const guardarEditLic = async () => {
+    if (!licEditando) return
+    setModalEditLic(false)
+    setLicencias(prev => prev.map(l => l.id === licEditando.id ? licEditando : l))
+    const sb = createClient()
+    sb.from('licencias_profesoras').update({
+      tipo: licEditando.tipo,
+      fecha_desde: licEditando.fecha_desde,
+      fecha_hasta: licEditando.fecha_hasta,
+      es_paga: licEditando.es_paga,
+      reemplazo_nombre: licEditando.reemplazo_nombre,
+      reemplazo_horas: licEditando.reemplazo_horas,
+      observaciones: licEditando.observaciones,
+    }).eq('id', licEditando.id).catch(e => console.error('Error editando licencia:', e))
+  }
+
+  const eliminarLic = async (id: string) => {
+    setLicencias(prev => prev.filter(l => l.id !== id))
+    const sb = createClient()
+    sb.from('licencias_profesoras').delete().eq('id', id).catch(e => console.error('Error eliminando licencia:', e))
   }
 
   // No bloquear con loading
@@ -223,23 +247,68 @@ export default function Profesoras() {
             {puedeCargarLicencias && <BtnP sm onClick={() => setModalLic(true)}>+ Nueva</BtnP>}
           </div>
           {licencias.length === 0 && <div style={{textAlign:'center',padding:'20px',color:'var(--text3)'}}>Sin licencias registradas</div>}
-          {licencias.map((l:any,i:number) => (
-            <div key={i} style={{display:'flex',gap:'12px',padding:'12px 0',borderBottom:'1px solid var(--border)'}}>
-              <div style={{flex:1}}>
-                <div style={{fontWeight:600}}>{l.tipo}</div>
-                <div style={{fontSize:'12px',color:'var(--text2)'}}>{l.fecha_desde}{l.fecha_hasta!==l.fecha_desde?' → '+l.fecha_hasta:''}</div>
-              </div>
-              <div style={{textAlign:'right'}}>
-                <div style={{fontWeight:700}}>{l.dias||'—'}d</div>
-                {l.tipo === 'Ausencia injustificada' && (
-                  <div style={{fontSize:'10px',color:'var(--red)',fontWeight:600}}>Descuenta</div>
-                )}
+          {licencias.map((l:any) => (
+            <div key={l.id||l.fecha_desde} style={{padding:'12px 0',borderBottom:'1px solid var(--border)'}}>
+              <div style={{display:'flex',gap:'10px',alignItems:'flex-start'}}>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:600,fontSize:'14px'}}>{l.tipo}</div>
+                  <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'2px'}}>{l.fecha_desde}{l.fecha_hasta!==l.fecha_desde?' → '+l.fecha_hasta:''}</div>
+                  {l.reemplazo_nombre && <div style={{fontSize:'11px',color:'var(--v)',marginTop:'2px'}}>Reemplazo: {l.reemplazo_nombre} · {l.reemplazo_horas}hs</div>}
+                </div>
+                <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:'4px',flexShrink:0}}>
+                  <span style={{fontSize:'10px',fontWeight:700,padding:'2px 8px',borderRadius:'20px',
+                    background: l.es_paga ? 'var(--greenl)' : 'var(--redl)',
+                    color: l.es_paga ? 'var(--green)' : 'var(--red)'}}>
+                    {l.es_paga ? 'Paga' : 'Impaga'}
+                  </span>
+                  {puedeCargarLicencias && (
+                    <div style={{display:'flex',gap:'4px'}}>
+                      <button onClick={() => { setLicEditando({...l}); setModalEditLic(true) }}
+                        style={{padding:'3px 8px',background:'var(--vl)',color:'var(--v)',border:'1px solid var(--v)',borderRadius:'6px',fontSize:'11px',fontWeight:600,cursor:'pointer'}}>
+                        Editar
+                      </button>
+                      <button onClick={() => eliminarLic(l.id)}
+                        style={{padding:'3px 8px',background:'var(--redl)',color:'var(--red)',border:'1px solid #f5c5c5',borderRadius:'6px',fontSize:'11px',fontWeight:600,cursor:'pointer'}}>
+                        Eliminar
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           ))}
         </Card>}
 
         {tab === 'liquidacion' && <LiquidacionTab prof={sel} licencias={licencias} />}
+
+        {modalEditLic && licEditando && <ModalSheet title="Editar licencia" onClose={() => setModalEditLic(false)}>
+          <Field2 label="Tipo">
+            <select style={IS} value={licEditando.tipo} onChange={e=>setLicEditando({...licEditando,tipo:e.target.value})}>
+              {TIPOS_LIC.map(t=><option key={t}>{t}</option>)}
+            </select>
+          </Field2>
+          <Row2>
+            <Field2 label="Desde"><input style={IS} type="date" value={licEditando.fecha_desde} onChange={e=>setLicEditando({...licEditando,fecha_desde:e.target.value})} /></Field2>
+            <Field2 label="Hasta"><input style={IS} type="date" value={licEditando.fecha_hasta} onChange={e=>setLicEditando({...licEditando,fecha_hasta:e.target.value})} /></Field2>
+          </Row2>
+          <Field2 label="¿Licencia paga?">
+            <select style={IS} value={licEditando.es_paga ? 'si' : 'no'} onChange={e=>setLicEditando({...licEditando,es_paga:e.target.value==='si'})}>
+              <option value="si">Sí</option>
+              <option value="no">No</option>
+            </select>
+          </Field2>
+          <Field2 label="Docente reemplazo (opcional)">
+            <Input value={licEditando.reemplazo_nombre||''} onChange={(v:string)=>setLicEditando({...licEditando,reemplazo_nombre:v})} placeholder="Nombre del reemplazo..." />
+          </Field2>
+          {licEditando.reemplazo_nombre && <Field2 label="Horas dictadas por reemplazo">
+            <input style={IS} type="number" min="0" value={licEditando.reemplazo_horas||0} onChange={e=>setLicEditando({...licEditando,reemplazo_horas:Number(e.target.value)})} />
+          </Field2>}
+          <Field2 label="Observaciones"><Input value={licEditando.observaciones||''} onChange={(v:string)=>setLicEditando({...licEditando,observaciones:v})} placeholder="Opcional..." /></Field2>
+          <div style={{display:'flex',gap:'10px',marginTop:'8px'}}>
+            <BtnG style={{flex:1}} onClick={() => setModalEditLic(false)}>Cancelar</BtnG>
+            <BtnP style={{flex:2}} onClick={guardarEditLic}>Guardar cambios</BtnP>
+          </div>
+        </ModalSheet>}
 
         {confirmDelete && <ModalSheet title="¿Eliminar docente?" onClose={() => setConfirmDelete(false)}>
           <p style={{fontSize:'14px',color:'var(--text2)',marginBottom:'20px'}}>Esta acción desactiva a la docente del sistema.</p>
@@ -261,8 +330,8 @@ export default function Profesoras() {
           </Row2>
           <Field2 label="¿Licencia paga?">
             <select style={IS} value={lic.es_paga ? 'si' : 'no'} onChange={e=>setLic({...lic,es_paga:e.target.value==='si'})}>
-              <option value="no">No paga — descuenta en liquidación</option>
-              <option value="si">Paga — no afecta liquidación</option>
+              <option value="si">Sí</option>
+              <option value="no">No</option>
             </select>
           </Field2>
           <Field2 label="Docente reemplazo (opcional)">
@@ -304,16 +373,21 @@ function LiquidacionTab({ prof, licencias }: any) {
 
   const base = (prof.horas_semana || 0) * 4 * (prof.tarifa_hora || 0)
   // Licencias impagas — descuentan de la liquidación de la profesora
-  const totalLic = licencias.reduce((s: number, l: any) => {
+  const totalLicImpaga = licencias.reduce((s: number, l: any) => {
     if (!l.es_paga) return s + (l.dias || 0) * (prof.tarifa_hora || 0)
     return s
   }, 0)
-  // Reemplazos — costo extra que suma en la liquidación del director
-  const totalReemplazos = licencias.reduce((s: number, l: any) => {
-    if (l.reemplazo_nombre && l.reemplazo_horas > 0) return s + (l.reemplazo_horas * (prof.tarifa_hora || 0))
+  // Licencias pagas — el director paga igual a la profe + el costo del reemplazo
+  const totalLicPaga = licencias.reduce((s: number, l: any) => {
+    if (l.es_paga && l.reemplazo_nombre && l.reemplazo_horas > 0) return s + (l.reemplazo_horas * (prof.tarifa_hora || 0))
     return s
   }, 0)
-  const descLicFinal = descLic > 0 ? descLic : totalLic
+  // Reemplazos en licencias impagas — costo extra para el director
+  const totalReemplazos = licencias.reduce((s: number, l: any) => {
+    if (!l.es_paga && l.reemplazo_nombre && l.reemplazo_horas > 0) return s + (l.reemplazo_horas * (prof.tarifa_hora || 0))
+    return s
+  }, 0)
+  const descLicFinal = descLic > 0 ? descLic : totalLicImpaga
   const total = base + ajuste - descLicFinal
 
   const confirmarLiquidacion = async () => {
