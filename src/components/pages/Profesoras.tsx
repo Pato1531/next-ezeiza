@@ -24,7 +24,7 @@ export default function Profesoras() {
   const [guardando, setGuardando] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [modalLic, setModalLic] = useState(false)
-  const [lic, setLic] = useState({ tipo:'Licencia médica', fecha_desde:hoy(), fecha_hasta:hoy(), observaciones:'' })
+  const [lic, setLic] = useState({ tipo:'Licencia médica', fecha_desde:hoy(), fecha_hasta:hoy(), observaciones:'', reemplazo_nombre:'', reemplazo_horas:0, es_paga:false })
   const [licencias, setLicencias] = useState<any[]>([])
 
   const puedeEditar = usuario?.rol === 'director'
@@ -259,6 +259,21 @@ export default function Profesoras() {
             <Field2 label="Desde"><input style={IS} type="date" value={lic.fecha_desde} onChange={e=>setLic({...lic,fecha_desde:e.target.value})} /></Field2>
             <Field2 label="Hasta"><input style={IS} type="date" value={lic.fecha_hasta} onChange={e=>setLic({...lic,fecha_hasta:e.target.value})} /></Field2>
           </Row2>
+          <Field2 label="¿Licencia paga?">
+            <select style={IS} value={lic.es_paga ? 'si' : 'no'} onChange={e=>setLic({...lic,es_paga:e.target.value==='si'})}>
+              <option value="no">No paga — descuenta en liquidación</option>
+              <option value="si">Paga — no afecta liquidación</option>
+            </select>
+          </Field2>
+          <Field2 label="Docente reemplazo (opcional)">
+            <Input value={lic.reemplazo_nombre} onChange={(v:string)=>setLic({...lic,reemplazo_nombre:v})} placeholder="Nombre del reemplazo..." />
+          </Field2>
+          {lic.reemplazo_nombre && <Field2 label="Horas dictadas por reemplazo">
+            <input style={IS} type="number" min="0" value={lic.reemplazo_horas} onChange={e=>setLic({...lic,reemplazo_horas:Number(e.target.value)})} placeholder="0" />
+          </Field2>}
+          {lic.reemplazo_nombre && <div style={{padding:'10px 12px',background:'var(--vl)',borderRadius:'10px',fontSize:'12px',color:'var(--v)',marginBottom:'8px'}}>
+            💡 Las horas del reemplazo <strong>se suman</strong> a la liquidación del director como costo extra.
+          </div>}
           <Field2 label="Observaciones"><Input value={lic.observaciones} onChange={(v:string)=>setLic({...lic,observaciones:v})} placeholder="Opcional..." /></Field2>
           <div style={{display:'flex',gap:'10px',marginTop:'8px'}}>
             <BtnG style={{flex:1}} onClick={() => setModalLic(false)}>Cancelar</BtnG>
@@ -288,8 +303,14 @@ function LiquidacionTab({ prof, licencias }: any) {
   const { historial: histHoras } = useHorasHistorial(prof.id)
 
   const base = (prof.horas_semana || 0) * 4 * (prof.tarifa_hora || 0)
+  // Licencias impagas — descuentan de la liquidación de la profesora
   const totalLic = licencias.reduce((s: number, l: any) => {
-    if (l.tipo === 'Ausencia injustificada') return s + (l.dias || 0) * (prof.tarifa_hora || 0)
+    if (!l.es_paga) return s + (l.dias || 0) * (prof.tarifa_hora || 0)
+    return s
+  }, 0)
+  // Reemplazos — costo extra que suma en la liquidación del director
+  const totalReemplazos = licencias.reduce((s: number, l: any) => {
+    if (l.reemplazo_nombre && l.reemplazo_horas > 0) return s + (l.reemplazo_horas * (prof.tarifa_hora || 0))
     return s
   }, 0)
   const descLicFinal = descLic > 0 ? descLic : totalLic
