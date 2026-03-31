@@ -25,19 +25,10 @@ export default function LoginPage() {
     if (!email || !password) return
     setLoading(true)
     setError('')
-    // Limpiar sesión vieja antes de intentar
     limpiarSesion()
     const result = await login(email, password)
     if (result.error) {
-      // Si falla, limpiar de nuevo y reintentar automáticamente una vez
-      limpiarSesion()
-      await new Promise(r => setTimeout(r, 800))
-      const retry = await login(email, password)
-      if (retry.error) {
-        setError('Usuario o contraseña incorrectos.')
-        setLoading(false)
-        return
-      }
+      setError('Usuario o contraseña incorrectos.')
     }
     setLoading(false)
   }
@@ -87,12 +78,8 @@ export default function LoginPage() {
 
         <button onClick={handleSubmit} disabled={loading || !email || !password}
           style={{ width: '100%', padding: '15px', background: loading ? 'var(--text3)' : 'var(--v)', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '16px', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', marginTop: '8px' }}>
-          {loading ? 'Verificando...' : 'Ingresar'}
+          {loading ? 'Ingresando...' : 'Ingresar'}
         </button>
-
-        <div style={{ marginTop: '12px', fontSize: '12px', color: 'var(--text3)', textAlign: 'center' }}>
-          Si tenés problemas para entrar, cerrá sesión y volvé a ingresar.
-        </div>
       </div>
     </div>
   )
