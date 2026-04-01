@@ -47,8 +47,7 @@ export default function Reportes() {
   }
 
   const exportAusentesPDF = () => {
-    const win = window.open('','_blank'); if(!win)return
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Ausentes</title>
+    const _rhtml = (`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Ausentes</title>
     <style>body{font-family:sans-serif;padding:24px;font-size:13px}h1{color:#652f8d;font-size:18px}
     .logo{font-size:18px;font-weight:700}.logo span{color:#652f8d}
     .hd{display:flex;justify-content:space-between;border-bottom:2px solid #652f8d;padding-bottom:12px;margin-bottom:18px}
@@ -65,7 +64,12 @@ export default function Reportes() {
       return `<tr><td>${a.nombre} ${a.apellido}</td><td>${a.ausencias.length}</td><td>${alerta?'<span class="alerta">⚠ 2+ consecutivas</span>':'—'}</td></tr>`
     }).join('')}
     </table><script>window.onload=()=>window.print()<\/script></body></html>`)
-    win.document.close()
+    )
+    const _rb = new Blob([_rhtml], {type:'text/html;charset=utf-8'})
+    const _ru = URL.createObjectURL(_rb)
+    const _rw = window.open(_ru, '_blank')
+    if (!_rw) { const _a = document.createElement('a'); _a.href=_ru; _a.download='reporte.html'; _a.click() }
+    setTimeout(() => URL.revokeObjectURL(_ru), 10000)
   }
 
   const totalLiq = profesoras.reduce((s,p) => s + (p.horas_semana||0) * 4 * (p.tarifa_hora||0), 0)
@@ -586,7 +590,12 @@ function abrirPDF(titulo: string, contenido: string) {
   </div>
   ${contenido}
   <script>window.onload=()=>window.print()<\/script></body></html>`)
-  win.document.close()
+  )
+    const _rb = new Blob([_rhtml], {type:'text/html;charset=utf-8'})
+    const _ru = URL.createObjectURL(_rb)
+    const _rw = window.open(_ru, '_blank')
+    if (!_rw) { const _a = document.createElement('a'); _a.href=_ru; _a.download='reporte.html'; _a.click() }
+    setTimeout(() => URL.revokeObjectURL(_ru), 10000)
 }
 
 const Av = ({color,size,children}:any) => <div style={{width:size,height:size,borderRadius:Math.round(size*.32)+'px',background:color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:size*.28+'px',fontWeight:700,color:'#fff',flexShrink:0}}>{children}</div>
