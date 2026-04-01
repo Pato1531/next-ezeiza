@@ -82,15 +82,16 @@ export default function Perfil() {
   const guardarUsuario = async () => {
     if (!form?.nombre) return alert('El nombre es obligatorio')
     setGuardando(true)
+    const t = setTimeout(() => { setGuardando(false); setVista('usuarios') }, 6000)
     try {
       const sb = createClient()
       const initials = form.nombre.split(' ').map((p:string)=>p[0]).join('').toUpperCase().slice(0,2)
       await sb.from('usuarios').update({ nombre: form.nombre, rol: form.rol, color: form.color, initials }).eq('id', selUser.id)
-      // Actualizar metadata en Auth también
-      await callAPI('actualizar_metadata', { user_id: selUser.id, nombre: form.nombre, rol: form.rol })
+      callAPI('actualizar_metadata', { user_id: selUser.id, nombre: form.nombre, rol: form.rol }).catch(()=>{})
+      clearTimeout(t)
       await cargarUsuarios()
       setVista('usuarios')
-    } catch(e:any) { alert('Error: ' + e.message) }
+    } catch(e:any) { clearTimeout(t); alert('Error: ' + (e as any).message) }
     setGuardando(false)
   }
 
@@ -114,13 +115,15 @@ export default function Perfil() {
   const eliminarUsuario = async () => {
     if (!selUser) return
     setGuardando(true)
+    setConfirmDelete(false)
+    setVista('usuarios')
+    const t = setTimeout(() => setGuardando(false), 6000)
     try {
       await callAPI('desactivar', { user_id: selUser.id })
+      clearTimeout(t)
       await cargarUsuarios()
-      setVista('usuarios')
-    } catch(e:any) { alert('Error: ' + e.message) }
+    } catch(e:any) { clearTimeout(t) }
     setGuardando(false)
-    setConfirmDelete(false)
   }
 
   const crearUsuario = async () => {
@@ -248,7 +251,7 @@ export default function Perfil() {
       <Card>
         <SL style={{marginBottom:'14px'}}>Datos del usuario</SL>
         <Field2 label="Nombre completo">
-          <Input value={form?.nombre||''} onChange={v=>setForm({...form,nombre:v})} />
+          <Input value={form?.nombre||''} onChange={(v:string)=>setForm({...form,nombre:v})} />
         </Field2>
         {usuario.rol === 'director' && (
           <Field2 label="Rol">
@@ -350,8 +353,8 @@ export default function Perfil() {
       <div style={{fontSize:'20px',fontWeight:700,marginBottom:'20px'}}>Nuevo usuario</div>
 
       <Card>
-        <Field2 label="Nombre completo"><Input value={form?.nombre||''} onChange={v=>setForm({...form,nombre:v})} /></Field2>
-        <Field2 label="Email (será el usuario de acceso)"><Input type="email" value={form?.email||''} onChange={v=>setForm({...form,email:v})} placeholder="nombre@nextezeiza.edu" /></Field2>
+        <Field2 label="Nombre completo"><Input value={form?.nombre||''} onChange={(v:string)=>setForm({...form,nombre:v})} /></Field2>
+        <Field2 label="Email (será el usuario de acceso)"><Input type="email" value={form?.email||''} onChange={(v:string)=>setForm({...form,email:v})} placeholder="nombre@nextezeiza.edu" /></Field2>
         <Field2 label="Contraseña inicial">
           <input type="password" value={form?.clave||''} onChange={e=>setForm({...form,clave:e.target.value})} style={IS} placeholder="Mínimo 6 caracteres" />
         </Field2>
