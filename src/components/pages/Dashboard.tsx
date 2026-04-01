@@ -44,16 +44,17 @@ export default function Dashboard() {
   const cargarAlertas = async () => {
     setLoading(true)
     const sb = createClient()
-
-    // Alumnos sin curso
-    const { data: conCurso } = await sb.from('cursos_alumnos').select('alumno_id')
-    const idsConCurso = new Set((conCurso||[]).map((r:any) => r.alumno_id))
-    setAlumnosSinCurso(alumnos.filter(a => !idsConCurso.has(a.id)).length)
-
-    // Cuotas pendientes del mes actual
-    const { data: pagos } = await sb.from('pagos_alumnos').select('alumno_id, mes, anio').eq('mes', mesActual).eq('anio', today.getFullYear())
-    const alumnosConPago = new Set((pagos||[]).map((p:any) => p.alumno_id))
-    setCuotasPendientes(alumnos.filter(a => !alumnosConPago.has(a.id)).length)
+    try {
+      // Cargar en paralelo para mayor velocidad
+      const [conCursoRes, pagosRes] = await Promise.all([
+        sb.from('cursos_alumnos').select('alumno_id'),
+        sb.from('pagos_alumnos').select('alumno_id').eq('mes', mesActual).eq('anio', today.getFullYear())
+      ])
+      const idsConCurso = new Set((conCursoRes.data||[]).map((r:any) => r.alumno_id))
+      setAlumnosSinCurso(alumnos.filter(a => !idsConCurso.has(a.id)).length)
+      const alumnosConPago = new Set((pagosRes.data||[]).map((p:any) => p.alumno_id))
+      setCuotasPendientes(alumnos.filter(a => !alumnosConPago.has(a.id)).length)
+    } catch { setLoading(false); return }
 
     // Alertas ausencias consecutivas
     const { data: asist } = await sb
