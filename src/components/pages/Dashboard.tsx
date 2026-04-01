@@ -27,13 +27,24 @@ export default function Dashboard() {
   const today = new Date()
   const mesActual = MESES[today.getMonth()]
   // Día de semana JS: 0=Dom, 1=Lun... → mapear al formato del horario
-  const diasJS = ['','Lunes','Martes','Miercoles','Jueves','Viernes','Sabados']
+  // Mapeo robusto — cubre todas las variantes de abreviación usadas en DB
+  const DIA_MAP: Record<number, string[]> = {
+    1: ['Lun','Lunes'],
+    2: ['Mar','Martes'],
+    3: ['Mié','Mie','Miércoles','Miercoles'],
+    4: ['Jue','Jueves'],
+    5: ['Vie','Viernes'],
+    6: ['Sáb','Sab','Sabado','Sabados'],
+    0: [],
+  }
+  const diaVariants = DIA_MAP[today.getDay()] || []
+  const diasJS = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
   const diaHoy = diasJS[today.getDay()] || ''
-  
-  // Cursos de hoy
+
+  // Cursos de hoy — match con cualquier variante del día
   const cursosHoy = cursos.filter(c => {
     const d = c.dias || ''
-    return d.includes(diaHoy.slice(0,3)) || d === diaHoy || d.includes(diaHoy)
+    return diaVariants.some(v => d.includes(v))
   }).sort((a,b) => (a.hora_inicio||'').localeCompare(b.hora_inicio||''))
 
   useEffect(() => {
