@@ -131,9 +131,24 @@ export function useAlumnos() {
   }
 
   const agregar = async (nuevo: any) => {
-    const { data: row, error } = await supabase.from('alumnos').insert(nuevo).select().single()
-    if (row && !error) { store['alumnos'] = [...(store['alumnos']??[]), row]; notify('alumnos') }
-    return row
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
+    try {
+      const { data: row, error } = await Promise.race([
+        supabase.from('alumnos').insert(nuevo).select().single(),
+        timeoutPromise
+      ]) as any
+      if (row && !error) { store['alumnos'] = [...(store['alumnos']??[]), row]; notify('alumnos') }
+      return row
+    } catch (e) {
+      console.error('Error/timeout agregando alumno:', e)
+      // Recargar para ver si se guardó igual
+      delete store['alumnos']
+      loadOnce('alumnos', async () => {
+        const { data } = await supabase.from('alumnos').select('*').eq('activo', true).order('apellido')
+        return data ?? []
+      })
+      return null
+    }
   }
 
   const recargar = async () => {
