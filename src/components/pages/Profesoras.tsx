@@ -559,38 +559,53 @@ function LiquidacionTab({ prof, licencias }: any) {
 
       <div style={{display:'flex',gap:'10px',marginTop:'14px'}}>
         <button onClick={() => {
-          const win = window.open('','_blank')
-          if(!win) return
           const filas = [
             `<tr><td style="color:#888">Hs/semana</td><td style="text-align:right">${prof.horas_semana}hs</td></tr>`,
             `<tr><td style="color:#888">Hs/mes</td><td style="text-align:right">${prof.horas_semana*4}hs</td></tr>`,
             `<tr><td style="color:#888">Tarifa/hora</td><td style="text-align:right">$${prof.tarifa_hora?.toLocaleString('es-AR')}</td></tr>`,
-            `<tr><td style="color:#888">Subtotal base</td><td style="text-align:right;font-weight:600">$${base.toLocaleString('es-AR')}</td></tr>`,
-            prof.es_coordinadora && montoCoord > 0 ? `<tr><td style="color:#652f8d">Monto de Coordinación</td><td style="text-align:right;color:#652f8d;font-weight:600">+$${montoCoord.toLocaleString('es-AR')}</td></tr>` : '',
+            `<tr><td style="color:#888;font-weight:600">Subtotal base</td><td style="text-align:right;font-weight:700">$${base.toLocaleString('es-AR')}</td></tr>`,
+            prof.es_coordinadora && montoCoord > 0 ? `<tr><td style="color:#652f8d">Monto de Coordinacion</td><td style="text-align:right;color:#652f8d;font-weight:600">+$${montoCoord.toLocaleString('es-AR')}</td></tr>` : '',
             totalReemplazosHechos > 0 ? `<tr><td style="color:#2d7a4f">Reemplazos realizados</td><td style="text-align:right;color:#2d7a4f;font-weight:600">+$${totalReemplazosHechos.toLocaleString('es-AR')}</td></tr>` : '',
             ajuste !== 0 ? `<tr><td style="color:#2d7a4f">Ajuste${notaAjuste ? ' ('+notaAjuste+')' : ''}</td><td style="text-align:right;color:#2d7a4f">${ajuste>0?'+':''}$${Math.abs(ajuste).toLocaleString('es-AR')}</td></tr>` : '',
             descLicFinal > 0 ? `<tr><td style="color:#c0392b">Descuento ausencias${notaLic ? ' ('+notaLic+')' : ''}</td><td style="text-align:right;color:#c0392b">-$${descLicFinal.toLocaleString('es-AR')}</td></tr>` : '',
           ].filter(Boolean).join('')
-          const html = [
-            '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Liquidacion</title>',
-            '<style>body{font-family:sans-serif;padding:24px;font-size:14px}',
-            'h1{color:#652f8d;font-size:18px}table{width:100%;border-collapse:collapse;margin:16px 0}',
-            'td{padding:10px 0;border-bottom:1px solid #eee}',
-            '.total{background:#f2e8f9;padding:14px;border-radius:8px;display:flex;justify-content:space-between;font-size:18px;font-weight:700;color:#652f8d}',
-            '.logo{font-size:18px;font-weight:700}.logo span{color:#652f8d}',
-            '.hd{display:flex;justify-content:space-between;border-bottom:2px solid #652f8d;padding-bottom:12px;margin-bottom:18px}',
-            '</style></head><body>',
-            '<div class="hd"><div class="logo"><span>Next</span> Ezeiza</div>',
-            '<div style="font-size:12px;color:#9b8eaa">'+new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})+'</div></div>',
-            '<h1>Liquidacion &mdash; '+mesActual+' '+anioActual+'</h1>',
-            '<p><strong>'+prof.nombre+' '+prof.apellido+'</strong> &middot; '+prof.nivel+' &middot; '+prof.horas_semana+'hs/sem &middot; $'+prof.tarifa_hora?.toLocaleString('es-AR')+'/h</p>',
-            '<table>'+filas+'</table>',
-            '<div class="total"><span>Total a liquidar</span><span>$'+total.toLocaleString('es-AR')+'</span></div>',
-            '<script>window.onload=function(){window.print()}<\/script>',
-            '</body></html>'
-          ].join('')
-          win.document.write(html)
-          win.document.close()
+          const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Liquidacion ${prof.nombre} ${prof.apellido}</title><style>
+            body{font-family:Arial,sans-serif;padding:32px;font-size:14px;color:#333}
+            h1{color:#652f8d;font-size:20px;margin:0 0 4px}
+            .sub{color:#888;font-size:13px;margin-bottom:20px}
+            .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #652f8d;padding-bottom:14px;margin-bottom:20px}
+            .logo{font-size:20px;font-weight:700;color:#333}.logo span{color:#652f8d}
+            table{width:100%;border-collapse:collapse;margin:16px 0}
+            td{padding:11px 8px;border-bottom:1px solid #eee;font-size:14px}
+            .total{background:#f2e8f9;padding:16px 20px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;margin-top:20px}
+            .total-label{font-size:16px;font-weight:600;color:#652f8d}
+            .total-value{font-size:24px;font-weight:700;color:#652f8d}
+            @media print{body{padding:16px}}
+          </style></head><body>
+          <div class="hd">
+            <div class="logo"><span>Next</span> Ezeiza</div>
+            <div style="color:#888;font-size:12px">${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
+          </div>
+          <h1>Liquidacion - ${mesActual} ${anioActual}</h1>
+          <div class="sub">${prof.nombre} ${prof.apellido} &bull; ${prof.nivel} &bull; ${prof.horas_semana}hs/sem &bull; $${prof.tarifa_hora?.toLocaleString('es-AR')}/h</div>
+          <table>${filas}</table>
+          <div class="total">
+            <span class="total-label">Total a liquidar</span>
+            <span class="total-value">$${total.toLocaleString('es-AR')}</span>
+          </div>
+          <script>setTimeout(function(){window.print()},500)</script>
+          </body></html>`
+          const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+          const url = URL.createObjectURL(blob)
+          const win = window.open(url, '_blank')
+          if (!win) {
+            // Fallback: download directo
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `liquidacion-${prof.nombre}-${prof.apellido}-${mesActual}-${anioActual}.html`
+            a.click()
+          }
+          setTimeout(() => URL.revokeObjectURL(url), 10000)
         }} style={{flex:1,padding:'11px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
           Descargar PDF
         </button>
