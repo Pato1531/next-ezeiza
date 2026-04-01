@@ -17,11 +17,13 @@ export default function Reportes() {
   const cargarAusentes = async () => {
     setLoadingAusentes(true)
     const sb = createClient()
-    const { data } = await sb
+    try {
+    const { data, error } = await sb
       .from('asistencia_clases')
       .select('alumno_id, estado, alumnos(nombre, apellido, color), clases(fecha, curso_id, cursos(nombre))')
       .eq('estado', 'A')
-    if (!data) { setLoadingAusentes(false); return }
+      .limit(500)
+    if (!data || error) { setLoadingAusentes(false); return }
     const porAlumno: Record<string,any> = {}
     data.forEach((a:any) => {
       const aid = a.alumno_id
@@ -41,7 +43,7 @@ export default function Reportes() {
     })
     setAusentes(Object.values(porAlumno))
     setAlertas2Cons(alertas)
-    setLoadingAusentes(false)
+    } catch { } finally { setLoadingAusentes(false) }
   }
 
   const exportAusentesPDF = () => {
