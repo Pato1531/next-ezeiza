@@ -27,14 +27,10 @@ export default function Comunicados() {
   const crear = async () => {
     if (!form.titulo || !form.contenido) return alert('Título y contenido son obligatorios')
     setGuardando(true)
-    await agregar({
-      ...form,
-      autor_id: usuario?.id,
-      autor_nombre: usuario?.nombre,
-    })
-    setGuardando(false)
     setModalNuevo(false)
     setForm({ titulo:'', contenido:'', rol_destino:'todos' })
+    agregar({ ...form, autor_id: usuario?.id, autor_nombre: usuario?.nombre })
+      .finally(() => setGuardando(false))
   }
 
   // Sin bloqueo de loading
