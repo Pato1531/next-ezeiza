@@ -95,7 +95,7 @@ export default function Alumnos() {
     setLoadingBajas(false)
   }
   const irAFormNuevo = () => {
-    setForm({ nombre:'', apellido:'', edad:0, telefono:'', email:'', nivel:'Básico', cuota_mensual:0, es_menor:false, padre_nombre:'', padre_telefono:'', padre_email:'', color: COLORES[alumnos.length % COLORES.length] })
+    setForm({ nombre:'', apellido:'', edad:0, fecha_nacimiento:'', fecha_alta:new Date().toISOString().split('T')[0], matricula:0, telefono:'', email:'', nivel:'Básico', cuota_mensual:0, es_menor:false, padre_nombre:'', padre_telefono:'', padre_email:'', color: COLORES[alumnos.length % COLORES.length] })
     setVista('form')
   }
   const irAFormEditar = () => { if (sel) { setForm({...sel}); setVista('form') } }
@@ -109,8 +109,23 @@ export default function Alumnos() {
       if (!id) {
         const nuevo = await agregar(datos)
         clearTimeout(t)
-        if (nuevo) irADetalle((nuevo as any).id)
-        else irALista()
+        if (nuevo) {
+          // Registrar matrícula como pago si tiene valor
+          if (datos.matricula > 0) {
+            const sb = createClient()
+            const hoy = new Date()
+            sb.from('pagos_alumnos').insert({
+              alumno_id: (nuevo as any).id,
+              mes: ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][hoy.getMonth()],
+              anio: hoy.getFullYear(),
+              monto: datos.matricula,
+              metodo: 'Efectivo',
+              fecha_pago: hoy.toISOString().split('T')[0],
+              observaciones: 'Matrícula de inscripción'
+            }).catch(()=>{})
+          }
+          irADetalle((nuevo as any).id)
+        } else irALista()
       } else {
         await actualizar(id, datos)
         fetch('/api/actualizar-alumno', {
@@ -301,8 +316,20 @@ export default function Alumnos() {
           <Field2 label="Apellido *"><Input value={form?.apellido||''} onChange={(v:string)=>setForm({...form,apellido:v})} /></Field2>
         </Row2>
         <Row2>
-          <Field2 label="Edad"><Input type="number" value={form?.edad||''} onChange={(v:string)=>setForm({...form,edad:+v})} /></Field2>
+          <Field2 label="Fecha de nacimiento">
+            <input type="date" style={IS} value={form?.fecha_nacimiento||''} onChange={(e:any)=>{
+              const fn = e.target.value
+              const edad = fn ? Math.floor((Date.now() - new Date(fn).getTime()) / (365.25*24*60*60*1000)) : 0
+              setForm({...form, fecha_nacimiento:fn, edad})
+            }} />
+          </Field2>
           <Field2 label="Teléfono"><Input value={form?.telefono||''} onChange={(v:string)=>setForm({...form,telefono:v})} /></Field2>
+        </Row2>
+        <Row2>
+          <Field2 label="Fecha de alta">
+            <input type="date" style={IS} value={form?.fecha_alta||new Date().toISOString().split('T')[0]} onChange={(e:any)=>setForm({...form,fecha_alta:e.target.value})} />
+          </Field2>
+          <Field2 label="Matrícula de inscripción ($)"><Input type="number" value={form?.matricula||''} onChange={(v:string)=>setForm({...form,matricula:+v})} /></Field2>
         </Row2>
         <Field2 label="Email"><Input type="email" value={form?.email||''} onChange={(v:string)=>setForm({...form,email:v})} /></Field2>
         <Row2>
@@ -613,7 +640,9 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
 
       {tab === 'datos' && <Card>
         <FieldRO label="Nombre" value={`${a.nombre} ${a.apellido}`} />
-        <FieldRO label="Edad" value={`${a.edad} años`} />
+        <FieldRO label="Fecha de nacimiento" value={a.fecha_nacimiento ? new Date(a.fecha_nacimiento+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'}) : '—'} />
+        <FieldRO label="Edad" value={a.edad ? `${a.edad} años` : '—'} />
+        {a.fecha_alta && <FieldRO label="Alumno activo desde" value={new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})} />}
         <FieldRO label="Teléfono" value={a.telefono||'—'} />
         <FieldRO label="Email" value={a.email||'—'} />
         <FieldRO label="Nivel" value={a.nivel} />
