@@ -160,10 +160,11 @@ export default function Alumnos() {
 
   const eliminar = async () => {
     if (!selId) return
-    const sb = createClient()
-    await sb.from('alumnos').update({ activo: false }).eq('id', selId)
     setConfirmDelete(false)
     irALista()
+    const sb = createClient()
+    sb.from('alumnos').update({ activo: false }).eq('id', selId)
+      .then(() => recargar()).catch(() => {})
   }
 
   const filtrados = alumnos.filter(a => {
@@ -819,13 +820,14 @@ function PagosMasivos({ alumnos, onVolver }: any) {
       observaciones: `Pago masivo registrado`,
     }))
 
-    const { error } = await sb.from('pagos_alumnos').upsert(inserts, { onConflict: 'alumno_id,mes,anio' })
-    if (error) { alert('Error: ' + error.message); setGuardando(false); return }
-
+    // Actualizar UI inmediatamente
     setGuardando(false)
     setGuardado(true)
     setSeleccionados(new Set())
     setTimeout(() => setGuardado(false), 3000)
+    // Guardar en background
+    sb.from('pagos_alumnos').upsert(inserts, { onConflict: 'alumno_id,mes,anio' })
+      .catch(e => console.error('Error pagos masivos:', e))
   }
 
   const totalMonto = [...seleccionados].reduce((sum, id) => {
