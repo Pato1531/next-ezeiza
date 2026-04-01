@@ -138,10 +138,15 @@ export function useAlumnos() {
         timeoutPromise
       ]) as any
       if (row && !error) { store['alumnos'] = [...(store['alumnos']??[]), row]; notify('alumnos') }
+      // Siempre recargar desde DB para asegurar sincronía
+      delete store['alumnos']
+      loadOnce('alumnos', async () => {
+        const { data } = await supabase.from('alumnos').select('*').eq('activo', true).order('apellido')
+        return data ?? []
+      })
       return row
     } catch (e) {
       console.error('Error/timeout agregando alumno:', e)
-      // Recargar para ver si se guardó igual
       delete store['alumnos']
       loadOnce('alumnos', async () => {
         const { data } = await supabase.from('alumnos').select('*').eq('activo', true).order('apellido')
