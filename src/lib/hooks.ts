@@ -131,28 +131,48 @@ export function useAlumnos() {
   }
 
   const agregar = async (nuevo: any) => {
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 8000))
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
     try {
-      const { data: row, error } = await Promise.race([
+      const result = await Promise.race([
         supabase.from('alumnos').insert(nuevo).select().single(),
         timeoutPromise
       ]) as any
-      if (row && !error) { store['alumnos'] = [...(store['alumnos']??[]), row]; notify('alumnos') }
-      // Siempre recargar desde DB para asegurar sincronía
+      const { data: row, error } = result
+      if (error) {
+        console.error('Error insertando alumno:', JSON.stringify(error))
+        // Intentar sin .single() como fallback
+        const { data: rows, error: err2 } = await supabase.from('alumnos').insert(nuevo).select()
+        if (err2) { console.error('Error fallback:', JSON.stringify(err2)); return null }
+        const row2 = rows?.[0]
+        if (row2) { store['alumnos'] = [...(store['alumnos']??[]), row2]; notify('alumnos') }
+        delete store['alumnos']
+        loadOnce('alumnos', async () => {
+          const { data } = await supabase.from('alumnos').select('*').eq('activo', true).order('apellido')
+          return data ?? []
+        })
+        return row2
+      }
+      if (row) { store['alumnos'] = [...(store['alumnos']??[]), row]; notify('alumnos') }
       delete store['alumnos']
       loadOnce('alumnos', async () => {
         const { data } = await supabase.from('alumnos').select('*').eq('activo', true).order('apellido')
         return data ?? []
       })
       return row
-    } catch (e) {
-      console.error('Error/timeout agregando alumno:', e)
-      delete store['alumnos']
-      loadOnce('alumnos', async () => {
-        const { data } = await supabase.from('alumnos').select('*').eq('activo', true).order('apellido')
-        return data ?? []
-      })
-      return null
+    } catch (e: any) {
+      console.error('Timeout/error agregando alumno:', e?.message)
+      // Igual intentar el insert directo
+      try {
+        const { data: rows } = await supabase.from('alumnos').insert(nuevo).select()
+        const row = rows?.[0]
+        if (row) { store['alumnos'] = [...(store['alumnos']??[]), row]; notify('alumnos') }
+        delete store['alumnos']
+        loadOnce('alumnos', async () => {
+          const { data } = await supabase.from('alumnos').select('*').eq('activo', true).order('apellido')
+          return data ?? []
+        })
+        return row
+      } catch { return null }
     }
   }
 
