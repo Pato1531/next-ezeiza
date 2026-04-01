@@ -131,7 +131,6 @@ export function useAlumnos() {
   }
 
   const agregar = async (nuevo: any) => {
-    // Limpiar solo los campos que existen en la tabla
     const datos = {
       nombre: nuevo.nombre,
       apellido: nuevo.apellido,
@@ -147,14 +146,15 @@ export function useAlumnos() {
       color: nuevo.color || '#652f8d',
       activo: true,
     }
-    console.log('Insertando alumno:', JSON.stringify(datos))
     try {
-      const { data: rows, error } = await supabase.from('alumnos').insert(datos).select()
-      if (error) {
-        console.error('Error insertando alumno:', JSON.stringify(error))
-        return null
-      }
-      const row = rows?.[0]
+      const res = await fetch('/api/crear-alumno', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(datos)
+      })
+      const json = await res.json()
+      if (json.error) { console.error('Error creando alumno:', json.error); return null }
+      const row = json.data
       if (row) { store['alumnos'] = [...(store['alumnos']??[]), row]; notify('alumnos') }
       delete store['alumnos']
       loadOnce('alumnos', async () => {
