@@ -71,8 +71,7 @@ export default function Reportes() {
       const alerta=alertas2Cons.find(al=>al.alumno_id===a.alumno_id)
       return `<tr><td>${a.nombre} ${a.apellido}</td><td>${a.ausencias.length}</td><td>${alerta?'<span class="alerta">⚠ 2+ consecutivas</span>':'—'}</td></tr>`
     }).join('')}
-    </table><script>window.onload=()=>window.print()<\/script></body></html>`)
-    )
+    </table><script>window.onload=()=>window.print()<\/script></body></html>`
     const _rb = new Blob([_rhtml], {type:'text/html;charset=utf-8'})
     const _ru = URL.createObjectURL(_rb)
     const _rw = window.open(_ru, '_blank')
