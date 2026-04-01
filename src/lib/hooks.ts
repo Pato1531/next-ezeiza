@@ -7,7 +7,7 @@ import type { Profesora, Alumno, Curso, Clase, HorarioItem, Pago, AsistenciaClas
 const supabase = createClient()
 
 // ── STORE GLOBAL ──
-const store: Record<string, any[]> = {}
+export const store: Record<string, any[]> = {}
 const storeTs: Record<string, number> = {} // timestamp de cada carga
 const loadingKeys: Set<string> = new Set()
 const listeners: Record<string, Set<()=>void>> = {}
