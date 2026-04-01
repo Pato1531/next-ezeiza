@@ -406,7 +406,6 @@ function LiquidacionTab({ prof, licencias }: any) {
   }, [prof.id])
 
   const base = (prof.horas_semana || 0) * 4 * (prof.tarifa_hora || 0)
-  const [montoCoord, setMontoCoord] = useState(prof.monto_coordinacion || 0)
 
   // Reemplazos que hizo ESTA docente (aparece como reemplazante en licencias de otras)
   const reemplazosHechos = licComoReemplazo
@@ -419,7 +418,7 @@ function LiquidacionTab({ prof, licencias }: any) {
     s + (l.reemplazo_horas > 0 ? l.reemplazo_horas : (l.dias || 0)) * (prof.tarifa_hora || 0), 0)
 
   const descLicFinal = descLic > 0 ? descLic : totalDescuentoAusencias
-  const total = base + totalReemplazosHechos + (prof.es_coordinadora ? montoCoord : 0) + ajuste - descLicFinal
+  const total = base + totalReemplazosHechos + ajuste - descLicFinal
 
   const confirmarLiquidacion = async () => {
     setGuardandoLiq(true)
@@ -493,35 +492,6 @@ function LiquidacionTab({ prof, licencias }: any) {
         )}
       </div>
 
-      {/* COORDINACION */}
-      {prof.es_coordinadora && (
-        <div style={{margin:'6px 0 6px',padding:'14px',background:'#f2e8f9',borderRadius:'12px',border:'1.5px solid var(--v)'}}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
-            <div>
-              <div style={{fontSize:'13px',fontWeight:700,color:'var(--v)'}}>Monto de Coordinación</div>
-              <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'1px'}}>Adicional fijo por rol de coordinadora</div>
-            </div>
-            <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
-              <span style={{fontSize:'13px',fontWeight:600,color:'var(--text2)'}}>$</span>
-              <input
-                type="number"
-                min="0"
-                value={montoCoord||''}
-                onChange={e => {
-                  const val = Math.abs(parseFloat(e.target.value)||0)
-                  setMontoCoord(val)
-                  // Guardar en DB
-                  createClient().from('profesoras').update({ monto_coordinacion: val }).eq('id', prof.id).catch(()=>{})
-                }}
-                placeholder="0"
-                style={{width:'120px',padding:'7px 10px',border:'1.5px solid var(--v)',borderRadius:'8px',fontSize:'14px',fontWeight:600,textAlign:'right',fontFamily:'Inter,sans-serif',outline:'none',color:'var(--text)',background:'var(--white)'}}
-              />
-            </div>
-          </div>
-          {montoCoord > 0 && <div style={{fontSize:'12px',fontWeight:600,color:'var(--v)',textAlign:'right'}}>+${montoCoord.toLocaleString('es-AR')}</div>}
-        </div>
-      )}
-
       {/* LICENCIAS */}
       <div style={{margin:'6px 0 14px',padding:'14px',background:'#fff5f5',borderRadius:'12px',border:'1.5px solid #f5c5c5'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
@@ -589,7 +559,7 @@ function LiquidacionTab({ prof, licencias }: any) {
 
       <div style={{display:'flex',gap:'10px',marginTop:'14px'}}>
         <button onClick={() => {
-          const texto = `Liquidación — ${prof.nombre} ${prof.apellido}\nBase: $${base.toLocaleString('es-AR')}\n${ajuste!==0?`Ajuste: $${ajuste.toLocaleString('es-AR')} (${notaAjuste||'sin concepto'})\n`:''}${descLicFinal>0?`Licencias: -$${descLicFinal.toLocaleString('es-AR')} (${notaLic||'sin concepto'})\n`:''}TOTAL: $${total.toLocaleString('es-AR')}`
+          const texto = `Liquidación — ${prof.nombre} ${prof.apellido}\n${mesActual} ${anioActual}\n\nBase: $${base.toLocaleString('es-AR')}${prof.es_coordinadora && montoCoord > 0 ? `\nCoordinación: +$${montoCoord.toLocaleString('es-AR')}` : ''}${totalReemplazosHechos > 0 ? `\nReemplazos realizados: +$${totalReemplazosHechos.toLocaleString('es-AR')}` : ''}${ajuste!==0?`\nAjuste: ${ajuste>0?'+':''}$${Math.abs(ajuste).toLocaleString('es-AR')} (${notaAjuste||'sin concepto'})`:''}${descLicFinal>0?`\nDescuento ausencias: -$${descLicFinal.toLocaleString('es-AR')} (${notaLic||'sin concepto'})`:''}${'\n\nTOTAL: $'+total.toLocaleString('es-AR')}`
           navigator.clipboard.writeText(texto).then(() => alert('Copiado al portapapeles'))
         }} style={{flex:1,padding:'11px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
           Copiar
@@ -597,16 +567,19 @@ function LiquidacionTab({ prof, licencias }: any) {
         <button onClick={() => {
           const win = window.open('','_blank')
           if(!win) return
-          win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Liquidación</title><style>body{font-family:sans-serif;padding:24px;font-size:14px}h1{color:#652f8d;font-size:18px}table{width:100%;border-collapse:collapse;margin:16px 0}td{padding:10px 0;border-bottom:1px solid #eee}.total{background:#f2e8f9;padding:14px;border-radius:8px;display:flex;justify-content:space-between;font-size:18px;font-weight:700;color:#652f8d}</style></head><body>
-          <h1>Next Ezeiza — Liquidación</h1>
-          <p><strong>${prof.nombre} ${prof.apellido}</strong> · ${mesActual} ${anioActual}</p>
+          win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Liquidación</title><style>body{font-family:sans-serif;padding:24px;font-size:14px}h1{color:#652f8d;font-size:18px}table{width:100%;border-collapse:collapse;margin:16px 0}td{padding:10px 0;border-bottom:1px solid #eee}.total{background:#f2e8f9;padding:14px;border-radius:8px;display:flex;justify-content:space-between;font-size:18px;font-weight:700;color:#652f8d}.logo{font-size:18px;font-weight:700}.logo span{color:#652f8d}.hd{display:flex;justify-content:space-between;border-bottom:2px solid #652f8d;padding-bottom:12px;margin-bottom:18px}</style></head><body>
+          <div class="hd"><div class="logo"><span>Next</span> Ezeiza</div><div style="font-size:12px;color:#9b8eaa">${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div></div>
+          <h1>Liquidación — ${mesActual} ${anioActual}</h1>
+          <p><strong>${prof.nombre} ${prof.apellido}</strong> · ${prof.nivel} · ${prof.horas_semana}hs/sem · $${prof.tarifa_hora?.toLocaleString('es-AR')}/h</p>
           <table>
             <tr><td style="color:#888">Hs/semana</td><td style="text-align:right">${prof.horas_semana}hs</td></tr>
             <tr><td style="color:#888">Hs/mes</td><td style="text-align:right">${prof.horas_semana*4}hs</td></tr>
             <tr><td style="color:#888">Tarifa/hora</td><td style="text-align:right">$${prof.tarifa_hora?.toLocaleString('es-AR')}</td></tr>
             <tr><td style="color:#888">Subtotal base</td><td style="text-align:right;font-weight:600">$${base.toLocaleString('es-AR')}</td></tr>
-            ${ajuste!==0?`<tr><td style="color:#2d7a4f">Ajuste${notaAjuste?' ('+notaAjuste+')':''}</td><td style="text-align:right;color:#2d7a4f">${ajuste>0?'+':''}$${ajuste.toLocaleString('es-AR')}</td></tr>`:''}
-            ${descLicFinal>0?`<tr><td style="color:#c0392b">Licencias${notaLic?' ('+notaLic+')':''}</td><td style="text-align:right;color:#c0392b">-$${descLicFinal.toLocaleString('es-AR')}</td></tr>`:''}
+            ${prof.es_coordinadora && montoCoord > 0 ? `<tr><td style="color:#652f8d">Monto de Coordinación</td><td style="text-align:right;color:#652f8d;font-weight:600">+$${montoCoord.toLocaleString('es-AR')}</td></tr>` : ''}
+            ${totalReemplazosHechos > 0 ? `<tr><td style="color:#2d7a4f">Reemplazos realizados (${reemplazosHechos.length} clase${reemplazosHechos.length!==1?'s':''})</td><td style="text-align:right;color:#2d7a4f;font-weight:600">+$${totalReemplazosHechos.toLocaleString('es-AR')}</td></tr>` : ''}
+            ${ajuste!==0?`<tr><td style="color:#2d7a4f">Ajuste${notaAjuste?' ('+notaAjuste+')':''}</td><td style="text-align:right;color:#2d7a4f">${ajuste>0?'+':''}$${Math.abs(ajuste).toLocaleString('es-AR')}</td></tr>`:''}
+            ${descLicFinal>0?`<tr><td style="color:#c0392b">Descuento ausencias${notaLic?' ('+notaLic+')':''}</td><td style="text-align:right;color:#c0392b">-$${descLicFinal.toLocaleString('es-AR')}</td></tr>`:''}
           </table>
           <div class="total"><span>Total a liquidar</span><span>$${total.toLocaleString('es-AR')}</span></div>
           <script>window.onload=()=>window.print()<\/script></body></html>`)
