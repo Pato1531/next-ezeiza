@@ -1,10 +1,18 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { useAlumnos, useProfesoras, useCursos } from '@/lib/hooks'
+import { useAlumnos, useProfesoras, useCursos, useLiquidaciones } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
 
 export default function Reportes() {
   const { profesoras } = useProfesoras()
+  const { liquidaciones: todasLiqs } = useLiquidaciones()
+  const mesActualNombre = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][new Date().getMonth()]
+  const anioActual = new Date().getFullYear()
+  // Liquidaciones confirmadas del mes actual por profesora
+  const liqConfirmadas: Record<string,number> = {}
+  todasLiqs.filter(l => l.mes === mesActualNombre && l.anio === anioActual).forEach(l => {
+    liqConfirmadas[l.profesora_id] = l.total
+  })
   const { alumnos } = useAlumnos()
   const { cursos } = useCursos()
 
@@ -99,50 +107,63 @@ export default function Reportes() {
     abrirPDF('Asistencia Docente', html)
   }
 
+  const estadoCobranza = new Date().getDate() <= 10 ? 'Al día' : 'Deudor'
+  const colorEstado = estadoCobranza === 'Al día' ? '#2d7a4f' : '#c0392b'
+
   const exportCobranzaCSV = () => {
     const rows = [
       ['NEXT EZEIZA — REPORTE DE COBRANZA'],
       ['Generado:', new Date().toLocaleDateString('es-AR')],
+      ['Estado al día: del 1 al 10 del mes. Deudor: del 11 en adelante'],
       [''],
-      ['Alumno','Curso','Nivel','Cuota mensual','Estado'],
+      ['Alumno','Nivel','Cuota mensual','Estado'],
       ...alumnos.map(a => [
         `${a.nombre} ${a.apellido}`, a.nivel,
         `$${a.cuota_mensual?.toLocaleString('es-AR')}`,
-        'Al día'
+        estadoCobranza
       ])
     ]
     descargarCSV(rows, 'cobranza_alumnos')
   }
 
   const exportCobranzaPDF = () => {
-    const html = `<h1>Cobranza por Alumno</h1>
+    const html = `<h1>Cobranza por Alumno — ${new Date().toLocaleDateString('es-AR',{month:'long',year:'numeric'})}</h1>
+    <p style="color:#888;font-size:12px">Estado: del 1 al 10 = Al día · del 11 en adelante = Deudor</p>
     <table><tr><th>Alumno</th><th>Nivel</th><th>Cuota</th><th>Estado</th></tr>
-    ${alumnos.map(a=>`<tr><td>${a.nombre} ${a.apellido}</td><td>${a.nivel}</td><td>$${a.cuota_mensual?.toLocaleString('es-AR')}</td><td>Al día</td></tr>`).join('')}
+    ${alumnos.map(a=>`<tr><td>${a.nombre} ${a.apellido}</td><td>${a.nivel}</td><td>$${a.cuota_mensual?.toLocaleString('es-AR')}</td><td style="color:${colorEstado};font-weight:600">${estadoCobranza}</td></tr>`).join('')}
     </table>`
     abrirPDF('Cobranza por Alumno', html)
   }
 
   const exportLiquidacionCSV = () => {
+    const totalReal = profesoras.reduce((s,p) => s + (liqConfirmadas[p.id] ?? (p.horas_semana||0)*4*(p.tarifa_hora||0)), 0)
     const rows = [
       ['NEXT EZEIZA — REPORTE DE LIQUIDACIÓN'],
       ['Generado:', new Date().toLocaleDateString('es-AR')],
+      [`Mes: ${mesActualNombre} ${anioActual}`],
       [''],
-      ['Profesora','Nivel','Hs/semana','Hs/mes','Tarifa/hora','Liquidación estimada'],
+      ['Profesora','Nivel','Hs/semana','Tarifa/hora','Total liquidación'],
       ...profesoras.map(p => {
-        const liq = (p.horas_semana||0)*4*(p.tarifa_hora||0)
-        return [`${p.nombre} ${p.apellido}`, p.nivel, p.horas_semana, (p.horas_semana||0)*4, `$${p.tarifa_hora?.toLocaleString('es-AR')}`, `$${liq.toLocaleString('es-AR')}`]
+        const liq = liqConfirmadas[p.id] ?? (p.horas_semana||0)*4*(p.tarifa_hora||0)
+        const estado = liqConfirmadas[p.id] ? 'Confirmada' : 'Estimada'
+        return [`${p.nombre} ${p.apellido}`, p.nivel, p.horas_semana, `$${p.tarifa_hora?.toLocaleString('es-AR')}`, `$${liq.toLocaleString('es-AR')} (${estado})`]
       }),
       [''],
-      ['','','','','TOTAL:', `$${totalLiq.toLocaleString('es-AR')}`]
+      ['','','','TOTAL:', `$${totalReal.toLocaleString('es-AR')}`]
     ]
     descargarCSV(rows, 'liquidacion_docente')
   }
 
   const exportLiquidacionPDF = () => {
-    const html = `<h1>Liquidación Docente</h1>
-    <table><tr><th>Profesora</th><th>Hs/sem</th><th>Tarifa/h</th><th>Liquidación</th></tr>
-    ${profesoras.map(p=>{const liq=(p.horas_semana||0)*4*(p.tarifa_hora||0);return`<tr><td>${p.nombre} ${p.apellido}</td><td>${p.horas_semana}hs</td><td>$${p.tarifa_hora?.toLocaleString('es-AR')}</td><td>$${liq.toLocaleString('es-AR')}</td></tr>`}).join('')}
-    <tr style="font-weight:bold;border-top:2px solid #652f8d"><td colspan="3">Total mensual</td><td>$${totalLiq.toLocaleString('es-AR')}</td></tr>
+    const totalReal = profesoras.reduce((s,p) => s + (liqConfirmadas[p.id] ?? (p.horas_semana||0)*4*(p.tarifa_hora||0)), 0)
+    const html = `<h1>Liquidación Docente — ${mesActualNombre} ${anioActual}</h1>
+    <table><tr><th>Profesora</th><th>Hs/sem</th><th>Tarifa/h</th><th>Total</th><th>Estado</th></tr>
+    ${profesoras.map(p=>{
+      const liq = liqConfirmadas[p.id] ?? (p.horas_semana||0)*4*(p.tarifa_hora||0)
+      const conf = !!liqConfirmadas[p.id]
+      return `<tr><td>${p.nombre} ${p.apellido}</td><td>${p.horas_semana}hs</td><td>$${p.tarifa_hora?.toLocaleString('es-AR')}</td><td style="font-weight:600">$${liq.toLocaleString('es-AR')}</td><td style="color:${conf?'#2d7a4f':'#b45309'}">${conf?'Confirmada':'Estimada'}</td></tr>`
+    }).join('')}
+    <tr style="font-weight:bold;border-top:2px solid #652f8d"><td colspan="3">Total mensual</td><td>$${totalReal.toLocaleString('es-AR')}</td><td></td></tr>
     </table>`
     abrirPDF('Liquidación Docente', html)
   }
