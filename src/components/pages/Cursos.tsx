@@ -344,7 +344,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
       </div>`
     }).join('')}
     <script>window.onload=()=>window.print()<\/script>
-    </body></html>`)
+    </body></html>`
     const _blob = new Blob([_html], {type:'text/html;charset=utf-8'})
     const _url = URL.createObjectURL(_blob)
     const _win = window.open(_url, '_blank')
