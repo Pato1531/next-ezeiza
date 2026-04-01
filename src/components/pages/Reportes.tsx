@@ -55,7 +55,7 @@ export default function Reportes() {
   }
 
   const exportAusentesPDF = () => {
-    const _rhtml = (`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Ausentes</title>
+    const _rhtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Ausentes</title>
     <style>body{font-family:sans-serif;padding:24px;font-size:13px}h1{color:#652f8d;font-size:18px}
     .logo{font-size:18px;font-weight:700}.logo span{color:#652f8d}
     .hd{display:flex;justify-content:space-between;border-bottom:2px solid #652f8d;padding-bottom:12px;margin-bottom:18px}
@@ -609,8 +609,7 @@ function abrirPDF(titulo: string, contenido: string) {
     <div class="fecha">Generado: ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
   </div>
   ${contenido}
-  <script>window.onload=()=>window.print()<\/script></body></html>`)
-  )
+  <script>window.onload=()=>window.print()<\/script></body></html>`
     const _rb = new Blob([_rhtml], {type:'text/html;charset=utf-8'})
     const _ru = URL.createObjectURL(_rb)
     const _rw = window.open(_ru, '_blank')
