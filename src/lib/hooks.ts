@@ -250,15 +250,26 @@ export function usePagos(alumnoId: string) {
 // ── ALUMNOS DE UN CURSO ──
 export function useCursoAlumnos(cursoId: string) {
   const [data, setData] = useState<Alumno[]>([])
+  const retryRef = useRef(0)
 
   const cargar = useCallback(async () => {
     if (!cursoId) return
-    const { data } = await supabase.from('cursos_alumnos').select('alumno_id, alumnos(*)').eq('curso_id', cursoId)
-    const al = data?.map((r: any) => r.alumnos).filter(Boolean) ?? []
-    setData(al)
+    try {
+      const { data, error } = await supabase.from('cursos_alumnos').select('alumno_id, alumnos(*)').eq('curso_id', cursoId)
+      if (error) throw error
+      const al = data?.map((r: any) => r.alumnos).filter(Boolean) ?? []
+      setData(al)
+      retryRef.current = 0
+    } catch (e) {
+      // Retry automático hasta 3 veces con delay
+      if (retryRef.current < 3) {
+        retryRef.current++
+        setTimeout(() => cargar(), 2000 * retryRef.current)
+      }
+    }
   }, [cursoId])
 
-  useEffect(() => { cargar() }, [cargar])
+  useEffect(() => { retryRef.current = 0; cargar() }, [cargar])
 
   const agregar = async (alumnoId: string) => {
     // Buscar alumno en el store global para actualizar UI inmediatamente
@@ -296,8 +307,10 @@ export function useClases(cursoId: string) {
 
   const cargar = useCallback(async () => {
     if (!cursoId) { setIsLoading(false); return }
-    const { data } = await supabase.from('clases').select('*').eq('curso_id', cursoId).order('fecha', { ascending: false })
-    setData(data ?? [])
+    try {
+      const { data, error } = await supabase.from('clases').select('*').eq('curso_id', cursoId).order('fecha', { ascending: false })
+      if (!error) setData(data ?? [])
+    } catch {}
     setIsLoading(false)
   }, [cursoId])
 
