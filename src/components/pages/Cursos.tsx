@@ -347,7 +347,11 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
     }).join('')}
     <script>window.onload=()=>window.print()<\/script>
     </body></html>`)
-    win.document.close()
+    const _blob = new Blob([_html], {type:'text/html;charset=utf-8'})
+    const _url = URL.createObjectURL(_blob)
+    const _win = window.open(_url, '_blank')
+    if (!_win) { const a = document.createElement('a'); a.href=_url; a.download=`reporte-${c.nombre}.html`; a.click() }
+    setTimeout(() => URL.revokeObjectURL(_url), 10000)
   }
 
   const prof = profesoras.find((p:any) => p.id === c.profesora_id)
@@ -490,8 +494,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
       {tab === 'alumnos' && <div>
         <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
           <button onClick={() => {
-            const win = window.open('','_blank'); if(!win) return
-            win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Alumnos - ${c.nombre}</title>
+            const _rhtml = (`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Alumnos - ${c.nombre}</title>
             <style>body{font-family:sans-serif;padding:24px;font-size:13px}h1{color:#652f8d;font-size:18px}
             table{width:100%;border-collapse:collapse;margin:16px 0}
             th{border-bottom:2px solid #652f8d;padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:#652f8d;letter-spacing:.05em}
@@ -509,7 +512,12 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
               ${alumnosCurso.map((a:any,i:number)=>`<tr><td>${i+1}</td><td>${a.nombre}</td><td>${a.apellido}</td><td>${a.nivel}</td><td>$${a.cuota_mensual?.toLocaleString('es-AR')||'—'}</td></tr>`).join('')}
             </table>
             <script>window.onload=()=>window.print()<\/script></body></html>`)
-            win.document.close()
+            )
+    const _rb = new Blob([_rhtml], {type:'text/html;charset=utf-8'})
+    const _ru = URL.createObjectURL(_rb)
+    const _rw = window.open(_ru, '_blank')
+    if (!_rw) { const _a = document.createElement('a'); _a.href=_ru; _a.download='reporte.html'; _a.click() }
+    setTimeout(() => URL.revokeObjectURL(_ru), 10000)
           }} style={{padding:'8px 14px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'12px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
             <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 16v1a1 1 0 001 1h10a1 1 0 001-1v-1M7 10l3 3 3-3M10 3v10"/></svg>
             Descargar lista
@@ -881,8 +889,7 @@ function ExamenNotas({ examen, alumnosCurso, puedeEditar, onVolver, onEliminar }
   const prom = promedioGeneral()
 
   const exportarPDF = () => {
-    const win = window.open('','_blank'); if(!win)return
-    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${examen.nombre}</title>
+    const _rhtml = (`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${examen.nombre}</title>
     <style>body{font-family:sans-serif;padding:24px;font-size:13px}h1{color:#652f8d;font-size:18px}
     .logo{font-size:18px;font-weight:700}.logo span{color:#652f8d}
     .hd{display:flex;justify-content:space-between;border-bottom:2px solid #652f8d;padding-bottom:12px;margin-bottom:18px}
@@ -919,7 +926,12 @@ function ExamenNotas({ examen, alumnosCurso, puedeEditar, onVolver, onEliminar }
       }).join('')}
     </table>
     <script>window.onload=()=>window.print()<\/script></body></html>`)
-    win.document.close()
+    )
+    const _rb = new Blob([_rhtml], {type:'text/html;charset=utf-8'})
+    const _ru = URL.createObjectURL(_rb)
+    const _rw = window.open(_ru, '_blank')
+    if (!_rw) { const _a = document.createElement('a'); _a.href=_ru; _a.download='reporte.html'; _a.click() }
+    setTimeout(() => URL.revokeObjectURL(_ru), 10000)
   }
 
   return (
