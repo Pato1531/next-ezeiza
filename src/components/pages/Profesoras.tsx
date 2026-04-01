@@ -559,33 +559,40 @@ function LiquidacionTab({ prof, licencias }: any) {
 
       <div style={{display:'flex',gap:'10px',marginTop:'14px'}}>
         <button onClick={() => {
-          const texto = `Liquidación — ${prof.nombre} ${prof.apellido}\n${mesActual} ${anioActual}\n\nBase: $${base.toLocaleString('es-AR')}${prof.es_coordinadora && montoCoord > 0 ? `\nCoordinación: +$${montoCoord.toLocaleString('es-AR')}` : ''}${totalReemplazosHechos > 0 ? `\nReemplazos realizados: +$${totalReemplazosHechos.toLocaleString('es-AR')}` : ''}${ajuste!==0?`\nAjuste: ${ajuste>0?'+':''}$${Math.abs(ajuste).toLocaleString('es-AR')} (${notaAjuste||'sin concepto'})`:''}${descLicFinal>0?`\nDescuento ausencias: -$${descLicFinal.toLocaleString('es-AR')} (${notaLic||'sin concepto'})`:''}${'\n\nTOTAL: $'+total.toLocaleString('es-AR')}`
-          navigator.clipboard.writeText(texto).then(() => alert('Copiado al portapapeles'))
-        }} style={{flex:1,padding:'11px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
-          Copiar
-        </button>
-        <button onClick={() => {
           const win = window.open('','_blank')
           if(!win) return
-          win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Liquidación</title><style>body{font-family:sans-serif;padding:24px;font-size:14px}h1{color:#652f8d;font-size:18px}table{width:100%;border-collapse:collapse;margin:16px 0}td{padding:10px 0;border-bottom:1px solid #eee}.total{background:#f2e8f9;padding:14px;border-radius:8px;display:flex;justify-content:space-between;font-size:18px;font-weight:700;color:#652f8d}.logo{font-size:18px;font-weight:700}.logo span{color:#652f8d}.hd{display:flex;justify-content:space-between;border-bottom:2px solid #652f8d;padding-bottom:12px;margin-bottom:18px}</style></head><body>
-          <div class="hd"><div class="logo"><span>Next</span> Ezeiza</div><div style="font-size:12px;color:#9b8eaa">${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div></div>
-          <h1>Liquidación — ${mesActual} ${anioActual}</h1>
-          <p><strong>${prof.nombre} ${prof.apellido}</strong> · ${prof.nivel} · ${prof.horas_semana}hs/sem · $${prof.tarifa_hora?.toLocaleString('es-AR')}/h</p>
-          <table>
-            <tr><td style="color:#888">Hs/semana</td><td style="text-align:right">${prof.horas_semana}hs</td></tr>
-            <tr><td style="color:#888">Hs/mes</td><td style="text-align:right">${prof.horas_semana*4}hs</td></tr>
-            <tr><td style="color:#888">Tarifa/hora</td><td style="text-align:right">$${prof.tarifa_hora?.toLocaleString('es-AR')}</td></tr>
-            <tr><td style="color:#888">Subtotal base</td><td style="text-align:right;font-weight:600">$${base.toLocaleString('es-AR')}</td></tr>
-            ${prof.es_coordinadora && montoCoord > 0 ? `<tr><td style="color:#652f8d">Monto de Coordinación</td><td style="text-align:right;color:#652f8d;font-weight:600">+$${montoCoord.toLocaleString('es-AR')}</td></tr>` : ''}
-            ${totalReemplazosHechos > 0 ? `<tr><td style="color:#2d7a4f">Reemplazos realizados (${reemplazosHechos.length} clase${reemplazosHechos.length!==1?'s':''})</td><td style="text-align:right;color:#2d7a4f;font-weight:600">+$${totalReemplazosHechos.toLocaleString('es-AR')}</td></tr>` : ''}
-            ${ajuste!==0?`<tr><td style="color:#2d7a4f">Ajuste${notaAjuste?' ('+notaAjuste+')':''}</td><td style="text-align:right;color:#2d7a4f">${ajuste>0?'+':''}$${Math.abs(ajuste).toLocaleString('es-AR')}</td></tr>`:''}
-            ${descLicFinal>0?`<tr><td style="color:#c0392b">Descuento ausencias${notaLic?' ('+notaLic+')':''}</td><td style="text-align:right;color:#c0392b">-$${descLicFinal.toLocaleString('es-AR')}</td></tr>`:''}
-          </table>
-          <div class="total"><span>Total a liquidar</span><span>$${total.toLocaleString('es-AR')}</span></div>
-          <script>window.onload=()=>window.print()<\/script></body></html>`)
+          const filas = [
+            `<tr><td style="color:#888">Hs/semana</td><td style="text-align:right">${prof.horas_semana}hs</td></tr>`,
+            `<tr><td style="color:#888">Hs/mes</td><td style="text-align:right">${prof.horas_semana*4}hs</td></tr>`,
+            `<tr><td style="color:#888">Tarifa/hora</td><td style="text-align:right">$${prof.tarifa_hora?.toLocaleString('es-AR')}</td></tr>`,
+            `<tr><td style="color:#888">Subtotal base</td><td style="text-align:right;font-weight:600">$${base.toLocaleString('es-AR')}</td></tr>`,
+            prof.es_coordinadora && montoCoord > 0 ? `<tr><td style="color:#652f8d">Monto de Coordinación</td><td style="text-align:right;color:#652f8d;font-weight:600">+$${montoCoord.toLocaleString('es-AR')}</td></tr>` : '',
+            totalReemplazosHechos > 0 ? `<tr><td style="color:#2d7a4f">Reemplazos realizados</td><td style="text-align:right;color:#2d7a4f;font-weight:600">+$${totalReemplazosHechos.toLocaleString('es-AR')}</td></tr>` : '',
+            ajuste !== 0 ? `<tr><td style="color:#2d7a4f">Ajuste${notaAjuste ? ' ('+notaAjuste+')' : ''}</td><td style="text-align:right;color:#2d7a4f">${ajuste>0?'+':''}$${Math.abs(ajuste).toLocaleString('es-AR')}</td></tr>` : '',
+            descLicFinal > 0 ? `<tr><td style="color:#c0392b">Descuento ausencias${notaLic ? ' ('+notaLic+')' : ''}</td><td style="text-align:right;color:#c0392b">-$${descLicFinal.toLocaleString('es-AR')}</td></tr>` : '',
+          ].filter(Boolean).join('')
+          const html = [
+            '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Liquidacion</title>',
+            '<style>body{font-family:sans-serif;padding:24px;font-size:14px}',
+            'h1{color:#652f8d;font-size:18px}table{width:100%;border-collapse:collapse;margin:16px 0}',
+            'td{padding:10px 0;border-bottom:1px solid #eee}',
+            '.total{background:#f2e8f9;padding:14px;border-radius:8px;display:flex;justify-content:space-between;font-size:18px;font-weight:700;color:#652f8d}',
+            '.logo{font-size:18px;font-weight:700}.logo span{color:#652f8d}',
+            '.hd{display:flex;justify-content:space-between;border-bottom:2px solid #652f8d;padding-bottom:12px;margin-bottom:18px}',
+            '</style></head><body>',
+            '<div class="hd"><div class="logo"><span>Next</span> Ezeiza</div>',
+            '<div style="font-size:12px;color:#9b8eaa">'+new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})+'</div></div>',
+            '<h1>Liquidacion &mdash; '+mesActual+' '+anioActual+'</h1>',
+            '<p><strong>'+prof.nombre+' '+prof.apellido+'</strong> &middot; '+prof.nivel+' &middot; '+prof.horas_semana+'hs/sem &middot; $'+prof.tarifa_hora?.toLocaleString('es-AR')+'/h</p>',
+            '<table>'+filas+'</table>',
+            '<div class="total"><span>Total a liquidar</span><span>$'+total.toLocaleString('es-AR')+'</span></div>',
+            '<script>window.onload=function(){window.print()}<\/script>',
+            '</body></html>'
+          ].join('')
+          win.document.write(html)
           win.document.close()
         }} style={{flex:1,padding:'11px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
-          PDF
+          Descargar PDF
         </button>
         <button onClick={confirmarLiquidacion} disabled={guardandoLiq}
           style={{flex:1,padding:'11px',background:liqGuardada?'var(--greenl)':guardandoLiq?'#aaa':'#1B6B4A',color:liqGuardada?'var(--green)':'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:guardandoLiq?'not-allowed':'pointer',transition:'all .2s'}}>
