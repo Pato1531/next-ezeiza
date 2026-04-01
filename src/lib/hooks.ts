@@ -7,11 +7,15 @@ import type { Profesora, Alumno, Curso, Clase, HorarioItem, Pago, AsistenciaClas
 const supabase = createClient()
 
 // ── STORE GLOBAL ──
-// Datos en memoria compartidos entre todos los componentes
-// Nunca muestran loading si ya hay datos previos
 const store: Record<string, any[]> = {}
+const storeTs: Record<string, number> = {} // timestamp de cada carga
 const loadingKeys: Set<string> = new Set()
 const listeners: Record<string, Set<()=>void>> = {}
+const TTL = 90000 // 90 segundos — refrescar datos si son más viejos que esto
+
+function isStale(key: string) {
+  return !storeTs[key] || (Date.now() - storeTs[key]) > TTL
+}
 
 function notify(key: string) {
   listeners[key]?.forEach(fn => fn())
@@ -23,16 +27,17 @@ function subscribe(key: string, fn: ()=>void) {
   return () => listeners[key]?.delete(fn)
 }
 
-async function loadOnce(key: string, loader: ()=>Promise<any[]>) {
-  if (store[key] !== undefined) return
+async function loadOnce(key: string, loader: ()=>Promise<any[]>, force = false) {
+  if (store[key] !== undefined && !force && !isStale(key)) return
   if (loadingKeys.has(key)) return
   loadingKeys.add(key)
   try {
     const data = await loader()
     store[key] = data
+    storeTs[key] = Date.now()
     notify(key)
   } catch (e) {
-    store[key] = store[key] ?? [] // mantener datos anteriores si hay error
+    store[key] = store[key] ?? []
     notify(key)
   } finally {
     loadingKeys.delete(key)
@@ -40,13 +45,10 @@ async function loadOnce(key: string, loader: ()=>Promise<any[]>) {
 }
 
 function useStore<T>(key: string, loader: ()=>Promise<T[]>): [T[], boolean] {
-  // Si ya hay datos en el store, usar esos inmediatamente — sin loading
   const [data, setData] = useState<T[]>(store[key] ?? [])
-  // Solo mostrar loading si NO hay datos previos
   const [isLoading, setIsLoading] = useState(!store[key])
 
   useEffect(() => {
-    // Si ya hay datos, mostrarlos inmediatamente
     if (store[key] !== undefined) {
       setData(store[key])
       setIsLoading(false)
@@ -55,8 +57,8 @@ function useStore<T>(key: string, loader: ()=>Promise<T[]>): [T[], boolean] {
       setData(store[key] ?? [])
       setIsLoading(false)
     })
-    // Cargar en background si no hay datos
-    loadOnce(key, loader)
+    // Cargar si no hay datos O si los datos son viejos
+    loadOnce(key, loader, isStale(key))
     return unsub
   }, [key])
 
@@ -65,26 +67,45 @@ function useStore<T>(key: string, loader: ()=>Promise<T[]>): [T[], boolean] {
 
 export function invalidateStore(key: string) {
   delete store[key]
+  delete storeTs[key]
 }
 
-// Auto-recargar datos críticos cada 60 segundos
-// Esto asegura que todos los usuarios vean cambios recientes
+const LOADERS: Record<string, ()=>Promise<any[]>> = {
+  alumnos: async () => {
+    const { data } = await supabase.from('alumnos').select('*').eq('activo', true).order('apellido')
+    return data ?? []
+  },
+  cursos: async () => {
+    const { data } = await supabase.from('cursos').select('*').eq('activo', true).order('nombre')
+    return data ?? []
+  },
+  profesoras: async () => {
+    const { data } = await supabase.from('profesoras').select('*').eq('activa', true).order('apellido')
+    return data ?? []
+  },
+}
+
 if (typeof window !== 'undefined') {
+  // Refrescar datos viejos cada 90 segundos si hay alguien mirando
   setInterval(() => {
-    // Solo invalidar si hay listeners activos (alguien está viendo esa sección)
-    ['alumnos', 'cursos', 'profesoras'].forEach(key => {
-      if (listeners[key]?.size > 0 && store[key] !== undefined) {
-        delete store[key]
-        loadOnce(key, async () => {
-          const { data } = await supabase.from(key === 'profesoras' ? 'profesoras' : key)
-            .select('*')
-            .eq(key === 'profesoras' ? 'activa' : 'activo', true)
-            .order(key === 'alumnos' ? 'apellido' : 'nombre')
-          return data ?? []
-        })
+    Object.keys(LOADERS).forEach(key => {
+      if (listeners[key]?.size > 0 && isStale(key)) {
+        loadOnce(key, LOADERS[key], true)
       }
     })
-  }, 60000) // cada 60 segundos
+  }, 90000)
+
+  // Cuando la app vuelve al foco, marcar datos como viejos para que se refresquen
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      Object.keys(LOADERS).forEach(key => {
+        if (listeners[key]?.size > 0) {
+          delete storeTs[key] // forzar refresh al volver
+          loadOnce(key, LOADERS[key], true)
+        }
+      })
+    }
+  })
 }
 
 // ── PROFESORAS ──
