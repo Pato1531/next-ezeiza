@@ -86,10 +86,17 @@ export default function Profesoras() {
   const guardarLic = async () => {
     if (!selId) return
     setModalLic(false)
-    const sb = createClient()
-    sb.from('licencias_profesoras').insert({ ...lic, profesora_id: selId }).select().single()
-      .then(({ data }) => { if (data) setLicencias(prev => [data, ...prev]) })
-      .catch(e => console.error('Error guardando licencia:', e))
+    const datos = { ...lic, profesora_id: selId }
+    // Resetear form para próxima licencia
+    setLic({ tipo:'Licencia médica', fecha_desde:hoy(), fecha_hasta:hoy(), observaciones:'', reemplazo_nombre:'', reemplazo_horas:0, es_paga:false, reemplazo_profesora_id:'' })
+    fetch('/api/guardar-licencia', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(datos)
+    }).then(r => r.json()).then(json => {
+      if (json.data) setLicencias(prev => [json.data, ...prev])
+      else console.error('Error guardando licencia:', json.error)
+    }).catch(e => console.error('Error licencia:', e))
   }
 
   const guardarEditLic = async () => {
