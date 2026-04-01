@@ -104,23 +104,25 @@ export default function Alumnos() {
     if (!form?.nombre || !form?.apellido) return alert('Nombre y apellido son obligatorios')
     setGuardando(true)
     const { id, activo, ...datos } = form
+    const t = setTimeout(() => { setGuardando(false); irALista() }, 8000)
     try {
       if (!id) {
         const nuevo = await agregar(datos)
+        clearTimeout(t)
         if (nuevo) irADetalle((nuevo as any).id)
         else irALista()
       } else {
-        // Actualizar store local inmediatamente (optimistic)
         await actualizar(id, datos)
-        // Guardar en DB via API route en background
         fetch('/api/actualizar-alumno', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, datos })
         }).catch(e => console.error('Error API actualizar:', e))
+        clearTimeout(t)
         irADetalle(id)
       }
     } catch (e) {
+      clearTimeout(t)
       console.error('Error guardando alumno:', e)
       if (id) irADetalle(id)
       else irALista()
