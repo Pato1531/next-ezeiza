@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/auth-context'
-import { useAlumnos, useProfesoras, useCursos } from '@/lib/hooks'
+import { useAlumnos, useProfesoras, useCursos, store } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -56,27 +56,26 @@ export default function Dashboard() {
       setCuotasPendientes(alumnos.filter(a => !alumnosConPago.has(a.id)).length)
     } catch { setLoading(false); return }
 
-    // Alertas ausencias consecutivas
+    // Alertas ausencias - query ligera sin JOINs
     const { data: asist } = await sb
       .from('asistencia_clases')
-      .select('alumno_id, estado, alumnos(nombre, apellido, color), clases(fecha, curso_id, cursos(nombre))')
+      .select('alumno_id, clase_id')
       .eq('estado', 'A')
+      .limit(200)
     
     if (asist) {
-      const porAlumno: Record<string,any> = {}
-      asist.forEach((a:any) => {
-        const aid = a.alumno_id
-        if (!porAlumno[aid]) porAlumno[aid] = { nombre:a.alumnos?.nombre, apellido:a.alumnos?.apellido, color:a.alumnos?.color, ausencias:[] }
-        porAlumno[aid].ausencias.push({ fecha:a.clases?.fecha, curso:a.clases?.cursos?.nombre })
-      })
-      const alertas: any[] = []
-      Object.values(porAlumno).forEach((al:any) => {
-        const sorted = [...al.ausencias].sort((a:any,b:any) => b.fecha?.localeCompare(a.fecha))
-        if (sorted.length >= 2 && sorted[0].curso === sorted[1].curso) {
-          alertas.push({ ...al, ultimasFechas: [sorted[0].fecha, sorted[1].fecha], curso: sorted[0].curso })
-        }
-      })
-      setAlertasAusencia(alertas.slice(0, 5))
+      // Contar ausencias por alumno usando store global
+      const conteo: Record<string,number> = {}
+      asist.forEach((a:any) => { conteo[a.alumno_id] = (conteo[a.alumno_id]||0) + 1 })
+      const alertas = Object.entries(conteo)
+        .filter(([,n]) => n >= 2)
+        .map(([alumno_id, total]) => {
+          const al = (store['alumnos']||[]).find((a:any) => a.id === alumno_id)
+          return al ? { alumno_id, nombre: al.nombre, apellido: al.apellido, color: al.color, total } : null
+        })
+        .filter(Boolean)
+        .slice(0, 5)
+      setAlertasAusencia(alertas as any[])
     }
 
     setLoading(false)
