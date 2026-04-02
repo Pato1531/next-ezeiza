@@ -57,8 +57,8 @@ export default function Alumnos() {
   const mesActual = MESES_LISTA[new Date().getMonth()]
   const mesFiltroNombre = MESES_LISTA[mesFiltro]
 
-  // Cargar pagos del mes y cursos en un solo efecto
-  useEffect(() => {
+  // Cargar pagos del mes y cursos
+  const cargarPagosYCursos = () => {
     if (!alumnos.length) return
     const sb = createClient()
     const anio = new Date().getFullYear()
@@ -70,7 +70,20 @@ export default function Alumnos() {
       const conCurso = new Set((cursosRes.data || []).map((r: any) => r.alumno_id))
       setAlumnosSinCurso(new Set(alumnos.map(a => a.id).filter(id => !conCurso.has(id))))
     }).catch(() => {})
-  }, [mesFiltro, alumnos.length])
+  }
+
+  useEffect(() => { cargarPagosYCursos() }, [mesFiltro, alumnos.length])
+
+  // Refrescar lista cuando se registra un pago individual
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      // Agregar inmediatamente al set para que el filtro se actualice al instante
+      if (detail?.alumno_id) setAlumnosConPagoMes(prev => new Set([...prev, detail.alumno_id]))
+    }
+    window.addEventListener('pago-registrado', handler)
+    return () => window.removeEventListener('pago-registrado', handler)
+  }, [])
   const [modalPago, setModalPago] = useState(false)
   const [motivoBaja, setMotivoBaja] = useState('')
   const [motivoLibre, setMotivoLibre] = useState('')
@@ -591,9 +604,11 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
 
   const guardarPago = async () => {
     setGuardandoPago(true)
-    await registrar({ ...pago, alumno_id: a.id })
+    const resultado = await registrar({ ...pago, alumno_id: a.id })
     setGuardandoPago(false)
     setModalPago(false)
+    // Disparar evento para que la lista actualice el filtro de pagos
+    if (resultado) window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: a.id } }))
   }
 
   const cursosFiltrados = busqCurso
