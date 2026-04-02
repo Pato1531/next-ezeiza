@@ -239,9 +239,21 @@ export function usePagos(alumnoId: string) {
   }, [alumnoId])
 
   const registrar = async (pago: any) => {
-    const { data: row, error } = await supabase.from('pagos_alumnos').insert(pago).select().single()
-    if (row && !error) setData(prev => [row, ...prev])
-    return row
+    try {
+      const res = await fetch('/api/registrar-pago', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pago)
+      })
+      const json = await res.json()
+      if (json.error) { console.error('Error registrando pago:', json.error); return null }
+      const row = json.data
+      if (row) setData(prev => {
+        const sinDup = prev.filter(p => !(p.mes === row.mes && p.anio === row.anio))
+        return [row, ...sinDup]
+      })
+      return row
+    } catch(e) { console.error('Error registrar pago:', e); return null }
   }
 
   return { pagos: data, registrar }
