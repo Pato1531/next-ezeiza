@@ -874,12 +874,21 @@ function PagosMasivos({ alumnos, onVolver }: any) {
     setSeleccionados(new Set())
     setTimeout(() => setGuardado(false), 3000)
     // Guardar en background
-    ;(async () => {
-      try {
-        const sb2 = createClient()
-        await sb2.from('pagos_alumnos').upsert(inserts, { onConflict: 'alumno_id,mes,anio' })
-      } catch(e) { console.error('Error pagos masivos:', e) }
-    })()
+    // Guardar cada pago via API route con service role
+    Promise.all(inserts.map(ins =>
+      fetch('/api/registrar-pago', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(ins)
+      })
+    )).then(() => {
+      // Refrescar set de pagos del mes
+      const sb2 = createClient()
+      sb2.from('pagos_alumnos').select('alumno_id').eq('mes', mes).eq('anio', anio)
+        .then(({ data }) => {
+          if (data) setAlumnosConPagoMes(new Set(data.map((r:any) => r.alumno_id)))
+        })
+    }).catch(e => console.error('Error pagos masivos:', e))
   }
 
   const totalMonto = [...seleccionados].reduce((sum, id) => {
