@@ -821,6 +821,93 @@ function PagosMasivos({ alumnos, onVolver }: any) {
   const mesActual = MESES[new Date().getMonth()]
   const anioActual = new Date().getFullYear()
 
+  const [vistaTab, setVistaTab] = useState<'registrar'|'reporte'>('registrar')
+  const [repMes, setRepMes] = useState(mesActual)
+  const [repAnio, setRepAnio] = useState(anioActual)
+  const [pagosReporte, setPagosReporte] = useState<any[]>([])
+  const [loadingReporte, setLoadingReporte] = useState(false)
+
+  const cargarReporte = async () => {
+    setLoadingReporte(true)
+    try {
+      const sb = createClient()
+      const { data } = await sb.from('pagos_alumnos')
+        .select('*, alumnos(nombre,apellido,nivel,cuota_mensual,color)')
+        .eq('mes', repMes).eq('anio', repAnio)
+        .order('created_at', { ascending: false })
+      setPagosReporte(data || [])
+    } catch(e) { console.error(e) }
+    setLoadingReporte(false)
+  }
+
+  useEffect(() => { if (vistaTab === 'reporte') cargarReporte() }, [vistaTab, repMes, repAnio])
+
+  const totalRecaudado = pagosReporte.reduce((s, p) => s + (p.monto || 0), 0)
+
+  const descargarExcel = () => {
+    const rows = [
+      ['NEXT EZEIZA — REPORTE DE PAGOS'],
+      [`Mes: ${repMes} ${repAnio}`, '', '', `Total: $${totalRecaudado.toLocaleString('es-AR')}`],
+      [''],
+      ['Alumno', 'Nivel', 'Monto', 'Método', 'Fecha', 'Observaciones'],
+      ...pagosReporte.map(p => [
+        `${p.alumnos?.nombre} ${p.alumnos?.apellido}`,
+        p.alumnos?.nivel || '—',
+        `$${p.monto?.toLocaleString('es-AR')}`,
+        p.metodo || '—',
+        p.fecha_pago ? new Date(p.fecha_pago+'T12:00:00').toLocaleDateString('es-AR') : '—',
+        p.observaciones || '—'
+      ])
+    ]
+    const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g,'""')}"`).join(',')).join('
+')
+    const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8;'})
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = `pagos-${repMes}-${repAnio}.csv`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const descargarPDF = () => {
+    const filas = pagosReporte.map(p => `
+      <tr>
+        <td>${p.alumnos?.nombre} ${p.alumnos?.apellido}</td>
+        <td>${p.alumnos?.nivel||'—'}</td>
+        <td style="font-weight:600;color:#652f8d">$${p.monto?.toLocaleString('es-AR')}</td>
+        <td>${p.metodo||'—'}</td>
+        <td>${p.fecha_pago ? new Date(p.fecha_pago+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
+      </tr>`).join('')
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Pagos ${repMes} ${repAnio}</title>
+    <style>
+      body{font-family:Arial,sans-serif;padding:28px;font-size:13px;color:#1a1020}
+      .hd{display:flex;justify-content:space-between;border-bottom:3px solid #652f8d;padding-bottom:14px;margin-bottom:20px}
+      .logo{font-size:20px;font-weight:700}.logo span{color:#652f8d}
+      h1{color:#652f8d;font-size:18px;margin:0 0 4px}
+      .total{background:#f2e8f9;padding:12px 16px;border-radius:10px;display:flex;justify-content:space-between;margin-bottom:16px}
+      table{width:100%;border-collapse:collapse}
+      th{border-bottom:2px solid #652f8d;padding:9px 8px;text-align:left;font-size:11px;text-transform:uppercase;color:#652f8d;letter-spacing:.04em}
+      td{padding:9px 8px;border-bottom:1px solid #f0edf5}
+      @media print{body{padding:16px}}
+    </style></head><body>
+    <div class="hd"><div class="logo"><span>Next</span> Ezeiza</div>
+    <div style="font-size:12px;color:#888">${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div></div>
+    <h1>Reporte de Pagos — ${repMes} ${repAnio}</h1>
+    <div class="total">
+      <span style="font-weight:600;color:#652f8d">${pagosReporte.length} pagos registrados</span>
+      <span style="font-size:18px;font-weight:700;color:#652f8d">Total: $${totalRecaudado.toLocaleString('es-AR')}</span>
+    </div>
+    <table><tr><th>Alumno</th><th>Nivel</th><th>Monto</th><th>Método</th><th>Fecha</th></tr>
+    ${filas}
+    </table>
+    <script>setTimeout(function(){window.print()},400)</script>
+    </body></html>`
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'})
+    const url = URL.createObjectURL(blob)
+    const win = window.open(url, '_blank')
+    if (!win) { const a = document.createElement('a'); a.href=url; a.download=`pagos-${repMes}-${repAnio}.html`; a.click() }
+    setTimeout(() => URL.revokeObjectURL(url), 10000)
+  }
+
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [mes, setMes] = useState(mesActual)
   const [anio] = useState(anioActual)
@@ -895,10 +982,79 @@ function PagosMasivos({ alumnos, onVolver }: any) {
 
   return (
     <div className="fade-in">
-      <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'20px'}}>
+      <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'16px'}}>
         <BtnG sm onClick={onVolver}>← Volver</BtnG>
-        <div style={{fontSize:'20px',fontWeight:700}}>Registrar pagos</div>
+        <div style={{fontSize:'20px',fontWeight:700}}>Pagos</div>
       </div>
+
+      {/* Tabs */}
+      <div style={{display:'flex',gap:'8px',marginBottom:'16px'}}>
+        <button onClick={()=>setVistaTab('registrar')} style={{padding:'9px 18px',borderRadius:'20px',border:'1.5px solid',fontSize:'13px',fontWeight:600,cursor:'pointer',background:vistaTab==='registrar'?'var(--v)':'transparent',color:vistaTab==='registrar'?'#fff':'var(--text2)',borderColor:vistaTab==='registrar'?'var(--v)':'var(--border)'}}>Registrar pagos</button>
+        <button onClick={()=>setVistaTab('reporte')} style={{padding:'9px 18px',borderRadius:'20px',border:'1.5px solid',fontSize:'13px',fontWeight:600,cursor:'pointer',background:vistaTab==='reporte'?'var(--v)':'transparent',color:vistaTab==='reporte'?'#fff':'var(--text2)',borderColor:vistaTab==='reporte'?'var(--v)':'var(--border)'}}>Reporte</button>
+      </div>
+
+      {/* VISTA REPORTE */}
+      {vistaTab === 'reporte' && <div>
+        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px',marginBottom:'14px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
+            <div>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Mes</div>
+              <select style={IS} value={repMes} onChange={e=>setRepMes(e.target.value)}>
+                {MESES.map(m=><option key={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Año</div>
+              <select style={IS} value={repAnio} onChange={e=>setRepAnio(+e.target.value)}>
+                {[2024,2025,2026,2027].map(y=><option key={y}>{y}</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {loadingReporte ? (
+          <div style={{textAlign:'center',padding:'32px',color:'var(--text3)'}}>Cargando...</div>
+        ) : (
+          <>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
+              <div>
+                <div style={{fontSize:'15px',fontWeight:700}}>{pagosReporte.length} pagos · {repMes} {repAnio}</div>
+                <div style={{fontSize:'13px',color:'var(--v)',fontWeight:600}}>Total: ${totalRecaudado.toLocaleString('es-AR')}</div>
+              </div>
+              <div style={{display:'flex',gap:'8px'}}>
+                <button onClick={descargarExcel} style={{padding:'9px 14px',background:'var(--white)',color:'var(--green)',border:'1.5px solid var(--green)',borderRadius:'10px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>⬇ Excel</button>
+                <button onClick={descargarPDF} style={{padding:'9px 14px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>⬇ PDF</button>
+              </div>
+            </div>
+
+            {pagosReporte.length === 0 ? (
+              <div style={{textAlign:'center',padding:'40px',color:'var(--text3)',background:'var(--white)',borderRadius:'14px',border:'1.5px solid var(--border)'}}>
+                No hay pagos registrados para {repMes} {repAnio}
+              </div>
+            ) : (
+              <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',overflow:'hidden'}}>
+                {pagosReporte.map((p:any, i:number) => (
+                  <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',borderBottom:i<pagosReporte.length-1?'1px solid var(--border)':'none'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+                      <div style={{width:32,height:32,borderRadius:8,background:p.alumnos?.color||'#652f8d',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}}>
+                        {p.alumnos?.nombre?.[0]}{p.alumnos?.apellido?.[0]}
+                      </div>
+                      <div>
+                        <div style={{fontSize:'13.5px',fontWeight:600}}>{p.alumnos?.nombre} {p.alumnos?.apellido}</div>
+                        <div style={{fontSize:'11px',color:'var(--text3)'}}>{p.metodo} · {p.fecha_pago ? new Date(p.fecha_pago+'T12:00:00').toLocaleDateString('es-AR') : '—'}</div>
+                      </div>
+                    </div>
+                    <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${p.monto?.toLocaleString('es-AR')}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>}
+
+      {/* VISTA REGISTRAR */}
+      {vistaTab === 'registrar' && <>
 
       {/* Config pago */}
       <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px',marginBottom:'14px'}}>
@@ -999,6 +1155,7 @@ function PagosMasivos({ alumnos, onVolver }: any) {
           {guardando ? 'Registrando pagos...' : `Registrar ${seleccionados.size} pago${seleccionados.size!==1?'s':''}`}
         </button>
       </div>
+      </>}
     </div>
   )
 }
