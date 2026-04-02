@@ -90,7 +90,7 @@ export default function Alumnos() {
   const [guardandoBaja, setGuardandoBaja] = useState(false)
   const [bajas, setBajas] = useState<any[]>([])
   const [loadingBajas, setLoadingBajas] = useState(false)
-  const [pago, setPago] = useState({ mes: MESES[new Date().getMonth()], anio: 2025, monto: 0, metodo:'Efectivo', fecha_pago: hoy(), observaciones:'' })
+  const [pago, setPago] = useState({ mes: MESES[new Date().getMonth()], anio: new Date().getFullYear(), monto: 0, metodo:'Efectivo', fecha_pago: hoy(), observaciones:'' })
 
   const puedeVerPagos = ['director','coordinadora','secretaria'].includes(usuario?.rol||'')
   const puedeEditar = usuario?.rol !== 'profesora'
@@ -728,7 +728,7 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(12,1fr)',gap:'3px',marginBottom:'14px'}}>
           {MESES.map((m,i) => {
-            const p = pagos.find((x:any) => x.mes === m && x.anio === 2025)
+            const p = pagos.find((x:any) => x.mes === m && x.anio === new Date().getFullYear())
             const futuro = i > new Date().getMonth()
             const col = futuro?'var(--border)':!p?'var(--redl)':p.monto>=a.cuota_mensual?'var(--greenl)':'var(--amberl)'
             return <div key={m} style={{height:'18px',borderRadius:'3px',background:col}} title={m} />
