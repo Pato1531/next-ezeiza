@@ -882,12 +882,8 @@ function PagosMasivos({ alumnos, onVolver }: any) {
         body: JSON.stringify(ins)
       })
     )).then(() => {
-      // Refrescar set de pagos del mes
-      const sb2 = createClient()
-      sb2.from('pagos_alumnos').select('alumno_id').eq('mes', mes).eq('anio', anio)
-        .then(({ data }) => {
-          if (data) setAlumnosConPagoMes(new Set(data.map((r:any) => r.alumno_id)))
-        })
+      // Disparar evento para refrescar filtros
+      inserts.forEach(ins => window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: ins.alumno_id } })))
     }).catch(e => console.error('Error pagos masivos:', e))
   }
 
