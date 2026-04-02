@@ -592,14 +592,18 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
     setAsignando(false)
     // Guardar en DB en background - primero borrar curso anterior, luego insertar nuevo
     const sb = createClient()
-    sb.from('cursos_alumnos').delete().eq('alumno_id', a.id)
-      .then(() => sb.from('cursos_alumnos').upsert({
-        curso_id: cursoId,
-        alumno_id: a.id,
-        fecha_ingreso: new Date().toISOString().split('T')[0]
-      }, { onConflict: 'curso_id,alumno_id', ignoreDuplicates: false }))
-      .then(() => window.dispatchEvent(new CustomEvent('curso-alumno-updated')))
-      .catch(e => console.error('Error guardando curso:', e))
+    ;(async () => {
+      try {
+        const sb2 = createClient()
+        await sb2.from('cursos_alumnos').delete().eq('alumno_id', a.id)
+        await sb2.from('cursos_alumnos').insert({
+          curso_id: cursoId,
+          alumno_id: a.id,
+          fecha_ingreso: new Date().toISOString().split('T')[0]
+        })
+        window.dispatchEvent(new CustomEvent('curso-alumno-updated'))
+      } catch(e) { console.error('Error guardando curso:', e) }
+    })()
   }
 
   const guardarPago = async () => {
@@ -870,8 +874,12 @@ function PagosMasivos({ alumnos, onVolver }: any) {
     setSeleccionados(new Set())
     setTimeout(() => setGuardado(false), 3000)
     // Guardar en background
-    sb.from('pagos_alumnos').upsert(inserts, { onConflict: 'alumno_id,mes,anio' })
-      .catch(e => console.error('Error pagos masivos:', e))
+    ;(async () => {
+      try {
+        const sb2 = createClient()
+        await sb2.from('pagos_alumnos').upsert(inserts, { onConflict: 'alumno_id,mes,anio' })
+      } catch(e) { console.error('Error pagos masivos:', e) }
+    })()
   }
 
   const totalMonto = [...seleccionados].reduce((sum, id) => {
