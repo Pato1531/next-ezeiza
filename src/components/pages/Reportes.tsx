@@ -18,6 +18,27 @@ export default function Reportes() {
 
   const [ausentes, setAusentes] = useState<any[]>([])
   const [alertas2Cons, setAlertas2Cons] = useState<any[]>([])
+  const [alumnosConPago, setAlumnosConPago] = useState<Set<string>>(new Set())
+
+  // Cargar pagos del mes actual para cobranza
+  useEffect(() => {
+    if (!alumnos.length) return
+    const sb = createClient()
+    sb.from('pagos_alumnos').select('alumno_id')
+      .eq('mes', mesActualNombre).eq('anio', anioActual)
+      .then(({ data }) => setAlumnosConPago(new Set((data||[]).map((r:any) => r.alumno_id))))
+      .catch(() => {})
+  }, [alumnos.length, mesActualNombre, anioActual])
+
+  // Refrescar cuando se registra un pago desde Alumnos
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.alumno_id) setAlumnosConPago(prev => new Set([...prev, detail.alumno_id]))
+    }
+    window.addEventListener('pago-registrado', handler)
+    return () => window.removeEventListener('pago-registrado', handler)
+  }, [])
   const [loadingAusentes, setLoadingAusentes] = useState(true)
 
   useEffect(() => { cargarAusentes() }, [])
@@ -106,30 +127,34 @@ export default function Reportes() {
     abrirPDF('Asistencia Docente', html)
   }
 
-  const estadoCobranza = new Date().getDate() <= 10 ? 'Al día' : 'Deudor'
-  const colorEstado = estadoCobranza === 'Al día' ? '#2d7a4f' : '#c0392b'
+  const diaHoy = new Date().getDate()
+  const getEstadoCobranza = (alumnoId: string) => {
+    if (alumnosConPago.has(alumnoId)) return { label: 'Pagado', color: '#2d7a4f' }
+    if (diaHoy <= 10) return { label: 'Al día', color: '#b45309' }
+    return { label: 'Deudor', color: '#c0392b' }
+  }
 
   const exportCobranzaCSV = () => {
     const rows = [
       ['NEXT EZEIZA — REPORTE DE COBRANZA'],
       ['Generado:', new Date().toLocaleDateString('es-AR')],
-      ['Estado al día: del 1 al 10 del mes. Deudor: del 11 en adelante'],
+      [`Mes: ${mesActualNombre} ${anioActual}`],
+      ['Pagado: pago registrado · Al día: sin pago del 1-10 · Deudor: sin pago del 11+'],
       [''],
       ['Alumno','Nivel','Cuota mensual','Estado'],
-      ...alumnos.map(a => [
-        `${a.nombre} ${a.apellido}`, a.nivel,
-        `$${a.cuota_mensual?.toLocaleString('es-AR')}`,
-        estadoCobranza
-      ])
+      ...alumnos.map(a => {
+        const { label } = getEstadoCobranza(a.id)
+        return [`${a.nombre} ${a.apellido}`, a.nivel, `$${a.cuota_mensual?.toLocaleString('es-AR')}`, label]
+      })
     ]
     descargarCSV(rows, 'cobranza_alumnos')
   }
 
   const exportCobranzaPDF = () => {
-    const html = `<h1>Cobranza por Alumno — ${new Date().toLocaleDateString('es-AR',{month:'long',year:'numeric'})}</h1>
-    <p style="color:#888;font-size:12px">Estado: del 1 al 10 = Al día · del 11 en adelante = Deudor</p>
+    const html = `<h1>Cobranza por Alumno — ${mesActualNombre} ${anioActual}</h1>
+    <p style="color:#888;font-size:12px">Pagado: pago registrado &bull; Al día: sin pago del 1-10 &bull; Deudor: sin pago del 11+</p>
     <table><tr><th>Alumno</th><th>Nivel</th><th>Cuota</th><th>Estado</th></tr>
-    ${alumnos.map(a=>`<tr><td>${a.nombre} ${a.apellido}</td><td>${a.nivel}</td><td>$${a.cuota_mensual?.toLocaleString('es-AR')}</td><td style="color:${colorEstado};font-weight:600">${estadoCobranza}</td></tr>`).join('')}
+    ${alumnos.map(a=>{const e=getEstadoCobranza(a.id);return`<tr><td>${a.nombre} ${a.apellido}</td><td>${a.nivel}</td><td>$${a.cuota_mensual?.toLocaleString('es-AR')}</td><td style="color:${e.color};font-weight:600">${e.label}</td></tr>`}).join('')}
     </table>`
     abrirPDF('Cobranza por Alumno', html)
   }
@@ -342,7 +367,10 @@ export default function Reportes() {
         onCSV={exportCobranzaCSV}
         onPDF={exportCobranzaPDF}
       >
-        {alumnos.map(a => (
+        {alumnos.map(a => {
+          const estado = getEstadoCobranza(a.id)
+          const bgColor = estado.label === 'Pagado' ? 'var(--greenl)' : estado.label === 'Al día' ? '#fef3cd' : '#fdeaea'
+          return (
           <div key={a.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
             <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
               <Av color={a.color} size={28}>{a.nombre[0]}{a.apellido[0]}</Av>
@@ -351,9 +379,9 @@ export default function Reportes() {
                 <div style={{fontSize:'12px',color:'var(--text2)'}}>{a.nivel} · ${a.cuota_mensual?.toLocaleString('es-AR')}/mes</div>
               </div>
             </div>
-            <span style={{padding:'3px 10px',borderRadius:'20px',fontSize:'11.5px',fontWeight:600,background:'var(--greenl)',color:'var(--green)'}}>Al día</span>
+            <span style={{padding:'3px 10px',borderRadius:'20px',fontSize:'11.5px',fontWeight:600,background:bgColor,color:estado.color}}>{estado.label}</span>
           </div>
-        ))}
+        )})}
       </ReportSection>
 
       {/* SECCIÓN: LIQUIDACIÓN */}
