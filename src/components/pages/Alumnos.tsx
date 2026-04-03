@@ -606,13 +606,119 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
     })()
   }
 
+  const [ultimoPago, setUltimoPago] = useState<any>(null)
+  const [modalRecibo, setModalRecibo] = useState(false)
+
+  // Normalizar teléfono al formato wa.me (+54 9 11 XXXXXXXX)
+  const normalizarTel = (tel: string) => {
+    if (!tel) return ''
+    let t = tel.replace(/\D/g, '')
+    // Quitar 0 inicial de código de área
+    if (t.startsWith('0')) t = t.slice(1)
+    // Quitar 54 si ya lo tiene
+    if (t.startsWith('54')) t = t.slice(2)
+    // Quitar 9 de celular si ya lo tiene al inicio
+    if (t.startsWith('9') && t.length > 10) t = t.slice(1)
+    return '549' + t
+  }
+
+  const abrirWS = (tel: string, msg: string) => {
+    const num = normalizarTel(tel)
+    if (!num || num.length < 12) { alert('No hay teléfono cargado para este contacto'); return }
+    const url = `https://wa.me/${num}?text=${encodeURIComponent(msg)}`
+    window.open(url, '_blank')
+  }
+
+  const msgCuotaPendiente = () => {
+    const contacto = a.es_menor ? a.padre_nombre || 'familia' : a.nombre
+    const tel = a.es_menor ? a.padre_telefono : a.telefono
+    const msg = `Hola ${contacto}! 👋 Te escribimos de *Next Ezeiza English Institute*.
+
+Te recordamos que la cuota de *${pago.mes} ${pago.anio}* de *${a.nombre} ${a.apellido}* se encuentra pendiente de pago.
+
+💰 Monto: *$${(a.cuota_mensual||0).toLocaleString('es-AR')}*
+📚 Curso: *${cursoActual?.nombre || '—'}*
+
+Podés abonar en el instituto o por transferencia. Ante cualquier consulta estamos a disposición. ¡Muchas gracias! 🙏`
+    abrirWS(tel, msg)
+  }
+
+  const generarRecibo = (p: any) => {
+    const contacto = a.es_menor ? a.padre_nombre || a.nombre : a.nombre
+    const tel = a.es_menor ? a.padre_telefono : a.telefono
+    const fecha = p.fecha_pago ? new Date(p.fecha_pago+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
+    const num = Math.floor(Math.random()*900000)+100000
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo ${a.nombre} ${a.apellido}</title>
+    <style>
+      body{font-family:Arial,sans-serif;padding:0;margin:0;background:#f5f0fa}
+      .wrap{max-width:400px;margin:20px auto;background:white;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(101,47,141,.15)}
+      .hdr{background:linear-gradient(135deg,#652f8d,#8b4fc4);padding:24px;color:white}
+      .logo{font-size:20px;font-weight:900;margin-bottom:4px}.logo span{opacity:.7;font-weight:400}
+      .rec-num{font-size:12px;opacity:.7;margin-top:2px}
+      .monto-sec{background:#f2e8f9;padding:20px;text-align:center;border-bottom:2px dashed #d4a8e8}
+      .monto-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
+      .monto{font-size:44px;font-weight:900;color:#652f8d;letter-spacing:-2px}
+      .monto-mes{font-size:13px;color:#9b8eaa;margin-top:4px}
+      .body{padding:20px}
+      .fila{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0edf5}
+      .fila:last-child{border-bottom:none}
+      .fila-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+      .fila-val{font-size:13px;color:#1a1020;font-weight:700;text-align:right;max-width:60%}
+      .badge{background:#e6f4ec;color:#2d7a4f;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
+      .footer{background:#faf7fd;padding:14px 20px;text-align:center;font-size:11px;color:#9b8eaa}
+      @media print{body{background:white}.wrap{box-shadow:none;margin:0;border-radius:0}}
+    </style></head><body>
+    <div class="wrap">
+      <div class="hdr">
+        <div class="logo">Next <span>Ezeiza</span></div>
+        <div class="rec-num">Comprobante #${num} · ${fecha}</div>
+      </div>
+      <div class="monto-sec">
+        <div class="monto-lab">Total abonado</div>
+        <div class="monto">$${(p.monto||0).toLocaleString('es-AR')}</div>
+        <div class="monto-mes">Cuota ${p.mes} ${p.anio}</div>
+      </div>
+      <div class="body">
+        <div class="fila"><div class="fila-lab">Alumno</div><div class="fila-val">${a.nombre} ${a.apellido}</div></div>
+        <div class="fila"><div class="fila-lab">Curso</div><div class="fila-val">${cursoActual?.nombre||'—'}</div></div>
+        <div class="fila"><div class="fila-lab">Método</div><div class="fila-val">${p.metodo||'Efectivo'}</div></div>
+        <div class="fila"><div class="fila-lab">Fecha</div><div class="fila-val">${fecha}</div></div>
+        ${p.observaciones?`<div class="fila"><div class="fila-lab">Nota</div><div class="fila-val">${p.observaciones}</div></div>`:''}
+        <div class="fila"><div class="fila-lab">Estado</div><div class="fila-val"><span class="badge">✓ Pagado</span></div></div>
+      </div>
+      <div class="footer">Next Ezeiza English Institute · Ezeiza, Buenos Aires</div>
+    </div>
+    <script>setTimeout(function(){window.print()},400)</script>
+    </body></html>`
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'})
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 15000)
+    // WS con aviso de pago
+    if (tel) {
+      const msgWS = `✅ *Recibo de pago — Next Ezeiza*
+
+Hola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${a.nombre} ${a.apellido}*.
+
+💰 Monto: *$${(p.monto||0).toLocaleString('es-AR')}*
+📅 Fecha: ${fecha}
+💳 Método: ${p.metodo||'Efectivo'}
+
+¡Gracias! 🙌`
+      setUltimoPago({ tel, msg: msgWS })
+      setModalRecibo(true)
+    }
+  }
+
   const guardarPago = async () => {
     setGuardandoPago(true)
     const resultado = await registrar({ ...pago, alumno_id: a.id })
     setGuardandoPago(false)
     setModalPago(false)
-    // Disparar evento para que la lista actualice el filtro de pagos
-    if (resultado) window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: a.id } }))
+    if (resultado) {
+      window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: a.id } }))
+      generarRecibo({ ...pago, alumno_id: a.id })
+    }
   }
 
   const cursosFiltrados = busqCurso
@@ -729,6 +835,12 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px'}}>
           <SL>Historial de pagos</SL>
           <BtnP sm onClick={() => setModalPago(true)}>+ Registrar pago</BtnP>
+          {(a.telefono || a.padre_telefono) && (
+            <button onClick={msgCuotaPendiente} style={{padding:'9px 12px',background:'#25d366',color:'white',border:'none',borderRadius:'10px',fontSize:'12px',fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.553 4.122 1.523 5.857L0 24l6.338-1.503A11.962 11.962 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.659-.5-5.191-1.375l-.371-.219-3.865.916.977-3.77-.24-.387A9.961 9.961 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z"/></svg>
+              Avisar
+            </button>
+          )}
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(12,1fr)',gap:'3px',marginBottom:'14px'}}>
           {MESES.map((m,i) => {
@@ -748,9 +860,14 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
                 <div style={{fontSize:'14px',fontWeight:600}}>{p.mes} {p.anio}</div>
                 <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'2px'}}>{p.metodo} · {fmtFecha(p.fecha_pago)}</div>
               </div>
-              <div style={{textAlign:'right'}}>
-                <div style={{fontSize:'15px',fontWeight:700}}>${p.monto?.toLocaleString('es-AR')}</div>
-                <Badge cls={ok?'b-green':parc?'b-amber':'b-red'} style={{marginTop:'3px'}}>{ok?'Completo':parc?'Parcial':'Pendiente'}</Badge>
+              <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                <div style={{textAlign:'right'}}>
+                  <div style={{fontSize:'15px',fontWeight:700}}>${p.monto?.toLocaleString('es-AR')}</div>
+                  <Badge cls={ok?'b-green':parc?'b-amber':'b-red'} style={{marginTop:'3px'}}>{ok?'Completo':parc?'Parcial':'Pendiente'}</Badge>
+                </div>
+                <button onClick={() => generarRecibo(p)} style={{padding:'7px 10px',background:'var(--vl)',color:'var(--v)',border:'none',borderRadius:'9px',fontSize:'11px',fontWeight:700,cursor:'pointer',flexShrink:0}}>
+                  Recibo
+                </button>
               </div>
             </div>
           )
@@ -809,6 +926,20 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
           <BtnG style={{flex:1}} onClick={() => setModalPago(false)}>Cancelar</BtnG>
           <BtnP style={{flex:2}} onClick={guardarPago} disabled={guardandoPago}>{guardandoPago?'Guardando...':'Registrar pago'}</BtnP>
         </div>
+      </ModalSheet>}
+
+      {modalRecibo && ultimoPago && <ModalSheet title="Pago registrado ✓" onClose={() => setModalRecibo(false)}>
+        <div style={{textAlign:'center',padding:'8px 0 16px'}}>
+          <div style={{fontSize:'48px',marginBottom:'8px'}}>✅</div>
+          <div style={{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}}>Recibo generado</div>
+          <div style={{fontSize:'13px',color:'var(--text2)'}}>¿Querés enviarle el comprobante por WhatsApp?</div>
+        </div>
+        <button onClick={() => { abrirWS(ultimoPago.tel, ultimoPago.msg); setModalRecibo(false) }}
+          style={{width:'100%',padding:'13px',background:'#25d366',color:'white',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',marginBottom:'8px'}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.553 4.122 1.523 5.857L0 24l6.338-1.503A11.962 11.962 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.659-.5-5.191-1.375l-.371-.219-3.865.916.977-3.77-.24-.387A9.961 9.961 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z"/></svg>
+          Enviar por WhatsApp
+        </button>
+        <BtnG style={{width:'100%'}} onClick={() => setModalRecibo(false)}>Cerrar</BtnG>
       </ModalSheet>}
     </div>
   )
