@@ -39,10 +39,18 @@ export default function Agenda() {
   const guardar = async () => {
     if (!form.titulo || !form.fecha) return alert('Título y fecha son obligatorios')
     setGuardando(true)
-    const sb = createClient()
-    const { error } = await sb.from('agenda_eventos').insert({ ...form, creado_por: usuario?.nombre })
-    if (!error) { await cargarEventos(); setVista('proximos'); setForm({ titulo:'', tipo:'reunion', fecha: hoy(), hora_inicio:'', hora_fin:'', descripcion:'', convocados:'todos' }) }
-    else alert('Error: ' + error.message)
+    try {
+      const res = await fetch('/api/guardar-evento', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...form, creado_por: usuario?.nombre })
+      })
+      const json = await res.json()
+      if (json.error) { alert('Error: ' + json.error); setGuardando(false); return }
+      await cargarEventos()
+      setVista('proximos')
+      setForm({ titulo:'', tipo:'reunion', fecha: hoy(), hora_inicio:'', hora_fin:'', descripcion:'', convocados:'todos' })
+    } catch(e:any) { alert('Error al guardar') }
     setGuardando(false)
   }
 
