@@ -548,10 +548,27 @@ export default function Alumnos() {
 }
 
 function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVolver, onEditar, onEliminar, confirmDelete, onCancelDelete, onConfirmDelete, modalPago, setModalPago, pago, setPago }: any) {
-  const { pagos, registrar } = usePagos(a.id)
+  const { pagos: _pagos, registrar } = usePagos(a.id)
+  const [pagos, setPagosLocal] = useState<any[]>([])
+  useEffect(() => { setPagosLocal(_pagos) }, [_pagos])
+  useEffect(() => {
+    const handler = async (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.alumno_id !== a.id) return
+      const sb = createClient()
+      const { data } = await sb.from('pagos_alumnos').select('*').eq('alumno_id', a.id).order('created_at', { ascending: false })
+      if (data) setPagosLocal(data)
+    }
+    window.addEventListener('recargar-pagos', handler)
+    return () => window.removeEventListener('recargar-pagos', handler)
+  }, [a.id])
   const { historial } = useHistorialCursos(a.id)
   const { historial: histCuotas } = useCuotasHistorial(a.id)
   const [guardandoPago, setGuardandoPago] = useState(false)
+  const [modalEditPago, setModalEditPago] = useState(false)
+  const [pagoEditando, setPagoEditando] = useState<any>(null)
+  const [confirmDeletePago, setConfirmDeletePago] = useState<any>(null)
+  const [eliminandoPago, setEliminandoPago] = useState(false)
   const [cursoActual, setCursoActual] = useState<any>(null)
   const { cursos: todosLosCursos } = useCursos()
   const [modalAsignarCurso, setModalAsignarCurso] = useState(false)
@@ -719,6 +736,34 @@ Hola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${
       window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: a.id } }))
       generarRecibo({ ...pago, alumno_id: a.id })
     }
+
+  const guardarEditPago = async () => {
+    if (!pagoEditando) return
+    setGuardandoPago(true)
+    try {
+      await fetch('/api/registrar-pago', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...pagoEditando, alumno_id: a.id })
+      })
+      window.dispatchEvent(new CustomEvent('recargar-pagos', { detail: { alumno_id: a.id } }))
+    } catch(e) { console.error(e) }
+    setGuardandoPago(false)
+    setModalEditPago(false)
+    setPagoEditando(null)
+  }
+
+  const eliminarPago = async () => {
+    if (!confirmDeletePago) return
+    setEliminandoPago(true)
+    try {
+      const sb = createClient()
+      await sb.from('pagos_alumnos').delete().eq('id', confirmDeletePago.id)
+      window.dispatchEvent(new CustomEvent('recargar-pagos', { detail: { alumno_id: a.id } }))
+    } catch(e) { console.error(e) }
+    setEliminandoPago(false)
+    setConfirmDeletePago(null)
+  }
   }
 
   const cursosFiltrados = busqCurso
@@ -868,6 +913,14 @@ Hola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${
                 <button onClick={() => generarRecibo(p)} style={{padding:'7px 10px',background:'var(--vl)',color:'var(--v)',border:'none',borderRadius:'9px',fontSize:'11px',fontWeight:700,cursor:'pointer',flexShrink:0}}>
                   Recibo
                 </button>
+                {puedeEditar && <>
+                  <button onClick={() => { setPagoEditando({...p}); setModalEditPago(true) }} style={{padding:'7px 10px',background:'var(--bg)',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'9px',fontSize:'11px',fontWeight:700,cursor:'pointer',flexShrink:0}}>
+                    Editar
+                  </button>
+                  <button onClick={() => setConfirmDeletePago(p)} style={{padding:'7px 10px',background:'var(--redl)',color:'var(--red)',border:'none',borderRadius:'9px',fontSize:'11px',fontWeight:700,cursor:'pointer',flexShrink:0}}>
+                    ✕
+                  </button>
+                </>}
               </div>
             </div>
           )
@@ -925,6 +978,53 @@ Hola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${
         <div style={{display:'flex',gap:'10px',marginTop:'8px'}}>
           <BtnG style={{flex:1}} onClick={() => setModalPago(false)}>Cancelar</BtnG>
           <BtnP style={{flex:2}} onClick={guardarPago} disabled={guardandoPago}>{guardandoPago?'Guardando...':'Registrar pago'}</BtnP>
+        </div>
+      </ModalSheet>}
+
+      {/* MODAL EDITAR PAGO */}
+      {modalEditPago && pagoEditando && <ModalSheet title="Editar pago" onClose={() => { setModalEditPago(false); setPagoEditando(null) }}>
+        <Field2 label="Mes">
+          <select style={IS} value={pagoEditando.mes} onChange={e=>setPagoEditando({...pagoEditando,mes:e.target.value})}>
+            {MESES.map(m=><option key={m}>{m}</option>)}
+          </select>
+        </Field2>
+        <Field2 label="Monto ($)"><Input type="number" value={pagoEditando.monto||''} onChange={(v:string)=>setPagoEditando({...pagoEditando,monto:+v})} /></Field2>
+        <Field2 label="Método">
+          <select style={IS} value={pagoEditando.metodo} onChange={e=>setPagoEditando({...pagoEditando,metodo:e.target.value})}>
+            <option>Efectivo</option><option>Transferencia</option><option>MercadoPago</option>
+          </select>
+        </Field2>
+        <Field2 label="Fecha"><input style={IS} type="date" value={pagoEditando.fecha_pago} onChange={e=>setPagoEditando({...pagoEditando,fecha_pago:e.target.value})} /></Field2>
+        <Field2 label="Observaciones"><Input value={pagoEditando.observaciones||''} onChange={(v:string)=>setPagoEditando({...pagoEditando,observaciones:v})} placeholder="Opcional..." /></Field2>
+        <div style={{display:'flex',gap:'10px',marginTop:'8px'}}>
+          <BtnG style={{flex:1}} onClick={() => { setModalEditPago(false); setPagoEditando(null) }}>Cancelar</BtnG>
+          <BtnP style={{flex:2}} onClick={guardarEditPago} disabled={guardandoPago}>{guardandoPago?'Guardando...':'Guardar cambios'}</BtnP>
+        </div>
+      </ModalSheet>}
+
+      {/* MODAL CONFIRMAR ELIMINAR PAGO */}
+      {confirmDeletePago && <ModalSheet title="¿Eliminar pago?" onClose={() => setConfirmDeletePago(null)}>
+        <div style={{textAlign:'center',padding:'8px 0 16px'}}>
+          <div style={{fontSize:'40px',marginBottom:'10px'}}>🗑️</div>
+          <div style={{fontSize:'15px',fontWeight:700,marginBottom:'6px'}}>
+            Pago de {confirmDeletePago.mes} {confirmDeletePago.anio}
+          </div>
+          <div style={{fontSize:'22px',fontWeight:800,color:'var(--red)',marginBottom:'6px'}}>
+            ${confirmDeletePago.monto?.toLocaleString('es-AR')}
+          </div>
+          <div style={{fontSize:'13px',color:'var(--text2)'}}>
+            {confirmDeletePago.metodo} · {fmtFecha(confirmDeletePago.fecha_pago)}
+          </div>
+          <div style={{fontSize:'12px',color:'var(--text3)',marginTop:'10px'}}>
+            Esta acción no se puede deshacer.
+          </div>
+        </div>
+        <div style={{display:'flex',gap:'10px'}}>
+          <BtnG style={{flex:1}} onClick={() => setConfirmDeletePago(null)}>Cancelar</BtnG>
+          <button onClick={eliminarPago} disabled={eliminandoPago}
+            style={{flex:2,padding:'12px',background:'var(--red)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:700,cursor:'pointer',opacity:eliminandoPago?.5:1}}>
+            {eliminandoPago ? 'Eliminando...' : 'Sí, eliminar'}
+          </button>
         </div>
       </ModalSheet>}
 
