@@ -10,6 +10,7 @@ import Cursos from './pages/Cursos'
 import Horarios from './pages/Horarios'
 import Profesoras from './pages/Profesoras'
 import Reportes from './pages/Reportes'
+import Agenda from './pages/Agenda'
 import Permisos from './pages/Permisos'
 import Perfil from './pages/Perfil'
 import Comunicados from './pages/Comunicados'
@@ -22,6 +23,7 @@ const ALL_NAV = [
   { id: 'profesoras', label: 'Docentes',  icon: 'M7 7a3 3 0 100-6 3 3 0 000 6zM1 18c0-3.3 2.7-6 6-6M15 8a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM12 18c0-2.5 2-4.5 5-4.5' },
   { id: 'reportes',   label: 'Reportes',  icon: 'M4 15l4-4 3 3 5-6M2 2h16v16H2z' },
   { id: 'permisos',      label: 'Permisos',      icon: 'M10 2a4 4 0 014 4v1h2a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V9a2 2 0 012-2h2V6a4 4 0 014-4zM10 4a2 2 0 00-2 2v1h4V6a2 2 0 00-2-2z' },
+  { id: 'agenda',        label: 'Agenda',        icon: 'M3 4h16v16H3zM16 2v4M8 2v4M3 10h16' },
   { id: 'comunicados',   label: 'Comunicados',   icon: 'M18 8a6 6 0 01-6 6H8l-4 4V8a6 6 0 016-6h2a6 6 0 016 6z' },
 ]
 
@@ -34,13 +36,14 @@ const PAGES: Record<string, React.ComponentType> = {
   reportes: Reportes,
   permisos: Permisos,
   perfil: Perfil,
+  agenda: Agenda,
   comunicados: Comunicados,
 }
 
 const PAGE_TITLES: Record<string,string> = {
   dashboard:'Inicio', alumnos:'Alumnos', cursos:'Cursos',
   horarios:'Horarios', profesoras:'Docentes', reportes:'Reportes',
-  permisos:'Permisos', perfil:'Mi perfil', comunicados:'Comunicados',
+  permisos:'Permisos', perfil:'Mi perfil', agenda:'Agenda', comunicados:'Comunicados',
 }
 
 const ROLE_LABELS: Record<string,string> = {
