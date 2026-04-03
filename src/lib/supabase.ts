@@ -107,10 +107,10 @@ export interface HorarioItem {
 
 // Permisos por rol
 export const PERMISOS: Record<Rol, string[]> = {
-  director:     ['dashboard','profesoras','alumnos','cursos','horarios','reportes','permisos','perfil','comunicados'],
-  coordinadora: ['dashboard','profesoras','alumnos','cursos','horarios','perfil','comunicados'],
-  secretaria:   ['dashboard','alumnos','cursos','horarios','perfil','comunicados'],
-  profesora:    ['alumnos','cursos','horarios','perfil','comunicados'],
+  director:     ['dashboard','profesoras','alumnos','cursos','horarios','reportes','permisos','perfil','comunicados','agenda'],
+  coordinadora: ['dashboard','profesoras','alumnos','cursos','horarios','reportes','perfil','comunicados','agenda'],
+  secretaria:   ['dashboard','alumnos','cursos','horarios','reportes','perfil','comunicados','agenda'],
+  profesora:    ['alumnos','cursos','horarios','perfil','comunicados','agenda'],
 }
 
 export const puedeVer = (rol: Rol, modulo: string) =>
