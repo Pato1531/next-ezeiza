@@ -286,6 +286,176 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
     }).eq('id', claseEditando.id).catch(e => console.error('Error editando clase:', e))
   }
 
+  const generarBoletin = async (a: any, curso: any) => {
+    const sb = createClient()
+    const anio = new Date().getFullYear()
+    const trimestre = Math.floor(new Date().getMonth() / 3) + 1
+    const mesesTrim = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+      .slice((trimestre-1)*3, trimestre*3)
+
+    // Asistencia del trimestre
+    const { data: asist } = await sb.from('asistencia_clases')
+      .select('estado, clases(fecha)')
+      .eq('alumno_id', a.id)
+    const asistTrim = (asist||[]).filter((x:any) => {
+      const m = x.clases?.fecha ? new Date(x.clases.fecha+'T12:00:00').getMonth() : -1
+      return m >= (trimestre-1)*3 && m < trimestre*3
+    })
+    const presentes = asistTrim.filter((x:any) => x.estado==='P').length
+    const ausentes = asistTrim.filter((x:any) => x.estado==='A').length
+    const tardes = asistTrim.filter((x:any) => x.estado==='T').length
+    const totalClases = presentes + ausentes + tardes
+    const pct = totalClases > 0 ? Math.round(presentes/totalClases*100) : 0
+
+    // Exámenes del trimestre
+    const { data: notas } = await sb.from('notas_examenes')
+      .select('*, examenes(nombre, fecha)')
+      .eq('alumno_id', a.id)
+    const notasTrim = (notas||[]).filter((n:any) => {
+      const m = n.examenes?.fecha ? new Date(n.examenes.fecha+'T12:00:00').getMonth() : -1
+      return m >= (trimestre-1)*3 && m < trimestre*3
+    })
+    const notasValidas = notasTrim.filter((n:any) => !n.ausente && n.nota !== null)
+    const promedio = notasValidas.length > 0 ? Math.round(notasValidas.reduce((s:number,n:any)=>s+n.nota,0)/notasValidas.length) : null
+
+    const prof = profesoras.find((p:any) => p.id === curso.profesora_id)
+    const profNombre = prof ? `${prof.nombre} ${prof.apellido}` : '—'
+
+    const filaExamenes = notasTrim.map((n:any) => {
+      const ok = !n.ausente && n.nota >= 60
+      const color = n.ausente ? '#b45309' : ok ? '#2d7a4f' : '#c0392b'
+      const estado = n.ausente ? 'Ausente' : ok ? 'Aprobado' : 'Desaprobado'
+      return `<tr><td>${n.examenes?.nombre||'—'}</td><td style="font-weight:700;color:${color};text-align:center">${n.ausente?'—':n.nota??'—'}</td><td style="color:${color};font-weight:600">${estado}</td></tr>`
+    }).join('')
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Boletín - ${a.nombre} ${a.apellido}</title>
+    <style>
+      body{font-family:Arial,sans-serif;padding:32px;font-size:13px;color:#1a1020;max-width:600px;margin:0 auto}
+      .hd{display:flex;justify-content:space-between;border-bottom:3px solid #652f8d;padding-bottom:14px;margin-bottom:20px}
+      .logo{font-size:20px;font-weight:800}.logo span{color:#652f8d}
+      h1{color:#652f8d;font-size:18px;margin:0 0 4px}
+      .alumno-box{background:#f9f5fd;border-radius:12px;padding:14px;margin-bottom:18px;display:flex;gap:14px;align-items:center}
+      .av{width:48px;height:48px;border-radius:14px;background:${a.color||'#652f8d'};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:white;flex-shrink:0}
+      .kpis{display:flex;gap:10px;margin-bottom:18px}
+      .kpi{flex:1;background:#f9f5fd;border-radius:10px;padding:12px;text-align:center}
+      .kpi-val{font-size:22px;font-weight:800;color:#652f8d}
+      .kpi-lab{font-size:10px;color:#9b8eaa;font-weight:600;text-transform:uppercase;margin-top:2px}
+      .section-title{font-size:11px;font-weight:700;color:#9b8eaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #f0edf5}
+      table{width:100%;border-collapse:collapse;margin-bottom:18px}
+      th{font-size:11px;text-transform:uppercase;color:#652f8d;border-bottom:2px solid #652f8d;padding:8px;text-align:left}
+      td{padding:9px 8px;border-bottom:1px solid #f0edf5}
+      .firma{display:flex;justify-content:space-around;margin-top:40px}
+      .firma-box{text-align:center}
+      .firma-linea{width:120px;border-top:1.5px solid #1a1020;margin:0 auto 6px}
+      .firma-nombre{font-size:12px;font-weight:700}
+      .firma-cargo{font-size:10px;color:#9b8eaa}
+    </style></head><body>
+    <div class="hd">
+      <div class="logo"><span>Next</span> Ezeiza · English Institute</div>
+      <div style="font-size:11px;color:#9b8eaa">${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
+    </div>
+    <h1>Boletín de Calificaciones</h1>
+    <p style="color:#9b8eaa;font-size:12px;margin-bottom:16px">${trimestre}° Trimestre ${anio} · ${mesesTrim.join(', ')}</p>
+    <div class="alumno-box">
+      <div class="av">${a.nombre[0]}${a.apellido[0]}</div>
+      <div>
+        <div style="font-size:17px;font-weight:800">${a.nombre} ${a.apellido}</div>
+        <div style="font-size:12px;color:#9b8eaa;margin-top:3px">${curso.nombre} · ${curso.nivel} · ${curso.dias||'—'}</div>
+        <div style="font-size:12px;color:#9b8eaa">Docente: ${profNombre}</div>
+      </div>
+    </div>
+    <div class="section-title">Asistencia</div>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-val" style="color:#2d7a4f">${presentes}</div><div class="kpi-lab">Presentes</div></div>
+      <div class="kpi"><div class="kpi-val" style="color:#c0392b">${ausentes}</div><div class="kpi-lab">Ausentes</div></div>
+      <div class="kpi"><div class="kpi-val" style="color:#b45309">${tardes}</div><div class="kpi-lab">Tardes</div></div>
+      <div class="kpi"><div class="kpi-val">${pct}%</div><div class="kpi-lab">Asistencia</div></div>
+    </div>
+    <div class="section-title">Evaluaciones</div>
+    ${notasTrim.length === 0 ? '<p style="color:#9b8eaa;font-size:12px">Sin evaluaciones en el período</p>' : `
+    <table>
+      <tr><th>Evaluación</th><th style="text-align:center">Nota</th><th>Estado</th></tr>
+      ${filaExamenes}
+    </table>
+    ${promedio !== null ? `<div style="display:flex;justify-content:space-between;padding:12px;background:#f2e8f9;border-radius:10px;font-weight:700;color:#652f8d"><span>Promedio del trimestre</span><span style="font-size:20px">${promedio}</span></div>` : ''}`}
+    <div class="firma">
+      <div class="firma-box"><div class="firma-linea"></div><div class="firma-nombre">${profNombre}</div><div class="firma-cargo">Docente</div></div>
+      <div class="firma-box"><div class="firma-linea"></div><div class="firma-nombre">Patricio Manganella</div><div class="firma-cargo">Director</div></div>
+    </div>
+    <script>setTimeout(function(){window.print()},400)</script>
+    </body></html>`
+
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'})
+    const url = URL.createObjectURL(blob)
+    const win = window.open(url, '_blank')
+    if (!win) { const el = document.createElement('a'); el.href=url; el.download=`boletin-${a.nombre}-${a.apellido}.html`; el.click() }
+    setTimeout(() => URL.revokeObjectURL(url), 10000)
+  }
+
+  const generarCertificado = async (a: any, curso: any) => {
+    const sb = createClient()
+    const anio = new Date().getFullYear()
+
+    // Asistencia total
+    const { data: asist } = await sb.from('asistencia_clases').select('estado').eq('alumno_id', a.id)
+    const presentes = (asist||[]).filter((x:any) => x.estado==='P').length
+    const total = (asist||[]).length
+    const pct = total > 0 ? Math.round(presentes/total*100) : 0
+
+    // Antigüedad
+    const fechaAlta = a.fecha_alta ? new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR',{month:'long',year:'numeric'}) : `${anio}`
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Certificado - ${a.nombre} ${a.apellido}</title>
+    <style>
+      body{font-family:Arial,sans-serif;padding:40px;font-size:13px;color:#1a1020;max-width:600px;margin:0 auto}
+      .hd{display:flex;justify-content:space-between;border-bottom:3px solid #652f8d;padding-bottom:14px;margin-bottom:24px}
+      .logo{font-size:20px;font-weight:800}.logo span{color:#652f8d}
+      .titulo{font-size:13px;font-weight:700;color:#9b8eaa;text-transform:uppercase;letter-spacing:.1em;text-align:center;margin-bottom:14px}
+      .nombre{font-size:28px;font-weight:900;color:#1a1020;text-align:center;font-style:italic;margin-bottom:10px}
+      .decreto{font-size:14px;line-height:1.8;text-align:center;max-width:440px;margin:0 auto 24px}
+      .datos{display:flex;justify-content:center;gap:32px;background:#f9f5fd;border-radius:14px;padding:16px;margin-bottom:24px}
+      .dato{text-align:center}
+      .dato-val{font-size:22px;font-weight:800;color:#652f8d}
+      .dato-lab{font-size:10px;color:#9b8eaa;font-weight:600;text-transform:uppercase;margin-top:2px}
+      .firma{display:flex;justify-content:space-around;margin-top:40px}
+      .firma-box{text-align:center}
+      .firma-linea{width:130px;border-top:1.5px solid #1a1020;margin:0 auto 6px}
+      .firma-nombre{font-size:12px;font-weight:700}
+      .firma-cargo{font-size:10px;color:#9b8eaa}
+      .sello{width:64px;height:64px;border-radius:50%;border:3px solid #652f8d;display:flex;align-items:center;justify-content:center;margin:0 auto}
+      .sello-txt{font-size:8px;font-weight:700;color:#652f8d;text-align:center;line-height:1.3}
+    </style></head><body>
+    <div class="hd">
+      <div class="logo"><span>Next</span> Ezeiza · English Institute</div>
+      <div style="font-size:11px;color:#9b8eaa">Ezeiza, ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
+    </div>
+    <div class="titulo">Certificado de Asistencia</div>
+    <p style="text-align:center;color:#9b8eaa;font-size:12px;margin-bottom:16px">La dirección del instituto certifica que</p>
+    <div class="nombre">${a.nombre} ${a.apellido}</div>
+    <p class="decreto">
+      es alumno/a regular del curso de inglés <strong>${curso.nombre}</strong>, nivel <strong>${curso.nivel}</strong>,
+      con una asistencia del <strong>${pct}%</strong> desde <strong>${fechaAlta}</strong>.
+    </p>
+    <div class="datos">
+      <div class="dato"><div class="dato-val">${pct}%</div><div class="dato-lab">Asistencia</div></div>
+      <div class="dato"><div class="dato-val">${curso.nivel}</div><div class="dato-lab">Nivel</div></div>
+      <div class="dato"><div class="dato-val">${curso.dias||'—'}</div><div class="dato-lab">Días</div></div>
+    </div>
+    <div class="firma">
+      <div class="firma-box"><div class="firma-linea"></div><div class="firma-nombre">Camila Mancilla</div><div class="firma-cargo">Coordinadora</div></div>
+      <div class="firma-box"><div class="sello"><div class="sello-txt">NEXT<br>EZEIZA<br>★</div></div></div>
+      <div class="firma-box"><div class="firma-linea"></div><div class="firma-nombre">Patricio Manganella</div><div class="firma-cargo">Director</div></div>
+    </div>
+    <script>setTimeout(function(){window.print()},400)</script>
+    </body></html>`
+
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'})
+    const url = URL.createObjectURL(blob)
+    const win = window.open(url, '_blank')
+    if (!win) { const el = document.createElement('a'); el.href=url; el.download=`certificado-${a.nombre}-${a.apellido}.html`; el.click() }
+    setTimeout(() => URL.revokeObjectURL(url), 10000)
+  }
+
   const generarReporte = () => {
     const sorted = [...clasesLocal].sort((a,b) => a.fecha.localeCompare(b.fecha))
     const prof = profesoras.find((p:any) => p.id === c.profesora_id)
@@ -527,10 +697,16 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
           <SL style={{marginBottom:'14px'}}>Alumnos inscriptos ({alumnosCurso.length})</SL>
           {alumnosCurso.length === 0 && <div style={{textAlign:'center',padding:'16px',color:'var(--text3)'}}>Sin alumnos asignados</div>}
           {alumnosCurso.map((a:any) => (
-            <div key={a.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
-              <Av color={a.color} size={36}>{a.nombre[0]}{a.apellido[0]}</Av>
-              <div style={{flex:1,fontWeight:600}}>{a.nombre} {a.apellido}</div>
-              {puedeEditar && <button onClick={() => quitarAlumno(a.id)} style={{padding:'4px 10px',background:'var(--redl)',color:'var(--red)',border:'1px solid #f5c5c5',borderRadius:'7px',fontSize:'12px',cursor:'pointer'}}>Quitar</button>}
+            <div key={a.id} style={{padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
+              <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'6px'}}>
+                <Av color={a.color} size={36}>{a.nombre[0]}{a.apellido[0]}</Av>
+                <div style={{flex:1,fontWeight:600}}>{a.nombre} {a.apellido}</div>
+                {puedeEditar && <button onClick={() => quitarAlumno(a.id)} style={{padding:'4px 10px',background:'var(--redl)',color:'var(--red)',border:'1px solid #f5c5c5',borderRadius:'7px',fontSize:'12px',cursor:'pointer'}}>Quitar</button>}
+              </div>
+              <div style={{display:'flex',gap:'6px',paddingLeft:'46px'}}>
+                <button onClick={() => generarBoletin(a, c)} style={{padding:'5px 10px',background:'var(--vl)',color:'var(--v)',border:'none',borderRadius:'7px',fontSize:'11px',fontWeight:700,cursor:'pointer'}}>📄 Boletín</button>
+                <button onClick={() => generarCertificado(a, c)} style={{padding:'5px 10px',background:'var(--greenl)',color:'var(--green)',border:'none',borderRadius:'7px',fontSize:'11px',fontWeight:700,cursor:'pointer'}}>🏅 Certificado</button>
+              </div>
             </div>
           ))}
         </Card>
