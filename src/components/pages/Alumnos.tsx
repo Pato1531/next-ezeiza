@@ -1389,6 +1389,8 @@ function PagosMasivos({ alumnos, onVolver }: any) {
   )
 }
 
+}
+
 const IS = { width:'100%', padding:'10px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'14px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
 const Input = ({value,onChange,type='text',placeholder=''}:any) => <input type={type} value={value} placeholder={placeholder} onChange={(e:any)=>onChange(e.target.value)} style={IS} />
 const Loader = () => <div style={{color:'var(--text3)',padding:'24px',textAlign:'center'}}>Cargando...</div>
@@ -1416,3 +1418,4 @@ const ModalSheet = ({title,children,onClose}:any) => (
     </div>
   </div>
 )
+
