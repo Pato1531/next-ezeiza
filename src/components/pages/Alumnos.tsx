@@ -764,7 +764,6 @@ Hola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${
     setEliminandoPago(false)
     setConfirmDeletePago(null)
   }
-  }
 
   const cursosFiltrados = busqCurso
     ? todosLosCursos.filter(c => c.nombre.toLowerCase().includes(busqCurso.toLowerCase()))
