@@ -559,6 +559,15 @@ export default function Reportes() {
         })}
       </ReportSection>
 
+      {/* MÉTODOS DE PAGO */}
+      <MetodosPagoSection alumnos={alumnos} mesActualNombre={mesActualNombre} anioActual={anioActual} />
+
+      {/* BOLETÍN DIGITAL */}
+      <BoletinSection alumnos={alumnos} />
+
+      {/* CERTIFICADO DE ASISTENCIA */}
+      <CertificadoSection alumnos={alumnos} />
+
       {/* EXPORTAR TODO */}
       <div style={{border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px',background:'var(--white)'}}>
         <div style={{fontSize:'13px',fontWeight:700,marginBottom:'4px'}}>Exportar reporte completo</div>
@@ -646,3 +655,263 @@ function abrirPDF(titulo: string, contenido: string) {
 
 const Av = ({color,size,children}:any) => <div style={{width:size,height:size,borderRadius:Math.round(size*.32)+'px',background:color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:size*.28+'px',fontWeight:700,color:'#fff',flexShrink:0}}>{children}</div>
 const btnStyle = (bg: string) => ({display:'flex',alignItems:'center',gap:'6px',padding:'10px 16px',background:bg,color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}) as const
+
+// ── MÉTODOS DE PAGO ──
+function MetodosPagoSection({ alumnos, mesActualNombre, anioActual }: any) {
+  const [pagos, setPagos] = useState<any[]>([])
+  const [mes, setMes] = useState(mesActualNombre)
+  const [anio, setAnio] = useState(anioActual)
+  const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+
+  useEffect(() => {
+    const sb = createClient()
+    sb.from('pagos_alumnos').select('monto,metodo,alumno_id').eq('mes', mes).eq('anio', anio)
+      .then(({ data }) => setPagos(data || []))
+      .catch(() => {})
+  }, [mes, anio])
+
+  const metodos = ['Efectivo','Transferencia','MercadoPago']
+  const totales = metodos.map(m => ({
+    metodo: m,
+    cantidad: pagos.filter(p => p.metodo === m).length,
+    monto: pagos.filter(p => p.metodo === m).reduce((s, p) => s + (p.monto || 0), 0)
+  }))
+  const totalGeneral = pagos.reduce((s, p) => s + (p.monto || 0), 0)
+  const IS = { padding:'8px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
+  const COLORES: Record<string,string> = { Efectivo: '#2d7a4f', Transferencia: '#1a73e8', MercadoPago: '#652f8d' }
+
+  return (
+    <ReportSection titulo="Métodos de pago" subtitulo={`${pagos.length} pagos · ${mes} ${anio}`}
+      onCSV={() => {
+        const rows = [['NEXT EZEIZA — MÉTODOS DE PAGO'],[`${mes} ${anio}`],[''],['Método','Cantidad','Monto'],
+          ...totales.map(t => [t.metodo, t.cantidad, `$${t.monto.toLocaleString('es-AR')}`]),
+          ['','TOTAL', `$${totalGeneral.toLocaleString('es-AR')}`]]
+        const csv = rows.map(r => r.map(c => `"${String(c)}"`).join(',')).join('\n')
+        const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'})
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a'); a.href=url; a.download=`metodos-${mes}-${anio}.csv`; a.click()
+        URL.revokeObjectURL(url)
+      }}
+      onPDF={() => {
+        const filas = totales.map(t => `<tr><td>${t.metodo}</td><td style="text-align:center">${t.cantidad}</td><td style="text-align:right;font-weight:700;color:${COLORES[t.metodo]}">$${t.monto.toLocaleString('es-AR')}</td><td style="text-align:right;color:#9b8eaa">${totalGeneral > 0 ? Math.round(t.monto/totalGeneral*100) : 0}%</td></tr>`).join('')
+        abrirPDF(`Métodos de pago ${mes} ${anio}`, `<h2>Métodos de pago — ${mes} ${anio}</h2><p>${pagos.length} pagos · Total: $${totalGeneral.toLocaleString('es-AR')}</p><table><tr><th>Método</th><th>Cantidad</th><th>Monto</th><th>%</th></tr>${filas}</table>`)
+      }}>
+      <div style={{display:'flex',gap:'8px',marginBottom:'14px'}}>
+        <select style={IS} value={mes} onChange={e => setMes(e.target.value)}>{MESES.map(m => <option key={m}>{m}</option>)}</select>
+        <select style={IS} value={anio} onChange={e => setAnio(+e.target.value)}>{[2024,2025,2026,2027].map(y => <option key={y}>{y}</option>)}</select>
+      </div>
+      {totales.map(t => (
+        <div key={t.metodo} style={{marginBottom:'12px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:'13px',marginBottom:'5px'}}>
+            <span style={{fontWeight:600,color:'var(--text)'}}>{t.metodo}</span>
+            <span style={{fontWeight:700,color:COLORES[t.metodo]}}>${t.monto.toLocaleString('es-AR')} <span style={{fontSize:'11px',color:'var(--text3)',fontWeight:400}}>({t.cantidad} pagos)</span></span>
+          </div>
+          <div style={{height:'8px',background:'var(--border)',borderRadius:'10px',overflow:'hidden'}}>
+            <div style={{height:'100%',width:`${totalGeneral > 0 ? Math.round(t.monto/totalGeneral*100) : 0}%`,background:COLORES[t.metodo],borderRadius:'10px'}} />
+          </div>
+        </div>
+      ))}
+      {pagos.length === 0 && <div style={{textAlign:'center',padding:'20px',color:'var(--text3)'}}>Sin pagos en {mes} {anio}</div>}
+      {totalGeneral > 0 && <div style={{display:'flex',justifyContent:'space-between',paddingTop:'12px',borderTop:'1.5px solid var(--border)',fontWeight:700}}><span>Total recaudado</span><span style={{color:'var(--v)'}}>${totalGeneral.toLocaleString('es-AR')}</span></div>}
+    </ReportSection>
+  )
+}
+
+// ── BOLETÍN DIGITAL ──
+function BoletinSection({ alumnos }: any) {
+  const [selAlumno, setSelAlumno] = useState('')
+  const [periodo, setPeriodo] = useState('2° Trimestre')
+  const [anio, setAnio] = useState(new Date().getFullYear())
+  const [generando, setGenerando] = useState(false)
+  const IS = { padding:'9px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)', width:'100%' } as const
+
+  const generar = async () => {
+    if (!selAlumno) return alert('Seleccioná un alumno')
+    setGenerando(true)
+    const sb = createClient()
+    const al = alumnos.find((a: any) => a.id === selAlumno)
+    if (!al) { setGenerando(false); return }
+    const [exRes, cuRes] = await Promise.all([
+      sb.from('notas_examenes').select('*, examenes(nombre,fecha)').eq('examenes.anio', anio),
+      sb.from('cursos_alumnos').select('cursos(nombre)').eq('alumno_id', selAlumno).limit(1)
+    ])
+    const notas = (exRes.data || []).filter((n: any) => n.alumno_id === selAlumno)
+    const curso = cuRes.data?.[0]?.cursos?.nombre || '—'
+    const promedio = notas.length ? Math.round(notas.reduce((s: number, n: any) => s + (n.nota || 0), 0) / notas.length) : null
+    const aprobados = notas.filter((n: any) => (n.nota || 0) >= 60 && !n.ausente).length
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Boletín ${al.nombre} ${al.apellido}</title>
+    <style>body{font-family:Arial,sans-serif;padding:0;margin:0;background:#f5f0fa}
+    .wrap{max-width:480px;margin:20px auto;background:white;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(101,47,141,.15)}
+    .hdr{background:linear-gradient(135deg,#652f8d,#8b4fc4);padding:24px;color:white;display:flex;align-items:center;gap:16px}
+    .logo{font-size:18px;font-weight:900}.logo span{opacity:.7;font-weight:400}
+    .av{width:50px;height:50px;border-radius:14px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;flex-shrink:0}
+    .body{padding:20px}
+    .sec-title{font-size:10px;font-weight:700;color:#9b8eaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #f0edf5}
+    .kpis{display:flex;gap:10px;background:#f9f5fd;border-radius:12px;padding:14px;margin-bottom:16px}
+    .kpi{flex:1;text-align:center}.kpi-val{font-size:22px;font-weight:800;color:#652f8d}.kpi-lab{font-size:10px;color:#9b8eaa;font-weight:600;text-transform:uppercase;margin-top:2px}
+    .examen-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0edf5}
+    .nota{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800}
+    .ap{background:#e6f4ec;color:#2d7a4f}.de{background:#fdeaea;color:#c0392b}.aus{background:#fef3cd;color:#b45309}
+    .footer{background:#faf7fd;padding:14px;text-align:center;font-size:11px;color:#9b8eaa;border-top:1px solid #f0edf5}
+    @media print{body{background:white}.wrap{box-shadow:none;margin:0;border-radius:0}}
+    </style></head><body><div class="wrap">
+    <div class="hdr">
+      <div class="av">${al.nombre[0]}${al.apellido[0]}</div>
+      <div><div class="logo">Next <span>Ezeiza</span></div>
+      <div style="font-size:15px;font-weight:800;margin-top:4px">${al.nombre} ${al.apellido}</div>
+      <div style="font-size:12px;opacity:.8">${curso} · ${periodo} ${anio}</div></div>
+    </div>
+    <div class="body">
+      <div class="kpis">
+        <div class="kpi"><div class="kpi-val">${al.nivel||'—'}</div><div class="kpi-lab">Nivel</div></div>
+        <div class="kpi"><div class="kpi-val">${promedio ?? '—'}</div><div class="kpi-lab">Promedio</div></div>
+        <div class="kpi"><div class="kpi-val">${aprobados}/${notas.length}</div><div class="kpi-lab">Aprobados</div></div>
+      </div>
+      <div class="sec-title">Evaluaciones</div>
+      ${notas.length === 0 ? '<p style="color:#9b8eaa;font-size:13px">Sin exámenes registrados para este período.</p>' :
+        notas.map((n: any) => {
+          const cls = n.ausente ? 'aus' : (n.nota||0) >= 60 ? 'ap' : 'de'
+          const estado = n.ausente ? 'Ausente' : (n.nota||0) >= 60 ? 'Aprobado' : 'Desaprobado'
+          return `<div class="examen-row"><div><div style="font-size:13px;font-weight:700">${n.examenes?.nombre||'Examen'}</div><div style="font-size:11px;color:#9b8eaa;margin-top:2px">${n.examenes?.fecha ? new Date(n.examenes.fecha+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long'}) : '—'} · <span style="color:${cls === 'ap' ? '#2d7a4f' : cls === 'de' ? '#c0392b' : '#b45309'};font-weight:600">${estado}</span></div></div><div class="nota ${cls}">${n.ausente ? '—' : n.nota ?? '—'}</div></div>`
+        }).join('')}
+    </div>
+    <div class="footer">Next Ezeiza English Institute · Ezeiza, Buenos Aires · ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
+    </div><script>setTimeout(function(){window.print()},400)</script></body></html>`
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'})
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 15000)
+    setGenerando(false)
+  }
+
+  return (
+    <ReportSection titulo="Boletín digital" subtitulo="PDF listo para compartir por WhatsApp" onCSV={undefined} onPDF={undefined}>
+      <div style={{marginBottom:'10px'}}>
+        <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Alumno</div>
+        <select style={IS} value={selAlumno} onChange={e => setSelAlumno(e.target.value)}>
+          <option value="">— Seleccioná un alumno —</option>
+          {[...alumnos].sort((a:any,b:any) => a.apellido.localeCompare(b.apellido)).map((a:any) => <option key={a.id} value={a.id}>{a.apellido}, {a.nombre}</option>)}
+        </select>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'14px'}}>
+        <div>
+          <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Período</div>
+          <select style={IS} value={periodo} onChange={e => setPeriodo(e.target.value)}>
+            {['1° Trimestre','2° Trimestre','3° Trimestre','Anual'].map(p => <option key={p}>{p}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Año</div>
+          <select style={IS} value={anio} onChange={e => setAnio(+e.target.value)}>
+            {[2024,2025,2026].map(y => <option key={y}>{y}</option>)}
+          </select>
+        </div>
+      </div>
+      <button onClick={generar} disabled={generando} style={{width:'100%',padding:'13px',background:generando?'#aaa':'var(--v)',color:'white',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:700,cursor:'pointer'}}>
+        {generando ? 'Generando...' : '📄 Generar boletín PDF'}
+      </button>
+    </ReportSection>
+  )
+}
+
+// ── CERTIFICADO DE ASISTENCIA ──
+function CertificadoSection({ alumnos }: any) {
+  const [selAlumno, setSelAlumno] = useState('')
+  const [tipo, setTipo] = useState('Asistencia al curso de inglés')
+  const [desde, setDesde] = useState(`${new Date().getFullYear()}-03-01`)
+  const [hasta, setHasta] = useState(`${new Date().getFullYear()}-11-30`)
+  const [destinatario, setDestinatario] = useState('')
+  const [generando, setGenerando] = useState(false)
+  const IS = { padding:'9px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)', width:'100%' } as const
+
+  const generar = async () => {
+    if (!selAlumno) return alert('Seleccioná un alumno')
+    setGenerando(true)
+    const al = alumnos.find((a: any) => a.id === selAlumno)
+    if (!al) { setGenerando(false); return }
+    const sb = createClient()
+    const cuRes = await sb.from('cursos_alumnos').select('cursos(nombre)').eq('alumno_id', selAlumno).limit(1)
+    const curso = cuRes.data?.[0]?.cursos?.nombre || '—'
+    const fmtDesde = new Date(desde+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
+    const fmtHasta = new Date(hasta+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
+    const hoy = new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
+    const num = Math.floor(Math.random()*9000)+1000
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Certificado ${al.nombre} ${al.apellido}</title>
+    <style>body{font-family:Arial,sans-serif;padding:40px;margin:0;background:white}
+    .hdr{text-align:center;border-bottom:4px solid #652f8d;padding-bottom:20px;margin-bottom:28px}
+    .logo{font-size:24px;font-weight:900;color:#1a1020}.logo span{color:#652f8d}
+    .inst{font-size:12px;color:#9b8eaa;letter-spacing:.1em;text-transform:uppercase;margin-top:4px}
+    h1{font-size:16px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#652f8d;text-align:center;margin:28px 0 20px}
+    .cuerpo{font-size:14px;color:#1a1020;line-height:1.9;text-align:center;max-width:500px;margin:0 auto 28px}
+    .nombre{font-size:26px;font-weight:900;color:#1a1020;font-style:italic;display:block;margin:8px 0}
+    .datos{display:flex;justify-content:center;gap:32px;background:#f9f5fd;border-radius:14px;padding:16px;margin:20px 0 28px}
+    .dato{text-align:center}.dato-val{font-size:20px;font-weight:800;color:#652f8d}.dato-lab{font-size:10px;color:#9b8eaa;font-weight:700;text-transform:uppercase;margin-top:3px}
+    .firmas{display:flex;justify-content:center;gap:60px;margin-top:40px;padding-top:20px;border-top:1px solid #f0edf5}
+    .firma{text-align:center}.firma-linea{width:120px;border-top:1.5px solid #1a1020;margin:0 auto 8px}
+    .firma-nombre{font-size:12px;font-weight:700;color:#1a1020}.firma-cargo{font-size:11px;color:#9b8eaa}
+    .sello{width:70px;height:70px;border-radius:50%;border:3px solid #652f8d;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:10px;font-weight:700;color:#652f8d;text-align:center;line-height:1.3}
+    .num{font-size:11px;color:#9b8eaa;text-align:right;margin-bottom:4px}
+    @media print{body{padding:24px}}
+    </style></head><body>
+    <div class="num">Cert. N° ${num} · ${hoy}</div>
+    <div class="hdr"><div class="logo">Next <span>Ezeiza</span></div><div class="inst">English Institute</div></div>
+    <h1>Certificado de ${tipo}</h1>
+    <div class="cuerpo">
+      La dirección del instituto certifica que<br>
+      <span class="nombre">${al.nombre} ${al.apellido}</span>
+      es alumno/a regular del curso de inglés nivel <strong>${al.nivel || 'Básico'} — ${curso}</strong>,
+      con asistencia registrada en el período comprendido entre el <strong>${fmtDesde}</strong> y el <strong>${fmtHasta}</strong>.
+      ${destinatario ? `<br><br>El presente certificado se emite a solicitud del/la interesado/a para ser presentado ante <strong>${destinatario}</strong>.` : ''}
+    </div>
+    <div class="datos">
+      <div class="dato"><div class="dato-val">${al.nivel||'—'}</div><div class="dato-lab">Nivel</div></div>
+      <div class="dato"><div class="dato-val">${curso}</div><div class="dato-lab">Curso</div></div>
+    </div>
+    <div style="font-size:12px;color:#9b8eaa;text-align:center;margin-bottom:32px">Ezeiza, Buenos Aires · ${hoy}</div>
+    <div class="firmas">
+      <div class="firma"><div class="sello">NEXT<br>EZEIZA<br>★</div></div>
+      <div class="firma"><div class="firma-linea"></div><div class="firma-nombre">Patricio Manganella</div><div class="firma-cargo">Director</div></div>
+    </div>
+    <script>setTimeout(function(){window.print()},400)</script></body></html>`
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'})
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 15000)
+    setGenerando(false)
+  }
+
+  return (
+    <ReportSection titulo="Certificado de asistencia" subtitulo="Con firma del director, listo para imprimir" onCSV={undefined} onPDF={undefined}>
+      <div style={{marginBottom:'10px'}}>
+        <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Alumno</div>
+        <select style={IS} value={selAlumno} onChange={e => setSelAlumno(e.target.value)}>
+          <option value="">— Seleccioná un alumno —</option>
+          {[...alumnos].sort((a:any,b:any) => a.apellido.localeCompare(b.apellido)).map((a:any) => <option key={a.id} value={a.id}>{a.apellido}, {a.nombre}</option>)}
+        </select>
+      </div>
+      <div style={{marginBottom:'10px'}}>
+        <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Tipo</div>
+        <select style={IS} value={tipo} onChange={e => setTipo(e.target.value)}>
+          {['Asistencia al curso de inglés','Nivel alcanzado','Alumno regular'].map(t => <option key={t}>{t}</option>)}
+        </select>
+      </div>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+        <div>
+          <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Desde</div>
+          <input style={IS} type="date" value={desde} onChange={e => setDesde(e.target.value)} />
+        </div>
+        <div>
+          <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Hasta</div>
+          <input style={IS} type="date" value={hasta} onChange={e => setHasta(e.target.value)} />
+        </div>
+      </div>
+      <div style={{marginBottom:'14px'}}>
+        <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Destinatario (opcional)</div>
+        <input style={IS} type="text" value={destinatario} onChange={e => setDestinatario(e.target.value)} placeholder="Ej: Empresa XYZ, Universidad Nacional..." />
+      </div>
+      <button onClick={generar} disabled={generando} style={{width:'100%',padding:'13px',background:generando?'#aaa':'#1B6B4A',color:'white',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:700,cursor:'pointer'}}>
+        {generando ? 'Generando...' : '🏅 Generar certificado PDF'}
+      </button>
+    </ReportSection>
+  )
+}
