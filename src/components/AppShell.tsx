@@ -101,7 +101,7 @@ export default function AppShell() {
   if (!usuario) return null
 
   const allAllowed = ALL_NAV.filter(n => puedeVer(n.id))
-  const MAX_NAV = 4
+  const MAX_NAV = 5
   const navItems = allAllowed.slice(0, MAX_NAV)
   const masItems = allAllowed.slice(MAX_NAV)
   const hayMas = masItems.length > 0
