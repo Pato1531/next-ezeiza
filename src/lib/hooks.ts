@@ -12,7 +12,7 @@ import type { Profesora, Alumno, Curso, Clase, HorarioItem, Pago, AsistenciaClas
 
 // ── STORE GLOBAL ──
 export const store: Record<string, any[]> = {}
-const storeTs: Record<string, number> = {}
+export const storeTs: Record<string, number> = {}
 const loadingKeys: Set<string> = new Set()
 const listeners: Record<string, Set<() => void>> = {}
 const TTL = 90000 // 90 segundos
