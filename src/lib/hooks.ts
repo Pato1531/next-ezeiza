@@ -17,14 +17,7 @@ const loadingKeys: Set<string> = new Set()
 const listeners: Record<string, Set<() => void>> = {}
 const TTL = 90000 // 90 segundos
 
-// Bus de eventos para errores de autenticación
-type AuthErrorHandler = () => void
-let onAuthErrorHandler: AuthErrorHandler | null = null
 
-// Registrar handler global — lo llama el AuthProvider
-export function setAuthErrorHandler(fn: AuthErrorHandler) {
-  onAuthErrorHandler = fn
-}
 
 function isStale(key: string) {
   return !storeTs[key] || (Date.now() - storeTs[key]) > TTL
@@ -40,22 +33,7 @@ function subscribe(key: string, fn: () => void) {
   return () => listeners[key]?.delete(fn)
 }
 
-// Detectar si un error de Supabase es de autenticación
-// MUY importante: solo detectar errores EXPLÍCITOS de auth.
-// NO incluir 'session' ni mensajes genéricos — Supabase los usa en
-// contextos normales y causan falsos positivos que disparan logout.
-function isAuthError(error: any): boolean {
-  if (!error) return false
-  const msg = (error.message || '').toLowerCase()
-  const code = error.code || error.status || 0
-  return (
-    code === 401 ||
-    (code === 403 && msg.includes('jwt')) ||
-    msg.includes('jwt expired') ||
-    msg.includes('invalid jwt') ||
-    msg === 'invalid token'
-  )
-}
+
 
 async function loadOnce(key: string, loader: () => Promise<any[]>, force = false) {
   if (store[key] !== undefined && !force && !isStale(key)) return
@@ -67,13 +45,8 @@ async function loadOnce(key: string, loader: () => Promise<any[]>, force = false
     storeTs[key] = Date.now()
     notify(key)
   } catch (e: any) {
-    // Si es error de auth → notificar al AuthProvider para que desloguee
-    if (isAuthError(e)) {
-      console.warn('[Store] Error de autenticación detectado, invalidando sesión')
-      onAuthErrorHandler?.()
-      return // No actualizar el store con datos vacíos
-    }
-    // Error de red u otro — mantener datos existentes si los hay
+    // Error en query — mantener datos existentes, NO cerrar sesión
+    console.warn('[Store] Error en query key=' + key + ':', e?.message)
     if (store[key] === undefined) store[key] = []
     notify(key)
   } finally {
