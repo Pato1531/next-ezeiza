@@ -707,16 +707,13 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
           <SL style={{marginBottom:'14px'}}>Alumnos inscriptos ({alumnosCurso.length})</SL>
           {alumnosCurso.length === 0 && <div style={{textAlign:'center',padding:'16px',color:'var(--text3)'}}>Sin alumnos asignados</div>}
           {alumnosCurso.map((a:any) => (
-            <div key={a.id} style={{padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
-              <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'6px'}}>
+            <div key={a.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
+              <div style={{display:'flex',alignItems:'center',gap:'10px',flex:1}}>
                 <Av color={a.color} size={36}>{a.nombre[0]}{a.apellido[0]}</Av>
                 <div style={{flex:1,fontWeight:600}}>{a.nombre} {a.apellido}</div>
                 {puedeEditar && <button onClick={() => quitarAlumno(a.id)} style={{padding:'4px 10px',background:'var(--redl)',color:'var(--red)',border:'1px solid #f5c5c5',borderRadius:'7px',fontSize:'12px',cursor:'pointer'}}>Quitar</button>}
               </div>
-              <div style={{display:'flex',gap:'6px',paddingLeft:'46px'}}>
-                <button onClick={() => generarBoletin(a, c)} style={{padding:'5px 10px',background:'var(--vl)',color:'var(--v)',border:'none',borderRadius:'7px',fontSize:'11px',fontWeight:700,cursor:'pointer'}}>📄 Boletín</button>
-                <button onClick={() => generarCertificado(a, c)} style={{padding:'5px 10px',background:'var(--greenl)',color:'var(--green)',border:'none',borderRadius:'7px',fontSize:'11px',fontWeight:700,cursor:'pointer'}}>🏅 Certificado</button>
-              </div>
+
             </div>
           ))}
         </Card>
