@@ -145,9 +145,19 @@ export default function AppShell() {
         </div>
       </div>
 
-      {/* CONTENT */}
+      {/* CONTENT — render estático para evitar remount */}
       <div style={{flex:1,padding:'16px 16px 24px',overflowY:'auto'}}>
-        <PageComponent />
+        {page === 'dashboard'   && <Dashboard />}
+        {page === 'alumnos'     && <Alumnos />}
+        {page === 'cursos'      && <Cursos />}
+        {page === 'horarios'    && <Horarios />}
+        {page === 'profesoras'  && <Profesoras />}
+        {page === 'reportes'    && <Reportes />}
+        {page === 'permisos'    && <Permisos />}
+        {page === 'perfil'      && <Perfil />}
+        {page === 'agenda'      && <Agenda />}
+        {page === 'comunicados' && <Comunicados />}
+        {page === 'actividad'   && <Actividad />}
       </div>
 
       {/* DRAWER "MÁS" */}
