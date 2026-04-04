@@ -44,21 +44,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Validar sesión contra el servidor — NO usa localStorage
-  const validarSesionReal = async (): Promise<string | null> => {
-    try {
-      const { data: { user }, error } = await supabase.auth.getUser()
-      if (error || !user) return null
-      return user.id
-    } catch {
-      return null
-    }
-  }
-
   const doLogout = async () => {
     setUsuario(null)
     usuarioRef.current = null
-    invalidateStore() // limpiar todo el store global
+    invalidateStore()
     try { await supabase.auth.signOut() } catch {}
     destroyClient()
     try {
@@ -72,27 +61,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true
 
-    // onAuthStateChange — fuente de verdad de la sesión
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!mounted) return
 
         if (event === 'SIGNED_OUT' || !session) {
-          // Antes de limpiar el estado, intentar recuperar la sesión.
-          // Supabase puede disparar SIGNED_OUT por timeout de red
-          // o cuando el browser suspende la pestaña — no siempre es real.
-          try {
-            const { data: refreshed } = await supabase.auth.refreshSession()
-            if (refreshed.session && refreshed.session.user) {
-              // Sesión recuperada — no limpiar estado
-              if (!usuarioRef.current) {
-                await cargarUsuario(refreshed.session.user.id)
-              }
-              setLoading(false)
-              return
-            }
-          } catch {}
-          // Si el refresh falló, la sesión realmente expiró
           setUsuario(null)
           usuarioRef.current = null
           invalidateStore()
@@ -101,7 +74,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         if (event === 'TOKEN_REFRESHED') {
-          // Token renovado — no recargar usuario si ya está en memoria
           if (!usuarioRef.current && session.user) {
             await cargarUsuario(session.user.id)
           }
@@ -117,7 +89,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     )
 
-    // Inicialización: getSession solo para el arranque
     const init = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
@@ -126,7 +97,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           usuarioRef.current = null
           setLoading(false)
         }
-        // Si hay sesión, onAuthStateChange dispara INITIAL_SESSION y se encarga
       } catch {
         setLoading(false)
       }
@@ -134,58 +104,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     init()
 
-    // visibilitychange: validar con el servidor al volver
-    const handleVisibility = async () => {
-      if (document.visibilityState !== 'visible') return
-      if (!usuarioRef.current) return
+    // SIN handleVisibility — era la causa raíz del problema.
+    // Supabase maneja el refresh del token automáticamente con autoRefreshToken: true.
+    // Cualquier intento de validar manualmente al volver a la pestaña
+    // fallaba por timeout de red y disparaba doLogout() borrando el localStorage.
 
-      const uid = await validarSesionReal()
-
-      if (!uid) {
-        // Sesión inválida → desloguear
-        doLogout()
-        return
-      }
-
-      if (!usuarioRef.current) {
-        await cargarUsuario(uid)
-      }
-    }
-
-    // online: intentar refresh al recuperar red
     const handleOnline = async () => {
       if (!usuarioRef.current) return
-      try {
-        await supabase.auth.refreshSession()
-      } catch {}
+      try { await supabase.auth.refreshSession() } catch {}
     }
 
-    document.addEventListener('visibilitychange', handleVisibility)
     window.addEventListener('online', handleOnline)
 
     return () => {
       mounted = false
       subscription.unsubscribe()
-      document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('online', handleOnline)
     }
   }, [])
 
   const login = async (email: string, password: string) => {
     setLoading(true)
-    try {
-      Object.keys(localStorage).forEach(k => {
-        if (k.startsWith('sb-')) localStorage.removeItem(k)
-      })
-    } catch {}
-
+    // NO borrar localStorage antes del login —
+    // Supabase necesita el refresh token para mantener la sesión
     const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-
     if (error) {
       setLoading(false)
       return { error: 'Usuario o contraseña incorrectos.' }
     }
-
     if (data?.user) {
       const ok = await cargarUsuario(data.user.id)
       if (!ok) {
@@ -193,18 +139,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return { error: 'Usuario no encontrado en el sistema.' }
       }
     }
-
     setLoading(false)
     return {}
   }
-
-  const logout = doLogout
 
   const puedeVerModulo = (modulo: string) =>
     usuario ? puedeVer(usuario.rol as Rol, modulo) : false
 
   return (
-    <AuthContext.Provider value={{ usuario, loading, login, logout, puedeVer: puedeVerModulo }}>
+    <AuthContext.Provider value={{ usuario, loading, login, logout: doLogout, puedeVer: puedeVerModulo }}>
       {children}
     </AuthContext.Provider>
   )
