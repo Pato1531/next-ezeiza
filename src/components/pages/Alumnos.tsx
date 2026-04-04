@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAlumnos, usePagos, useMiProfesora, useHistorialCursos, useCuotasHistorial, useCursos } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
@@ -96,7 +96,10 @@ export default function Alumnos() {
 
   const puedeVerPagos = ['director','coordinadora','secretaria'].includes(usuario?.rol||'')
   const puedeEditar = usuario?.rol !== 'profesora'
-  const sel = alumnos.find(a => a.id === selId)
+  const selLive = alumnos.find(a => a.id === selId)
+  const selRef = useRef<any>(null)
+  if (selLive) selRef.current = selLive
+  const sel = selLive ?? selRef.current
 
   const irADetalle = (id: string) => { setSelId(id); setTab('datos'); setVista('detalle') }
   const irALista = () => { setSelId(null); setVista('lista') }
@@ -379,7 +382,9 @@ export default function Alumnos() {
   )
 
   // ── DETALLE ──
-  if (vista === 'detalle' && sel) return (
+  if (vista === 'detalle') {
+    if (!sel) return <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>
+    return (
     <AlumnoDetalle
       alumno={sel}
       puedeVerPagos={puedeVerPagos}
@@ -398,9 +403,12 @@ export default function Alumnos() {
       setPago={setPago}
     />
   )
+  }
 
   // ── VISTA BAJA ──
-  if (vista === 'baja' && sel) return (
+  if (vista === 'baja') {
+    if (!sel) return <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>
+    return (
     <div className="fade-in">
       <BtnG sm onClick={() => setVista('detalle')} style={{marginBottom:'20px'}}>← Volver</BtnG>
       <div style={{fontSize:'20px',fontWeight:700,marginBottom:'6px'}}>Registrar baja</div>
@@ -456,6 +464,7 @@ export default function Alumnos() {
       </div>
     </div>
   )
+  }
 
   // ── VISTA BAJAS HISTÓRICAS ──
   if (vista === 'bajas_historicas') return (
