@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useCursos, useProfesoras, useAlumnos, useCursoAlumnos, useClases, useMiProfesora, useExamenes, useNotasExamen } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
@@ -37,7 +37,10 @@ export default function Cursos() {
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const puedeEditar = ['director','coordinadora'].includes(usuario?.rol||'')
-  const sel = cursos.find(c => c.id === selId)
+  const selLive = cursos.find(c => c.id === selId)
+  const selRef = useRef<any>(null)
+  if (selLive) selRef.current = selLive
+  const sel = selLive ?? selRef.current
   const [filtroDia, setFiltroDia] = useState<string|null>(null)
 
   const DIAS_ORD: Record<string,number> = {'Lun':0,'Mar':1,'Mié':2,'Jue':3,'Vie':4,'Sáb':5,'Lunes':0,'Martes':1,'Miercoles':2,'Miércoles':2,'Jueves':3,'Viernes':4,'Sabados':5,'Sábados':5}
@@ -198,33 +201,39 @@ export default function Cursos() {
   )
 
   // ── DETALLE ──
-  if (vista === 'detalle' && sel) return (
-    <CursoDetalle
-      curso={sel}
-      profesoras={profesoras}
-      alumnos={alumnos}
-      puedeEditar={puedeEditar}
-      tab={tab}
-      setTab={setTab}
-      onVolver={irALista}
-      onEditar={irAFormEditar}
-      onEliminar={() => setConfirmDelete(true)}
-      confirmDelete={confirmDelete}
-      onCancelDelete={() => setConfirmDelete(false)}
-      onConfirmDelete={eliminar}
-      onAsistenciaRapida={() => setVista('asistencia_rapida')}
-    />
-  )
+  if (vista === 'detalle') {
+    if (!sel) return <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>
+    return (
+      <CursoDetalle
+        curso={sel}
+        profesoras={profesoras}
+        alumnos={alumnos}
+        puedeEditar={puedeEditar}
+        tab={tab}
+        setTab={setTab}
+        onVolver={irALista}
+        onEditar={irAFormEditar}
+        onEliminar={() => setConfirmDelete(true)}
+        confirmDelete={confirmDelete}
+        onCancelDelete={() => setConfirmDelete(false)}
+        onConfirmDelete={eliminar}
+        onAsistenciaRapida={() => setVista('asistencia_rapida')}
+      />
+    )
+  }
 
   // ── ASISTENCIA RÁPIDA ──
-  if (vista === 'asistencia_rapida' && sel) return (
-    <AsistenciaRapida
-      curso={sel}
-      profesoras={profesoras}
-      alumnos={alumnos}
-      onVolver={() => setVista('detalle')}
-    />
-  )
+  if (vista === 'asistencia_rapida') {
+    if (!sel) return <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>
+    return (
+      <AsistenciaRapida
+        curso={sel}
+        profesoras={profesoras}
+        alumnos={alumnos}
+        onVolver={() => setVista('detalle')}
+      />
+    )
+  }
 
   return null
 }
