@@ -102,12 +102,18 @@ function useStore<T>(key: string, loader: () => Promise<T[]>): [T[], boolean] {
 
 export function invalidateStore(key?: string) {
   if (key) {
-    delete store[key]
+    // Solo invalidar timestamp — mantener datos hasta que lleguen los nuevos
+    // Esto evita el parpadeo a [] que rompe los componentes con .find()
     delete storeTs[key]
   } else {
-    // Invalidar todo el store — usar en logout
-    Object.keys(store).forEach(k => { delete store[k]; delete storeTs[k] })
+    // Invalidar todos los timestamps — los datos se actualizan en background
+    Object.keys(storeTs).forEach(k => delete storeTs[k])
   }
+}
+
+// Usar SOLO en logout — borra datos además de timestamps
+export function clearStore() {
+  Object.keys(store).forEach(k => { delete store[k]; delete storeTs[k] })
 }
 
 // ── LOADERS centralizados — usan createClient() dinámico ───────────────────
