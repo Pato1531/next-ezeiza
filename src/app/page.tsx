@@ -8,10 +8,7 @@ import AppShell from '@/components/AppShell'
 export default function Home() {
   const { usuario, loading } = useAuth()
   const [timedOut, setTimedOut] = useState(false)
-  // Rastrear si alguna vez hubo un usuario logueado en esta sesión
-  const huboUsuarioRef = useRef(false)
-  // Estado para mostrar pantalla de reconexión en lugar de login
-  const [reconectando, setReconectando] = useState(false)
+  const [mostrarApp, setMostrarApp] = useState(false)
 
   useEffect(() => {
     const t = setTimeout(() => setTimedOut(true), 6000)
@@ -19,53 +16,33 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
+    // Una vez que hay usuario, mostrar la app y NUNCA ocultarla
+    // aunque usuario vuelva a null transitoriamente.
+    // Esto evita que AppShell se desmonte y pierda su estado.
     if (usuario) {
-      huboUsuarioRef.current = true
-      setReconectando(false)
+      setMostrarApp(true)
     }
   }, [usuario])
 
-  useEffect(() => {
-    // Si había un usuario y ahora no hay (sesión perdida transitoriamente),
-    // mostrar pantalla de reconexión en lugar de login
-    if (!loading && !usuario && huboUsuarioRef.current) {
-      setReconectando(true)
-      // Esperar hasta 8 segundos para que Supabase refresque el token
-      const t = setTimeout(() => {
-        // Si después de 8 segundos sigue sin usuario, mostrar login
-        setReconectando(false)
-      }, 8000)
-      return () => clearTimeout(t)
-    }
-  }, [loading, usuario])
-
-  // Pantalla de carga inicial
+  // Carga inicial
   if (loading && !timedOut) {
     return <Spinner />
   }
 
-  // Reconectando — hubo sesión pero se perdió transitoriamente
-  if (reconectando) {
-    return (
-      <div style={{
-        minHeight: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        background: 'var(--v)',
-        flexDirection: 'column',
-        gap: '16px',
-      }}>
-        <Spinner />
-        <div style={{ color: 'rgba(255,255,255,0.8)', fontSize: '14px', fontWeight: 500 }}>
-          Reconectando...
-        </div>
-      </div>
-    )
+  // Si nunca hubo usuario, mostrar login
+  if (!mostrarApp && !usuario) {
+    return <LoginPage />
   }
 
-  if (!usuario) return <LoginPage />
-  return <AppShell />
+  // AppShell siempre montado una vez que el usuario se logueó
+  // Si usuario es null transitoriamente, AppShell sigue montado
+  // con su estado intacto hasta que se confirme la sesión
+  return (
+    <>
+      {mostrarApp && <AppShell />}
+      {!mostrarApp && !usuario && <LoginPage />}
+    </>
+  )
 }
 
 function Spinner() {
