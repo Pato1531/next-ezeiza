@@ -56,16 +56,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const doLogout = async () => {
+    // Limpiar estado React primero
     setUsuario(null)
     usuarioRef.current = null
-    invalidateStore() // limpiar todo el store global
-    try { await supabase.auth.signOut() } catch {}
-    destroyClient()
+    invalidateStore()
+    // Limpiar localStorage ANTES de signOut para evitar que
+    // onAuthStateChange dispare otro logout al recibir SIGNED_OUT
     try {
       Object.keys(localStorage).forEach(k => {
         if (k.startsWith('sb-')) localStorage.removeItem(k)
       })
     } catch {}
+    // signOut y destroy del cliente
+    try { await supabase.auth.signOut() } catch {}
+    destroyClient()
+    // Redirigir al login
     window.location.href = window.location.origin
   }
 
@@ -78,6 +83,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!mounted) return
 
         if (event === 'SIGNED_OUT' || !session) {
+          // Solo limpiar estado — NO redirigir automáticamente.
+          // El redirect automático causaba loops infinitos cuando
+          // Supabase disparaba SIGNED_OUT por timeout de red.
           setUsuario(null)
           usuarioRef.current = null
           invalidateStore()
@@ -107,9 +115,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const { data: { session } } = await supabase.auth.getSession()
         if (!session) {
-          setUsuario(null)
-          usuarioRef.current = null
-          setLoading(false)
+          // Intentar refresh antes de dar por muerta la sesión
+          // Esto cubre el caso de token expirado por suspensión del browser
+          try {
+            const { data: refreshed } = await supabase.auth.refreshSession()
+            if (!refreshed.session) {
+              setUsuario(null)
+              usuarioRef.current = null
+              setLoading(false)
+            }
+            // Si refresh OK, onAuthStateChange dispara TOKEN_REFRESHED
+          } catch {
+            setUsuario(null)
+            usuarioRef.current = null
+            setLoading(false)
+          }
         }
         // Si hay sesión, onAuthStateChange dispara INITIAL_SESSION y se encarga
       } catch {
