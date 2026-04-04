@@ -1,17 +1,36 @@
 import { createBrowserClient } from '@supabase/ssr'
+
 let _client: ReturnType<typeof createBrowserClient> | null = null
+
 export function createClient() {
   if (_client) return _client
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
   if (!url || !key) {
     console.error('Supabase env vars missing:', { url: !!url, key: !!key })
   }
-  _client = createBrowserClient(url!, key!)
+
+  _client = createBrowserClient(url!, key!, {
+    auth: {
+      persistSession: true,
+      detectSessionInUrl: true,
+      autoRefreshToken: true,
+    },
+  })
+
   return _client
 }
-// Tipos TypeScript para la base de datos
+
+// Usar SOLO en logout para limpiar el singleton
+export function destroyClient() {
+  _client = null
+}
+
+// Tipos TypeScript
 export type Rol = 'director' | 'coordinadora' | 'secretaria' | 'profesora'
+
 export interface Usuario {
   id: string
   nombre: string
@@ -93,12 +112,13 @@ export interface HorarioItem {
   hora_inicio: string
   hora_fin: string
 }
-// Permisos por rol
+
 export const PERMISOS: Record<Rol, string[]> = {
   director:     ['dashboard','profesoras','alumnos','cursos','horarios','reportes','permisos','perfil','comunicados','agenda','actividad'],
   coordinadora: ['dashboard','profesoras','alumnos','cursos','horarios','reportes','perfil','comunicados','agenda'],
   secretaria:   ['dashboard','alumnos','cursos','horarios','reportes','perfil','comunicados','agenda'],
   profesora:    ['alumnos','cursos','horarios','perfil','comunicados','agenda'],
 }
+
 export const puedeVer = (rol: Rol, modulo: string) =>
   PERMISOS[rol]?.includes(modulo) ?? false
