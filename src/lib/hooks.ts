@@ -281,13 +281,21 @@ export function useCursos() {
 
 // ── PAGOS DE UN ALUMNO ──
 export function usePagos(alumnoId: string) {
-  const [data, setData] = useState<Pago[]>([])
+  const storeKey = `pagos_${alumnoId}`
+  const [data, setData] = useState<Pago[]>(store[storeKey] ?? [])
 
   useEffect(() => {
     if (!alumnoId) return
+    if (store[storeKey] && !isStale(storeKey)) { setData(store[storeKey]); return }
     const sb = createClient()
-    sb.from('pagos_alumnos').select('*').eq('alumno_id', alumnoId).order('created_at', { ascending: false })
-      .then(({ data }) => setData(data ?? []))
+    sb.from('pagos_alumnos').select('*').eq('alumno_id', alumnoId)
+      .order('created_at', { ascending: false })
+      .then(({ data }) => {
+        const result = data ?? []
+        store[storeKey] = result
+        storeTs[storeKey] = Date.now()
+        setData(result)
+      })
   }, [alumnoId])
 
   const registrar = async (pago: any) => {
@@ -300,10 +308,13 @@ export function usePagos(alumnoId: string) {
       const json = await res.json()
       if (json.error) { console.error('Error registrando pago:', json.error); return null }
       const row = json.data
-      if (row) setData(prev => {
-        const sinDup = prev.filter(p => !(p.mes === row.mes && p.anio === row.anio))
-        return [row, ...sinDup]
-      })
+      if (row) {
+        const sinDup = (store[storeKey] || []).filter((p: any) => !(p.mes === row.mes && p.anio === row.anio))
+        const nuevo = [row, ...sinDup]
+        store[storeKey] = nuevo
+        storeTs[storeKey] = Date.now()
+        setData(nuevo)
+      }
       return row
     } catch (e) { console.error('Error registrar pago:', e); return null }
   }
@@ -313,83 +324,142 @@ export function usePagos(alumnoId: string) {
 
 // ── ALUMNOS DE UN CURSO ──
 export function useCursoAlumnos(cursoId: string) {
-  const [data, setData] = useState<Alumno[]>([])
-  const retryRef = useRef(0)
+  const storeKey = `cursoAlumnos_${cursoId}`
 
-  const cargar = useCallback(async () => {
+  // Usar store global para persistir entre remontajes
+  const [data, setData] = useState<Alumno[]>(store[storeKey] ?? [])
+  const retryRef = useRef(0)
+  const loadingRef = useRef(false)
+
+  const cargar = useCallback(async (force = false) => {
     if (!cursoId) return
+    // Si hay datos en store y no es forzado, usarlos
+    if (store[storeKey] && !force && !isStale(storeKey)) {
+      setData(store[storeKey])
+      return
+    }
+    if (loadingRef.current) return
+    loadingRef.current = true
     const sb = createClient()
     try {
       const { data, error } = await sb.from('cursos_alumnos').select('alumno_id, alumnos(*)').eq('curso_id', cursoId)
       if (error) throw error
       const al = data?.map((r: any) => r.alumnos).filter(Boolean) ?? []
+      store[storeKey] = al
+      storeTs[storeKey] = Date.now()
       setData(al)
       retryRef.current = 0
     } catch (e) {
+      // Si hay datos en cache, mantenerlos
+      if (store[storeKey]) setData(store[storeKey])
       if (retryRef.current < 3) {
         retryRef.current++
-        setTimeout(() => cargar(), 2000 * retryRef.current)
+        setTimeout(() => cargar(true), 2000 * retryRef.current)
       }
+    } finally {
+      loadingRef.current = false
     }
-  }, [cursoId])
+  }, [cursoId, storeKey])
 
-  useEffect(() => { retryRef.current = 0; cargar() }, [cargar])
+  useEffect(() => {
+    // Si ya hay datos en store, mostrarlos inmediatamente
+    if (store[storeKey]) setData(store[storeKey])
+    retryRef.current = 0
+    cargar()
+
+    // Suscribirse a cambios del store para este curso
+    const unsub = subscribe(storeKey, () => {
+      if (store[storeKey]) setData(store[storeKey])
+    })
+    return unsub
+  }, [cargar, storeKey])
 
   const agregar = async (alumnoId: string) => {
     const alumnoStore = (store['alumnos'] || []).find((a: any) => a.id === alumnoId)
-    if (alumnoStore) setData(prev => {
-      if (prev.find(a => a.id === alumnoId)) return prev
-      return [...prev, alumnoStore]
-    })
+    if (alumnoStore) {
+      const nuevo = store[storeKey]
+        ? store[storeKey].find((a: any) => a.id === alumnoId) ? store[storeKey] : [...store[storeKey], alumnoStore]
+        : [alumnoStore]
+      store[storeKey] = nuevo
+      storeTs[storeKey] = Date.now()
+      setData(nuevo)
+    }
     const sb = createClient()
     sb.from('cursos_alumnos').upsert({
       curso_id: cursoId, alumno_id: alumnoId,
       fecha_ingreso: new Date().toISOString().split('T')[0]
     }, { onConflict: 'curso_id,alumno_id', ignoreDuplicates: true })
-      .then(({ error }) => { if (error) { console.error('Error agregando alumno:', error); cargar() } })
-      .catch(() => cargar())
+      .then(({ error }) => { if (error) { console.error('Error agregando alumno:', error); cargar(true) } })
+      .catch(() => cargar(true))
     return true
   }
 
   const quitar = async (alumnoId: string) => {
-    setData(prev => prev.filter(a => a.id !== alumnoId))
+    const nuevo = (store[storeKey] || []).filter((a: any) => a.id !== alumnoId)
+    store[storeKey] = nuevo
+    storeTs[storeKey] = Date.now()
+    setData(nuevo)
     const sb = createClient()
     sb.from('cursos_alumnos').delete().eq('curso_id', cursoId).eq('alumno_id', alumnoId)
-      .catch(() => cargar())
+      .catch(() => cargar(true))
     return true
   }
 
-  return { alumnosCurso: data, agregar, quitar, recargar: cargar }
+  return { alumnosCurso: data, agregar, quitar, recargar: () => cargar(true) }
 }
 
 // ── CLASES ──
 export function useClases(cursoId: string) {
-  const [data, setData] = useState<Clase[]>([])
-  const [isLoading, setIsLoading] = useState(true)
+  const storeKey = `clases_${cursoId}`
+  const [data, setData] = useState<Clase[]>(store[storeKey] ?? [])
+  const [isLoading, setIsLoading] = useState(!store[storeKey])
 
   const cargar = useCallback(async () => {
     if (!cursoId) { setIsLoading(false); return }
+    if (store[storeKey] && !isStale(storeKey)) { setData(store[storeKey]); setIsLoading(false); return }
     const sb = createClient()
     try {
       const { data, error } = await sb.from('clases').select('*').eq('curso_id', cursoId).order('fecha', { ascending: false })
-      if (!error) setData(data ?? [])
-    } catch {}
+      if (!error) {
+        const result = data ?? []
+        store[storeKey] = result
+        storeTs[storeKey] = Date.now()
+        setData(result)
+      } else if (store[storeKey]) {
+        setData(store[storeKey])
+      }
+    } catch {
+      if (store[storeKey]) setData(store[storeKey])
+    }
     setIsLoading(false)
   }, [cursoId])
 
-  useEffect(() => { cargar() }, [cargar])
+  useEffect(() => {
+    if (store[storeKey]) { setData(store[storeKey]); setIsLoading(false) }
+    cargar()
+  }, [cargar])
 
   const agregar = async (clase: any) => {
     const sb = createClient()
     const { data: row, error } = await sb.from('clases').insert(clase).select().single()
-    if (row && !error) setData(prev => [row, ...prev])
+    if (row && !error) {
+      const nuevo = [row, ...(store[storeKey] || [])]
+      store[storeKey] = nuevo
+      storeTs[storeKey] = Date.now()
+      setData(nuevo)
+    }
     return row
   }
 
   const actualizar = async (id: string, cambios: any) => {
     const sb = createClient()
     const { error } = await sb.from('clases').update(cambios).eq('id', id)
-    if (!error) setData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
+    if (!error) {
+      const nuevo = (store[storeKey] || []).map((c: any) => c.id === id ? { ...c, ...cambios } : c)
+      store[storeKey] = nuevo
+      storeTs[storeKey] = Date.now()
+      setData(nuevo)
+    }
     return !error
   }
 
@@ -429,18 +499,21 @@ export function useAsistencia(cursoId: string) {
 
 // ── MI PROFESORA ──
 export function useMiProfesora() {
-  const [data, setData] = useState<Profesora | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const storeKey = 'miProfesora'
+  const [data, setData] = useState<Profesora | null>(store[storeKey]?.[0] ?? null)
+  const [isLoading, setIsLoading] = useState(!store[storeKey])
 
   useEffect(() => {
+    // Si ya está en cache, no volver a buscar
+    if (store[storeKey]) { setData(store[storeKey][0] ?? null); setIsLoading(false); return }
     const sb = createClient()
     sb.auth.getUser().then(({ data: { user } }) => {
       if (!user) { setIsLoading(false); return }
-      sb.from('profesoras').select('*')
-        .ilike('email', user.email || '')
-        .limit(1)
+      sb.from('profesoras').select('*').ilike('email', user.email || '').limit(1)
         .then(({ data: rows }) => {
-          if (rows && rows.length > 0) {
+          if (rows?.length) {
+            store[storeKey] = rows
+            storeTs[storeKey] = Date.now()
             setData(rows[0])
             setIsLoading(false)
             return
@@ -451,7 +524,10 @@ export function useMiProfesora() {
               const nombre = u.nombre.split(' ')[0]
               sb.from('profesoras').select('*').ilike('nombre', `%${nombre}%`).limit(1)
                 .then(({ data: rows2 }) => {
-                  setData(rows2?.[0] ?? null)
+                  const result = rows2 ?? []
+                  store[storeKey] = result
+                  storeTs[storeKey] = Date.now()
+                  setData(result[0] ?? null)
                   setIsLoading(false)
                 })
             })
@@ -464,28 +540,44 @@ export function useMiProfesora() {
 
 // ── EXAMENES ──
 export function useExamenes(cursoId: string) {
-  const [data, setData] = useState<any[]>([])
+  const storeKey = `examenes_${cursoId}`
+  const [data, setData] = useState<any[]>(store[storeKey] ?? [])
 
   const cargar = useCallback(async () => {
     if (!cursoId) return
+    if (store[storeKey] && !isStale(storeKey)) { setData(store[storeKey]); return }
     const sb = createClient()
     const { data } = await sb.from('examenes').select('*').eq('curso_id', cursoId).order('fecha')
-    setData(data ?? [])
+    const result = data ?? []
+    store[storeKey] = result
+    storeTs[storeKey] = Date.now()
+    setData(result)
   }, [cursoId])
 
-  useEffect(() => { cargar() }, [cargar])
+  useEffect(() => {
+    if (store[storeKey]) setData(store[storeKey])
+    cargar()
+  }, [cargar])
 
   const agregar = async (ex: any) => {
     const sb = createClient()
     const { data: row, error } = await sb.from('examenes').insert(ex).select().single()
-    if (row && !error) setData(prev => [...prev, row])
+    if (row && !error) {
+      const nuevo = [...(store[storeKey] || []), row]
+      store[storeKey] = nuevo
+      storeTs[storeKey] = Date.now()
+      setData(nuevo)
+    }
     return row
   }
 
   const eliminar = async (id: string) => {
     const sb = createClient()
     await sb.from('examenes').delete().eq('id', id)
-    setData(prev => prev.filter(e => e.id !== id))
+    const nuevo = (store[storeKey] || []).filter((e: any) => e.id !== id)
+    store[storeKey] = nuevo
+    storeTs[storeKey] = Date.now()
+    setData(nuevo)
   }
 
   return { examenes: data, agregar, eliminar, recargar: cargar }
@@ -493,13 +585,20 @@ export function useExamenes(cursoId: string) {
 
 // ── NOTAS EXAMEN ──
 export function useNotasExamen(examenId: string) {
-  const [data, setData] = useState<any[]>([])
+  const storeKey = `notas_${examenId}`
+  const [data, setData] = useState<any[]>(store[storeKey] ?? [])
 
   useEffect(() => {
     if (!examenId) return
+    if (store[storeKey] && !isStale(storeKey)) { setData(store[storeKey]); return }
     const sb = createClient()
     sb.from('notas_examenes').select('*').eq('examen_id', examenId)
-      .then(({ data }) => setData(data ?? []))
+      .then(({ data }) => {
+        const result = data ?? []
+        store[storeKey] = result
+        storeTs[storeKey] = Date.now()
+        setData(result)
+      })
   }, [examenId])
 
   const guardarNota = async (alumnoId: string, campos: any) => {
@@ -507,11 +606,16 @@ export function useNotasExamen(examenId: string) {
     const { data: row } = await sb.from('notas_examenes')
       .upsert({ examen_id: examenId, alumno_id: alumnoId, ...campos }, { onConflict: 'examen_id,alumno_id' })
       .select().single()
-    if (row) setData(prev => {
+    if (row) {
+      const prev = store[storeKey] || []
       const idx = prev.findIndex((n: any) => n.alumno_id === alumnoId)
-      if (idx >= 0) { const n = [...prev]; n[idx] = row; return n }
-      return [...prev, row]
-    })
+      const nuevo = idx >= 0
+        ? prev.map((n: any, i: number) => i === idx ? row : n)
+        : [...prev, row]
+      store[storeKey] = nuevo
+      storeTs[storeKey] = Date.now()
+      setData(nuevo)
+    }
   }
 
   return { notas: data, guardarNota }
