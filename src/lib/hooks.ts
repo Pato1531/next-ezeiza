@@ -4,14 +4,27 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import type { Profesora, Alumno, Curso, Clase, HorarioItem, Pago, AsistenciaClase } from '@/lib/supabase'
 
-const supabase = createClient()
+// ── CRÍTICO: NO instanciar supabase a nivel módulo ──────────────────────────
+// Si se hace createClient() aquí, el cliente queda fijo aunque destroyClient()
+// lo destruya en el logout. Siempre llamar createClient() dentro de cada función
+// para obtener el cliente vigente.
+// const supabase = createClient()  ← REMOVIDO
 
 // ── STORE GLOBAL ──
 export const store: Record<string, any[]> = {}
-const storeTs: Record<string, number> = {} // timestamp de cada carga
+const storeTs: Record<string, number> = {}
 const loadingKeys: Set<string> = new Set()
-const listeners: Record<string, Set<()=>void>> = {}
-const TTL = 90000 // 90 segundos — refrescar datos si son más viejos que esto
+const listeners: Record<string, Set<() => void>> = {}
+const TTL = 90000 // 90 segundos
+
+// Bus de eventos para errores de autenticación
+type AuthErrorHandler = () => void
+let onAuthErrorHandler: AuthErrorHandler | null = null
+
+// Registrar handler global — lo llama el AuthProvider
+export function setAuthErrorHandler(fn: AuthErrorHandler) {
+  onAuthErrorHandler = fn
+}
 
 function isStale(key: string) {
   return !storeTs[key] || (Date.now() - storeTs[key]) > TTL
@@ -21,13 +34,29 @@ function notify(key: string) {
   listeners[key]?.forEach(fn => fn())
 }
 
-function subscribe(key: string, fn: ()=>void) {
+function subscribe(key: string, fn: () => void) {
   if (!listeners[key]) listeners[key] = new Set()
   listeners[key].add(fn)
   return () => listeners[key]?.delete(fn)
 }
 
-async function loadOnce(key: string, loader: ()=>Promise<any[]>, force = false) {
+// Detectar si un error de Supabase es de autenticación
+function isAuthError(error: any): boolean {
+  if (!error) return false
+  const msg = (error.message || '').toLowerCase()
+  const code = error.code || error.status || 0
+  return (
+    code === 401 ||
+    code === 403 ||
+    msg.includes('jwt expired') ||
+    msg.includes('invalid token') ||
+    msg.includes('not authenticated') ||
+    msg.includes('session') ||
+    msg.includes('unauthorized')
+  )
+}
+
+async function loadOnce(key: string, loader: () => Promise<any[]>, force = false) {
   if (store[key] !== undefined && !force && !isStale(key)) return
   if (loadingKeys.has(key)) return
   loadingKeys.add(key)
@@ -36,15 +65,22 @@ async function loadOnce(key: string, loader: ()=>Promise<any[]>, force = false) 
     store[key] = data
     storeTs[key] = Date.now()
     notify(key)
-  } catch (e) {
-    store[key] = store[key] ?? []
+  } catch (e: any) {
+    // Si es error de auth → notificar al AuthProvider para que desloguee
+    if (isAuthError(e)) {
+      console.warn('[Store] Error de autenticación detectado, invalidando sesión')
+      onAuthErrorHandler?.()
+      return // No actualizar el store con datos vacíos
+    }
+    // Error de red u otro — mantener datos existentes si los hay
+    if (store[key] === undefined) store[key] = []
     notify(key)
   } finally {
     loadingKeys.delete(key)
   }
 }
 
-function useStore<T>(key: string, loader: ()=>Promise<T[]>): [T[], boolean] {
+function useStore<T>(key: string, loader: () => Promise<T[]>): [T[], boolean] {
   const [data, setData] = useState<T[]>(store[key] ?? [])
   const [isLoading, setIsLoading] = useState(!store[key])
 
@@ -57,7 +93,6 @@ function useStore<T>(key: string, loader: ()=>Promise<T[]>): [T[], boolean] {
       setData(store[key] ?? [])
       setIsLoading(false)
     })
-    // Cargar si no hay datos O si los datos son viejos
     loadOnce(key, loader, isStale(key))
     return unsub
   }, [key])
@@ -65,28 +100,40 @@ function useStore<T>(key: string, loader: ()=>Promise<T[]>): [T[], boolean] {
   return [data, isLoading]
 }
 
-export function invalidateStore(key: string) {
-  delete store[key]
-  delete storeTs[key]
+export function invalidateStore(key?: string) {
+  if (key) {
+    delete store[key]
+    delete storeTs[key]
+  } else {
+    // Invalidar todo el store — usar en logout
+    Object.keys(store).forEach(k => { delete store[k]; delete storeTs[k] })
+  }
 }
 
-const LOADERS: Record<string, ()=>Promise<any[]>> = {
+// ── LOADERS centralizados — usan createClient() dinámico ───────────────────
+const LOADERS: Record<string, () => Promise<any[]>> = {
   alumnos: async () => {
-    const { data } = await supabase.from('alumnos').select('*').eq('activo', true).order('apellido')
+    const sb = createClient()
+    const { data, error } = await sb.from('alumnos').select('*').eq('activo', true).order('apellido')
+    if (error) throw error
     return data ?? []
   },
   cursos: async () => {
-    const { data } = await supabase.from('cursos').select('*').eq('activo', true).order('nombre')
+    const sb = createClient()
+    const { data, error } = await sb.from('cursos').select('*').eq('activo', true).order('nombre')
+    if (error) throw error
     return data ?? []
   },
   profesoras: async () => {
-    const { data } = await supabase.from('profesoras').select('*').eq('activa', true).order('apellido')
+    const sb = createClient()
+    const { data, error } = await sb.from('profesoras').select('*').eq('activa', true).order('apellido')
+    if (error) throw error
     return data ?? []
   },
 }
 
 if (typeof window !== 'undefined') {
-  // Refrescar datos viejos cada 90 segundos si hay alguien mirando
+  // Refrescar datos cada 90s si hay listeners activos
   setInterval(() => {
     Object.keys(LOADERS).forEach(key => {
       if (listeners[key]?.size > 0 && isStale(key)) {
@@ -95,44 +142,45 @@ if (typeof window !== 'undefined') {
     })
   }, 90000)
 
-  // Cuando la app vuelve al foco, marcar datos como viejos para que se refresquen
+  // Al volver a la pestaña: esperar 800ms para que Supabase
+  // termine de refrescar el token ANTES de lanzar queries
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
+    if (document.visibilityState !== 'visible') return
+    setTimeout(() => {
       Object.keys(LOADERS).forEach(key => {
         if (listeners[key]?.size > 0) {
-          delete storeTs[key] // forzar refresh al volver
+          delete storeTs[key]
           loadOnce(key, LOADERS[key], true)
         }
       })
-    }
+    }, 800) // dar tiempo al refresh de token
   })
 }
 
 // ── PROFESORAS ──
 export function useProfesoras() {
-  const [data, isLoading] = useStore<Profesora>('profesoras', async () => {
-    const { data } = await supabase.from('profesoras').select('*').eq('activa', true).order('apellido')
-    return data ?? []
-  })
+  const [data, isLoading] = useStore<Profesora>('profesoras', LOADERS.profesoras)
 
   const actualizar = async (id: string, cambios: Partial<Profesora>) => {
-    const { error } = await supabase.from('profesoras').update(cambios).eq('id', id)
-    if (!error) { store['profesoras'] = store['profesoras']?.map((p:any) => p.id === id ? {...p,...cambios} : p); notify('profesoras') }
+    const sb = createClient()
+    const { error } = await sb.from('profesoras').update(cambios).eq('id', id)
+    if (!error) {
+      store['profesoras'] = store['profesoras']?.map((p: any) => p.id === id ? { ...p, ...cambios } : p)
+      notify('profesoras')
+    }
     return !error
   }
 
   const agregar = async (nueva: any) => {
-    const { data: row, error } = await supabase.from('profesoras').insert(nueva).select().single()
-    if (row && !error) { store['profesoras'] = [...(store['profesoras']??[]), row]; notify('profesoras') }
+    const sb = createClient()
+    const { data: row, error } = await sb.from('profesoras').insert(nueva).select().single()
+    if (row && !error) { store['profesoras'] = [...(store['profesoras'] ?? []), row]; notify('profesoras') }
     return row
   }
 
   const recargar = async () => {
     delete store['profesoras']
-    await loadOnce('profesoras', async () => {
-      const { data } = await supabase.from('profesoras').select('*').eq('activa', true).order('apellido')
-      return data ?? []
-    })
+    await loadOnce('profesoras', LOADERS.profesoras, true)
   }
 
   return { profesoras: data, loading: isLoading, actualizar, agregar, recargar }
@@ -140,14 +188,15 @@ export function useProfesoras() {
 
 // ── ALUMNOS ──
 export function useAlumnos() {
-  const [data, isLoading] = useStore<Alumno>('alumnos', async () => {
-    const { data } = await supabase.from('alumnos').select('*').eq('activo', true).order('apellido')
-    return data ?? []
-  })
+  const [data, isLoading] = useStore<Alumno>('alumnos', LOADERS.alumnos)
 
   const actualizar = async (id: string, cambios: Partial<Alumno>) => {
-    const { error } = await supabase.from('alumnos').update(cambios).eq('id', id)
-    if (!error) { store['alumnos'] = store['alumnos']?.map((a:any) => a.id === id ? {...a,...cambios} : a); notify('alumnos') }
+    const sb = createClient()
+    const { error } = await sb.from('alumnos').update(cambios).eq('id', id)
+    if (!error) {
+      store['alumnos'] = store['alumnos']?.map((a: any) => a.id === id ? { ...a, ...cambios } : a)
+      notify('alumnos')
+    }
     return !error
   }
 
@@ -176,12 +225,8 @@ export function useAlumnos() {
       const json = await res.json()
       if (json.error) { console.error('Error creando alumno:', json.error); return null }
       const row = json.data
-      if (row) { store['alumnos'] = [...(store['alumnos']??[]), row]; notify('alumnos') }
       delete store['alumnos']
-      loadOnce('alumnos', async () => {
-        const { data } = await supabase.from('alumnos').select('*').eq('activo', true).order('apellido')
-        return data ?? []
-      })
+      loadOnce('alumnos', LOADERS.alumnos, true)
       return row
     } catch (e: any) {
       console.error('Error agregando alumno:', e?.message)
@@ -191,10 +236,7 @@ export function useAlumnos() {
 
   const recargar = async () => {
     delete store['alumnos']
-    await loadOnce('alumnos', async () => {
-      const { data } = await supabase.from('alumnos').select('*').eq('activo', true).order('apellido')
-      return data ?? []
-    })
+    await loadOnce('alumnos', LOADERS.alumnos, true)
   }
 
   return { alumnos: data, loading: isLoading, actualizar, agregar, recargar }
@@ -202,26 +244,29 @@ export function useAlumnos() {
 
 // ── CURSOS ──
 export function useCursos() {
-  const [data, isLoading] = useStore<Curso>('cursos', async () => {
-    const { data } = await supabase.from('cursos').select('*').eq('activo', true).order('nombre')
-    return data ?? []
-  })
+  const [data, isLoading] = useStore<Curso>('cursos', LOADERS.cursos)
 
   const actualizar = async (id: string, cambios: Partial<Curso>) => {
-    const { error } = await supabase.from('cursos').update(cambios).eq('id', id)
-    if (!error) { store['cursos'] = store['cursos']?.map((c:any) => c.id === id ? {...c,...cambios} : c); notify('cursos') }
+    const sb = createClient()
+    const { error } = await sb.from('cursos').update(cambios).eq('id', id)
+    if (!error) {
+      store['cursos'] = store['cursos']?.map((c: any) => c.id === id ? { ...c, ...cambios } : c)
+      notify('cursos')
+    }
     return !error
   }
 
   const agregar = async (nuevo: any) => {
-    const { data: row, error } = await supabase.from('cursos').insert(nuevo).select().single()
-    if (row && !error) { store['cursos'] = [...(store['cursos']??[]), row]; notify('cursos') }
+    const sb = createClient()
+    const { data: row, error } = await sb.from('cursos').insert(nuevo).select().single()
+    if (row && !error) { store['cursos'] = [...(store['cursos'] ?? []), row]; notify('cursos') }
     return row
   }
 
   const eliminar = async (id: string) => {
-    const { error } = await supabase.from('cursos').update({ activo: false }).eq('id', id)
-    if (!error) { store['cursos'] = store['cursos']?.filter((c:any) => c.id !== id); notify('cursos') }
+    const sb = createClient()
+    const { error } = await sb.from('cursos').update({ activo: false }).eq('id', id)
+    if (!error) { store['cursos'] = store['cursos']?.filter((c: any) => c.id !== id); notify('cursos') }
     return !error
   }
 
@@ -234,7 +279,8 @@ export function usePagos(alumnoId: string) {
 
   useEffect(() => {
     if (!alumnoId) return
-    supabase.from('pagos_alumnos').select('*').eq('alumno_id', alumnoId).order('created_at', { ascending: false })
+    const sb = createClient()
+    sb.from('pagos_alumnos').select('*').eq('alumno_id', alumnoId).order('created_at', { ascending: false })
       .then(({ data }) => setData(data ?? []))
   }, [alumnoId])
 
@@ -253,7 +299,7 @@ export function usePagos(alumnoId: string) {
         return [row, ...sinDup]
       })
       return row
-    } catch(e) { console.error('Error registrar pago:', e); return null }
+    } catch (e) { console.error('Error registrar pago:', e); return null }
   }
 
   return { pagos: data, registrar }
@@ -266,14 +312,14 @@ export function useCursoAlumnos(cursoId: string) {
 
   const cargar = useCallback(async () => {
     if (!cursoId) return
+    const sb = createClient()
     try {
-      const { data, error } = await supabase.from('cursos_alumnos').select('alumno_id, alumnos(*)').eq('curso_id', cursoId)
+      const { data, error } = await sb.from('cursos_alumnos').select('alumno_id, alumnos(*)').eq('curso_id', cursoId)
       if (error) throw error
       const al = data?.map((r: any) => r.alumnos).filter(Boolean) ?? []
       setData(al)
       retryRef.current = 0
     } catch (e) {
-      // Retry automático hasta 3 veces con delay
       if (retryRef.current < 3) {
         retryRef.current++
         setTimeout(() => cargar(), 2000 * retryRef.current)
@@ -284,27 +330,25 @@ export function useCursoAlumnos(cursoId: string) {
   useEffect(() => { retryRef.current = 0; cargar() }, [cargar])
 
   const agregar = async (alumnoId: string) => {
-    // Buscar alumno en el store global para actualizar UI inmediatamente
     const alumnoStore = (store['alumnos'] || []).find((a: any) => a.id === alumnoId)
     if (alumnoStore) setData(prev => {
-      // Evitar duplicados en UI
       if (prev.find(a => a.id === alumnoId)) return prev
       return [...prev, alumnoStore]
     })
-    // Usar upsert para evitar errores de duplicado en DB
-    supabase.from('cursos_alumnos').upsert({
+    const sb = createClient()
+    sb.from('cursos_alumnos').upsert({
       curso_id: cursoId, alumno_id: alumnoId,
       fecha_ingreso: new Date().toISOString().split('T')[0]
     }, { onConflict: 'curso_id,alumno_id', ignoreDuplicates: true })
-    .then(({ error }) => {
-      if (error) { console.error('Error agregando alumno:', error); cargar() }
-    }).catch(() => cargar())
+      .then(({ error }) => { if (error) { console.error('Error agregando alumno:', error); cargar() } })
+      .catch(() => cargar())
     return true
   }
 
   const quitar = async (alumnoId: string) => {
-    setData(prev => prev.filter(a => a.id !== alumnoId)) // optimistic update
-    supabase.from('cursos_alumnos').delete().eq('curso_id', cursoId).eq('alumno_id', alumnoId)
+    setData(prev => prev.filter(a => a.id !== alumnoId))
+    const sb = createClient()
+    sb.from('cursos_alumnos').delete().eq('curso_id', cursoId).eq('alumno_id', alumnoId)
       .catch(() => cargar())
     return true
   }
@@ -319,8 +363,9 @@ export function useClases(cursoId: string) {
 
   const cargar = useCallback(async () => {
     if (!cursoId) { setIsLoading(false); return }
+    const sb = createClient()
     try {
-      const { data, error } = await supabase.from('clases').select('*').eq('curso_id', cursoId).order('fecha', { ascending: false })
+      const { data, error } = await sb.from('clases').select('*').eq('curso_id', cursoId).order('fecha', { ascending: false })
       if (!error) setData(data ?? [])
     } catch {}
     setIsLoading(false)
@@ -329,14 +374,16 @@ export function useClases(cursoId: string) {
   useEffect(() => { cargar() }, [cargar])
 
   const agregar = async (clase: any) => {
-    const { data: row, error } = await supabase.from('clases').insert(clase).select().single()
+    const sb = createClient()
+    const { data: row, error } = await sb.from('clases').insert(clase).select().single()
     if (row && !error) setData(prev => [row, ...prev])
     return row
   }
 
   const actualizar = async (id: string, cambios: any) => {
-    const { error } = await supabase.from('clases').update(cambios).eq('id', id)
-    if (!error) setData(prev => prev.map(c => c.id === id ? {...c,...cambios} : c))
+    const sb = createClient()
+    const { error } = await sb.from('clases').update(cambios).eq('id', id)
+    if (!error) setData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
     return !error
   }
 
@@ -349,7 +396,8 @@ export function useAsistencia(cursoId: string) {
 
   useEffect(() => {
     if (!cursoId) return
-    supabase.from('asistencia_clases')
+    const sb = createClient()
+    sb.from('asistencia_clases')
       .select('clase_id, alumno_id, estado')
       .then(({ data: rows }) => {
         const m: Record<string, Record<string, string>> = {}
@@ -362,11 +410,12 @@ export function useAsistencia(cursoId: string) {
   }, [cursoId])
 
   const guardar = async (claseId: string, alumnoId: string, estado: string) => {
-    await supabase.from('asistencia_clases').upsert(
+    const sb = createClient()
+    await sb.from('asistencia_clases').upsert(
       { clase_id: claseId, alumno_id: alumnoId, estado },
       { onConflict: 'clase_id,alumno_id' }
     )
-    setData(prev => ({ ...prev, [claseId]: { ...(prev[claseId]||{}), [alumnoId]: estado } }))
+    setData(prev => ({ ...prev, [claseId]: { ...(prev[claseId] || {}), [alumnoId]: estado } }))
   }
 
   return { asistencias: data, guardar }
@@ -378,10 +427,10 @@ export function useMiProfesora() {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
+    const sb = createClient()
+    sb.auth.getUser().then(({ data: { user } }) => {
       if (!user) { setIsLoading(false); return }
-      // Buscar por email en profesoras (insensitive)
-      supabase.from('profesoras').select('*')
+      sb.from('profesoras').select('*')
         .ilike('email', user.email || '')
         .limit(1)
         .then(({ data: rows }) => {
@@ -390,12 +439,11 @@ export function useMiProfesora() {
             setIsLoading(false)
             return
           }
-          // Fallback: buscar por nombre desde tabla usuarios
-          supabase.from('usuarios').select('nombre').eq('id', user.id).single()
+          sb.from('usuarios').select('nombre').eq('id', user.id).single()
             .then(({ data: u }) => {
               if (!u) { setIsLoading(false); return }
               const nombre = u.nombre.split(' ')[0]
-              supabase.from('profesoras').select('*').ilike('nombre', `%${nombre}%`).limit(1)
+              sb.from('profesoras').select('*').ilike('nombre', `%${nombre}%`).limit(1)
                 .then(({ data: rows2 }) => {
                   setData(rows2?.[0] ?? null)
                   setIsLoading(false)
@@ -414,20 +462,23 @@ export function useExamenes(cursoId: string) {
 
   const cargar = useCallback(async () => {
     if (!cursoId) return
-    const { data } = await supabase.from('examenes').select('*').eq('curso_id', cursoId).order('fecha')
+    const sb = createClient()
+    const { data } = await sb.from('examenes').select('*').eq('curso_id', cursoId).order('fecha')
     setData(data ?? [])
   }, [cursoId])
 
   useEffect(() => { cargar() }, [cargar])
 
   const agregar = async (ex: any) => {
-    const { data: row, error } = await supabase.from('examenes').insert(ex).select().single()
+    const sb = createClient()
+    const { data: row, error } = await sb.from('examenes').insert(ex).select().single()
     if (row && !error) setData(prev => [...prev, row])
     return row
   }
 
   const eliminar = async (id: string) => {
-    await supabase.from('examenes').delete().eq('id', id)
+    const sb = createClient()
+    await sb.from('examenes').delete().eq('id', id)
     setData(prev => prev.filter(e => e.id !== id))
   }
 
@@ -440,16 +491,18 @@ export function useNotasExamen(examenId: string) {
 
   useEffect(() => {
     if (!examenId) return
-    supabase.from('notas_examenes').select('*').eq('examen_id', examenId)
+    const sb = createClient()
+    sb.from('notas_examenes').select('*').eq('examen_id', examenId)
       .then(({ data }) => setData(data ?? []))
   }, [examenId])
 
   const guardarNota = async (alumnoId: string, campos: any) => {
-    const { data: row } = await supabase.from('notas_examenes')
+    const sb = createClient()
+    const { data: row } = await sb.from('notas_examenes')
       .upsert({ examen_id: examenId, alumno_id: alumnoId, ...campos }, { onConflict: 'examen_id,alumno_id' })
       .select().single()
     if (row) setData(prev => {
-      const idx = prev.findIndex((n:any) => n.alumno_id === alumnoId)
+      const idx = prev.findIndex((n: any) => n.alumno_id === alumnoId)
       if (idx >= 0) { const n = [...prev]; n[idx] = row; return n }
       return [...prev, row]
     })
@@ -464,7 +517,8 @@ export function useHorario() {
   const [isLoading, setIsLoading] = useState(true)
 
   const cargar = useCallback(async () => {
-    const { data } = await supabase.from('horario').select('*').eq('activo', true).order('hora_inicio')
+    const sb = createClient()
+    const { data } = await sb.from('horario').select('*').eq('activo', true).order('hora_inicio')
     setData(data ?? [])
     setIsLoading(false)
   }, [])
@@ -472,13 +526,15 @@ export function useHorario() {
   useEffect(() => { cargar() }, [cargar])
 
   const agregar = async (item: any) => {
-    const { data: row, error } = await supabase.from('horario').insert(item).select().single()
+    const sb = createClient()
+    const { data: row, error } = await sb.from('horario').insert(item).select().single()
     if (row && !error) setData(prev => [...prev, row])
     return row
   }
 
   const eliminar = async (id: string) => {
-    const { error } = await supabase.from('horario').delete().eq('id', id)
+    const sb = createClient()
+    const { error } = await sb.from('horario').delete().eq('id', id)
     if (!error) setData(prev => prev.filter(h => h.id !== id))
     return !error
   }
@@ -492,7 +548,8 @@ export function useComunicados() {
   const [isLoading, setIsLoading] = useState(true)
 
   const cargar = useCallback(async () => {
-    const { data } = await supabase.from('comunicados').select('*').eq('activo', true).order('created_at', { ascending: false })
+    const sb = createClient()
+    const { data } = await sb.from('comunicados').select('*').eq('activo', true).order('created_at', { ascending: false })
     setData(data ?? [])
     setIsLoading(false)
   }, [])
@@ -500,13 +557,15 @@ export function useComunicados() {
   useEffect(() => { cargar() }, [cargar])
 
   const agregar = async (c: any) => {
-    const { data: row } = await supabase.from('comunicados').insert(c).select().single()
+    const sb = createClient()
+    const { data: row } = await sb.from('comunicados').insert(c).select().single()
     if (row) setData(prev => [row, ...prev])
     return row
   }
 
   const eliminar = async (id: string) => {
-    await supabase.from('comunicados').update({ activo: false }).eq('id', id)
+    const sb = createClient()
+    await sb.from('comunicados').update({ activo: false }).eq('id', id)
     setData(prev => prev.filter(c => c.id !== id))
   }
 
@@ -518,8 +577,9 @@ export function useHistorialCursos(alumnoId?: string) {
   const [data, setData] = useState<any[]>([])
 
   useEffect(() => {
-    if (!alumnoId) return // No cargar sin alumnoId
-    supabase.from('historial_cursos').select('*')
+    if (!alumnoId) return
+    const sb = createClient()
+    sb.from('historial_cursos').select('*')
       .eq('alumno_id', alumnoId)
       .order('fecha', { ascending: false })
       .limit(10)
@@ -528,7 +588,8 @@ export function useHistorialCursos(alumnoId?: string) {
   }, [alumnoId])
 
   const registrar = async (h: any) => {
-    supabase.from('historial_cursos').insert(h).catch(() => {})
+    const sb = createClient()
+    sb.from('historial_cursos').insert(h).catch(() => {})
   }
 
   return { historial: data, registrar }
@@ -540,8 +601,9 @@ export function useCuotasHistorial(alumnoId?: string) {
   const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
-    if (!alumnoId) return // No cargar sin alumnoId
-    supabase.from('cuotas_historial').select('*')
+    if (!alumnoId) return
+    const sb = createClient()
+    sb.from('cuotas_historial').select('*')
       .eq('alumno_id', alumnoId)
       .order('vigente_desde', { ascending: false })
       .limit(10)
@@ -550,7 +612,8 @@ export function useCuotasHistorial(alumnoId?: string) {
   }, [alumnoId])
 
   const registrarCambio = async (cambio: any) => {
-    supabase.from('cuotas_historial').insert(cambio).catch(() => {})
+    const sb = createClient()
+    sb.from('cuotas_historial').insert(cambio).catch(() => {})
   }
 
   return { historial: data, loading: isLoading, registrarCambio }
@@ -562,13 +625,15 @@ export function useHorasHistorial(profesoraId?: string) {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    let q = supabase.from('horas_historial').select('*').order('vigente_desde', { ascending: false })
+    const sb = createClient()
+    let q = sb.from('horas_historial').select('*').order('vigente_desde', { ascending: false })
     if (profesoraId) q = (q as any).eq('profesora_id', profesoraId)
     q.limit(50).then(({ data }) => { setData(data ?? []); setIsLoading(false) })
   }, [profesoraId])
 
   const registrarCambio = async (cambio: any) => {
-    await supabase.from('horas_historial').insert(cambio)
+    const sb = createClient()
+    await sb.from('horas_historial').insert(cambio)
   }
 
   return { historial: data, loading: isLoading, registrarCambio }
@@ -580,13 +645,15 @@ export function useLiquidaciones(profesoraId?: string) {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    let q = supabase.from('liquidaciones').select('*').order('anio', { ascending: false }).order('created_at', { ascending: false })
+    const sb = createClient()
+    let q = sb.from('liquidaciones').select('*').order('anio', { ascending: false }).order('created_at', { ascending: false })
     if (profesoraId) q = (q as any).eq('profesora_id', profesoraId)
     q.limit(24).then(({ data }) => { setData(data ?? []); setIsLoading(false) })
   }, [profesoraId])
 
   const guardar = async (liq: any) => {
-    const { data: row, error } = await supabase.from('liquidaciones')
+    const sb = createClient()
+    const { data: row, error } = await sb.from('liquidaciones')
       .upsert(liq, { onConflict: 'profesora_id,mes,anio' })
       .select().single()
     if (error) { console.error(error); return null }
