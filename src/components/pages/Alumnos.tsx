@@ -4,6 +4,7 @@ import { useAlumnos, usePagos, useMiProfesora, useHistorialCursos, useCuotasHist
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 
+
 const NIVELES = ['Básico','Intermedio','Advanced','Cambridge']
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const COLORES = ['#652f8d','#2d7a4f','#1a6b8a','#c0392b','#b45309','#1B6B4A','#7d3aab','#2d5016','#5a3010','#1a4b8a']
