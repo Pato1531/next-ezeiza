@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { useCursos, useProfesoras, useAlumnos, useCursoAlumnos, useClases, useMiProfesora, useExamenes, useNotasExamen } from '@/lib/hooks'
+import { useCursos, useProfesoras, useAlumnos, useCursoAlumnos, useClases, useMiProfesora, useExamenes, useNotasExamen, store, storeTs } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 
@@ -266,7 +266,10 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
   }
   const [nuevaClase, setNuevaClase] = useState({ fecha: hoy(), tema:'', descripcion:'' })
   const [guardando, setGuardando] = useState(false)
-  const [asistencias, setAsistencias] = useState<Record<string,Record<string,string>>>({})
+  const asistCacheKey = `asistencias_${c.id}`
+  const [asistencias, setAsistencias] = useState<Record<string,Record<string,string>>>(
+    store[asistCacheKey] ?? {}
+  )
   const [clasesLocal, setClasesLocal] = useState<any[]>([])
 
   // Sincronizar clases locales con las del hook
@@ -546,15 +549,18 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
   const alumnosDisponibles = alumnos.filter((a:any) => !alumnosCurso.find((ac:any) => ac.id === a.id))
 
   useEffect(() => {
+    // Mostrar cache inmediatamente si existe
+    if (store[asistCacheKey]) setAsistencias(store[asistCacheKey])
     if (!clases.length) return
     const sb = createClient()
-    // Solo cargar asistencia de las ultimas 10 clases para evitar sobrecarga
     const claseIds = clases.slice(0, 10).map((cl:any) => cl.id)
     sb.from('asistencia_clases').select('clase_id, alumno_id, estado').in('clase_id', claseIds)
       .then(({data}) => {
         if (!data) return
         const map: Record<string,Record<string,string>> = {}
         data.forEach((a:any) => { if (!map[a.clase_id]) map[a.clase_id]={}; map[a.clase_id][a.alumno_id]=a.estado })
+        store[asistCacheKey] = map
+        storeTs[asistCacheKey] = Date.now()
         setAsistencias(map)
       })
   }, [clases.length])
@@ -580,7 +586,10 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
     const sb = createClient()
     const actual = asistencias[claseId]?.[alumnoId]
     const nuevo = actual === est ? '' : est
-    setAsistencias(prev => ({ ...prev, [claseId]: { ...prev[claseId], [alumnoId]: nuevo } }))
+    const nuevaAsist = { ...asistencias, [claseId]: { ...asistencias[claseId], [alumnoId]: nuevo } }
+    store[asistCacheKey] = nuevaAsist as any
+    storeTs[asistCacheKey] = Date.now()
+    setAsistencias(nuevaAsist)
     if (nuevo) {
       await sb.from('asistencia_clases').upsert({ clase_id: claseId, alumno_id: alumnoId, estado: nuevo }, { onConflict: 'clase_id,alumno_id' })
     } else {
