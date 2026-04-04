@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react'
 import { createClient, destroyClient, Usuario, Rol, puedeVer } from '@/lib/supabase'
-import { setAuthErrorHandler, invalidateStore } from '@/lib/hooks'
+import { setAuthErrorHandler, invalidateStore, clearStore } from '@/lib/hooks'
 
 interface AuthContextType {
   usuario: Usuario | null
@@ -58,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const doLogout = async () => {
     setUsuario(null)
     usuarioRef.current = null
-    invalidateStore() // limpiar todo el store global
+    clearStore() // borra datos + timestamps — solo en logout
     try { await supabase.auth.signOut() } catch {}
     destroyClient()
     try {
@@ -87,7 +87,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (event === 'SIGNED_OUT' || !session) {
           setUsuario(null)
           usuarioRef.current = null
-          invalidateStore()
+          clearStore()
           setLoading(false)
           return
         }
