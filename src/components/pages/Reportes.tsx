@@ -669,6 +669,8 @@ const btnStyle = (bg: string) => ({display:'flex',alignItems:'center',gap:'6px',
 
 // ── MÉTODOS DE PAGO ──
 function MetodosPagoSection({ alumnos, mesActualNombre, anioActual }: any) {
+  const { usuario } = useAuth()
+  const esSecretaria = usuario?.rol === 'secretaria'
   const [pagos, setPagos] = useState<any[]>([])
   const [mes, setMes] = useState(mesActualNombre)
   const [anio, setAnio] = useState(anioActual)
