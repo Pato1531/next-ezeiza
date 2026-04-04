@@ -20,13 +20,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const usuarioRef = useRef<Usuario | null>(null)
   const cargandoRef = useRef(false)
 
-  const supabase = createClient()
-
   const cargarUsuario = async (uid: string): Promise<boolean> => {
     if (cargandoRef.current) return true
     cargandoRef.current = true
     try {
-      const { data, error } = await supabase
+      const sb = createClient()
+      const { data, error } = await sb
         .from('usuarios')
         .select('*')
         .eq('id', uid)
@@ -48,7 +47,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUsuario(null)
     usuarioRef.current = null
     invalidateStore()
-    try { await supabase.auth.signOut() } catch {}
+    const sb = createClient()
+    try { await sb.auth.signOut() } catch {}
     destroyClient()
     try {
       Object.keys(localStorage).forEach(k => {
@@ -60,8 +60,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let mounted = true
+    const sb = createClient()
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+    // onAuthStateChange es la fuente de verdad
+    // Con @supabase/supabase-js el refresh automático funciona
+    // correctamente via localStorage — no necesita middleware
+    const { data: { subscription } } = sb.auth.onAuthStateChange(
       async (event, session) => {
         if (!mounted) return
 
@@ -81,22 +85,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
 
+        // INITIAL_SESSION, SIGNED_IN
         if (session.user) {
           await cargarUsuario(session.user.id)
         }
-
         setLoading(false)
       }
     )
 
+    // Arranque: leer sesión del localStorage
     const init = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
+        const { data: { session } } = await sb.auth.getSession()
         if (!session) {
           setUsuario(null)
           usuarioRef.current = null
           setLoading(false)
         }
+        // Con sesión: onAuthStateChange dispara INITIAL_SESSION
       } catch {
         setLoading(false)
       }
@@ -104,14 +110,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     init()
 
-    // SIN handleVisibility — era la causa raíz del problema.
-    // Supabase maneja el refresh del token automáticamente con autoRefreshToken: true.
-    // Cualquier intento de validar manualmente al volver a la pestaña
-    // fallaba por timeout de red y disparaba doLogout() borrando el localStorage.
+    // Sin visibilitychange — @supabase/supabase-js con autoRefreshToken
+    // maneja el refresh automáticamente. No necesitamos intervenir.
 
     const handleOnline = async () => {
       if (!usuarioRef.current) return
-      try { await supabase.auth.refreshSession() } catch {}
+      try { await sb.auth.refreshSession() } catch {}
     }
 
     window.addEventListener('online', handleOnline)
@@ -125,9 +129,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     setLoading(true)
-    // NO borrar localStorage antes del login —
-    // Supabase necesita el refresh token para mantener la sesión
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    const sb = createClient()
+    const { data, error } = await sb.auth.signInWithPassword({ email, password })
     if (error) {
       setLoading(false)
       return { error: 'Usuario o contraseña incorrectos.' }
