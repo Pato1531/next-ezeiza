@@ -738,6 +738,7 @@ Hola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${
       window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: a.id } }))
       generarRecibo({ ...pago, alumno_id: a.id })
     }
+  }
 
   const guardarEditPago = async () => {
     if (!pagoEditando) return
@@ -1388,8 +1389,6 @@ function PagosMasivos({ alumnos, onVolver }: any) {
       </>}
     </div>
   )
-}
-
 }
 
 const IS = { width:'100%', padding:'10px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'14px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
