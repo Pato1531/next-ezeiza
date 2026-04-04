@@ -8,7 +8,7 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'Next Ezeiza — Panel de gestión',
   description: 'Sistema de gestión del Instituto de Inglés Next Ezeiza',
-  manifest: '/manifest.json',
+  // manifest removido — el icon-192.png faltante causaba recargas del SW
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
@@ -27,7 +27,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <head>
-        <link rel="apple-touch-icon" href="/icon-192.png" />
+        {/* apple-touch-icon removido — icon-192.png no existe */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
