@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react'
 import { createClient, destroyClient, Usuario, Rol, puedeVer } from '@/lib/supabase'
+import { setAuthErrorHandler, invalidateStore } from '@/lib/hooks'
 
 interface AuthContextType {
   usuario: Usuario | null
@@ -21,9 +22,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const supabase = createClient()
 
-  // ─── Cargar datos del usuario desde la tabla usuarios ───────────────────────
   const cargarUsuario = async (uid: string): Promise<boolean> => {
-    if (cargandoRef.current) return true // evitar llamadas paralelas
+    if (cargandoRef.current) return true
     cargandoRef.current = true
     try {
       const { data, error } = await supabase
@@ -31,7 +31,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .select('*')
         .eq('id', uid)
         .single()
-
       if (data && !error) {
         setUsuario(data as Usuario)
         usuarioRef.current = data as Usuario
@@ -45,9 +44,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // ─── Validar sesión contra el servidor (NO desde cache local) ───────────────
-  // getSession() lee localStorage — puede estar stale si el refresh token expiró.
-  // getUser() siempre va al servidor y devuelve 401 si la sesión es inválida.
+  // Validar sesión contra el servidor — NO usa localStorage
   const validarSesionReal = async (): Promise<string | null> => {
     try {
       const { data: { user }, error } = await supabase.auth.getUser()
@@ -58,13 +55,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const doLogout = async () => {
+    setUsuario(null)
+    usuarioRef.current = null
+    invalidateStore() // limpiar todo el store global
+    try { await supabase.auth.signOut() } catch {}
+    destroyClient()
+    try {
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith('sb-')) localStorage.removeItem(k)
+      })
+    } catch {}
+    window.location.href = window.location.origin
+  }
+
   useEffect(() => {
     let mounted = true
 
-    // ── 1. onAuthStateChange es la fuente de verdad ──────────────────────────
-    // Supabase dispara este listener para TODOS los eventos de sesión:
-    // SIGNED_IN, SIGNED_OUT, TOKEN_REFRESHED, USER_UPDATED, INITIAL_SESSION
-    // Es más confiable que getSession() manual porque reacciona al refresh automático.
+    // Registrar handler para que el store pueda notificar errores 401
+    setAuthErrorHandler(() => {
+      if (!mounted) return
+      console.warn('[Auth] Sesión inválida detectada desde store, cerrando sesión')
+      doLogout()
+    })
+
+    // onAuthStateChange — fuente de verdad de la sesión
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         if (!mounted) return
@@ -72,13 +87,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (event === 'SIGNED_OUT' || !session) {
           setUsuario(null)
           usuarioRef.current = null
+          invalidateStore()
           setLoading(false)
           return
         }
 
-        // TOKEN_REFRESHED: el token se renovó automáticamente — no recargar usuario
-        // si ya lo tenemos, solo confirmar que la sesión sigue activa
         if (event === 'TOKEN_REFRESHED') {
+          // Token renovado — no recargar usuario si ya está en memoria
           if (!usuarioRef.current && session.user) {
             await cargarUsuario(session.user.id)
           }
@@ -86,7 +101,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        // SIGNED_IN / INITIAL_SESSION / USER_UPDATED: cargar o recargar usuario
         if (session.user) {
           await cargarUsuario(session.user.id)
         }
@@ -95,9 +109,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     )
 
-    // ── 2. Inicialización: obtener sesión inicial ─────────────────────────────
-    // Usamos getSession() solo para el arranque inicial (es rápido, lee localStorage).
-    // Luego onAuthStateChange dispara INITIAL_SESSION y se encarga del resto.
+    // Inicialización: getSession solo para el arranque
     const init = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
@@ -106,7 +118,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           usuarioRef.current = null
           setLoading(false)
         }
-        // Si hay sesión, onAuthStateChange ya va a disparar INITIAL_SESSION
+        // Si hay sesión, onAuthStateChange dispara INITIAL_SESSION y se encarga
       } catch {
         setLoading(false)
       }
@@ -114,44 +126,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     init()
 
-    // ── 3. visibilitychange: revalidar sesión al volver a la pestaña ──────────
-    // El problema: cuando la pestaña está oculta, el browser throttlea timers
-    // y el refresh automático de Supabase puede no ejecutarse. Al volver,
-    // necesitamos verificar con el SERVIDOR (getUser), no con el cache (getSession).
+    // visibilitychange: validar con el servidor al volver
     const handleVisibility = async () => {
       if (document.visibilityState !== 'visible') return
-      if (!usuarioRef.current) return // no había sesión, no hacer nada
+      if (!usuarioRef.current) return
 
       const uid = await validarSesionReal()
 
       if (!uid) {
-        // Sesión inválida en el servidor → desloguear limpiamente
-        setUsuario(null)
-        usuarioRef.current = null
-        // Limpiar localStorage para evitar estado corrupto
-        try {
-          Object.keys(localStorage).forEach(k => {
-            if (k.startsWith('sb-')) localStorage.removeItem(k)
-          })
-        } catch {}
+        // Sesión inválida → desloguear
+        doLogout()
         return
       }
 
-      // Sesión válida — si el usuario no está en memoria, recargarlo
       if (!usuarioRef.current) {
         await cargarUsuario(uid)
       }
     }
 
-    // ── 4. online: reconectar tras pérdida de red ─────────────────────────────
+    // online: intentar refresh al recuperar red
     const handleOnline = async () => {
       if (!usuarioRef.current) return
-      // Intentar refresh explícito al recuperar red
       try {
         await supabase.auth.refreshSession()
-      } catch {
-        // Si falla, onAuthStateChange disparará SIGNED_OUT automáticamente
-      }
+      } catch {}
     }
 
     document.addEventListener('visibilitychange', handleVisibility)
@@ -165,11 +163,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  // ─── Login ──────────────────────────────────────────────────────────────────
   const login = async (email: string, password: string) => {
     setLoading(true)
-
-    // Limpiar sesión anterior del localStorage antes de nuevo login
     try {
       Object.keys(localStorage).forEach(k => {
         if (k.startsWith('sb-')) localStorage.removeItem(k)
@@ -195,24 +190,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return {}
   }
 
-  // ─── Logout ─────────────────────────────────────────────────────────────────
-  const logout = async () => {
-    setUsuario(null)
-    usuarioRef.current = null
-
-    try { await supabase.auth.signOut() } catch {}
-
-    // Destruir singleton para que la próxima sesión arranque limpia
-    destroyClient()
-
-    try {
-      Object.keys(localStorage).forEach(k => {
-        if (k.startsWith('sb-')) localStorage.removeItem(k)
-      })
-    } catch {}
-
-    window.location.href = window.location.origin
-  }
+  const logout = doLogout
 
   const puedeVerModulo = (modulo: string) =>
     usuario ? puedeVer(usuario.rol as Rol, modulo) : false
