@@ -2,8 +2,11 @@
 import { useState, useEffect } from 'react'
 import { useAlumnos, useProfesoras, useCursos, useLiquidaciones } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
+import { useAuth } from '@/lib/auth-context'
 
 export default function Reportes() {
+  const { usuario } = useAuth()
+  const esSecretaria = usuario?.rol === 'secretaria'
   const { profesoras } = useProfesoras()
   const { liquidaciones: todasLiqs } = useLiquidaciones()
   const mesActualNombre = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][new Date().getMonth()]
@@ -339,6 +342,7 @@ export default function Reportes() {
         ))}
       </div>
 
+      {!esSecretaria && (
       {/* SECCIÓN: ASISTENCIA DOCENTE */}
       <ReportSection
         titulo="Asistencia docente"
@@ -359,6 +363,7 @@ export default function Reportes() {
           </div>
         ))}
       </ReportSection>
+      )}
 
       {/* SECCIÓN: COBRANZA */}
       <ReportSection
@@ -384,6 +389,7 @@ export default function Reportes() {
         )})}
       </ReportSection>
 
+      {!esSecretaria && (
       {/* SECCIÓN: LIQUIDACIÓN */}
       <ReportSection
         titulo="Liquidación docente"
@@ -411,6 +417,7 @@ export default function Reportes() {
           <span style={{fontSize:'18px',fontWeight:700,color:'var(--v)'}}>${totalLiq.toLocaleString('es-AR')}</span>
         </div>
       </ReportSection>
+      )}
 
       {/* SECCIÓN: CURSOS */}
       <ReportSection
@@ -431,6 +438,7 @@ export default function Reportes() {
       </ReportSection>
 
 
+      {!esSecretaria && (
       {/* SECCIÓN: INGRESOS MENSUALES */}
       <ReportSection
         titulo="Ingresos mensuales"
@@ -500,7 +508,9 @@ export default function Reportes() {
         ))}
         {alumnos.length > 5 && <div style={{fontSize:'12px',color:'var(--text3)',textAlign:'center',padding:'8px 0'}}>y {alumnos.length-5} más... · Descargá el reporte para verlos todos</div>}
       </ReportSection>
+      )}
 
+      {!esSecretaria && (
       {/* SECCIÓN: REPORTE POR PROFESORA */}
       <ReportSection
         titulo="Reporte por docente"
@@ -558,6 +568,7 @@ export default function Reportes() {
           )
         })}
       </ReportSection>
+      )}
 
       {/* MÉTODOS DE PAGO */}
       <MetodosPagoSection alumnos={alumnos} mesActualNombre={mesActualNombre} anioActual={anioActual} />
@@ -680,6 +691,7 @@ function MetodosPagoSection({ alumnos, mesActualNombre, anioActual }: any) {
   const IS = { padding:'8px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
   const COLORES: Record<string,string> = { Efectivo: '#2d7a4f', Transferencia: '#1a73e8', MercadoPago: '#652f8d' }
 
+      {!esSecretaria && (
   return (
     <ReportSection titulo="Métodos de pago" subtitulo={`${pagos.length} pagos · ${mes} ${anio}`}
       onCSV={() => {
@@ -714,6 +726,7 @@ function MetodosPagoSection({ alumnos, mesActualNombre, anioActual }: any) {
       {pagos.length === 0 && <div style={{textAlign:'center',padding:'20px',color:'var(--text3)'}}>Sin pagos en {mes} {anio}</div>}
       {totalGeneral > 0 && <div style={{display:'flex',justifyContent:'space-between',paddingTop:'12px',borderTop:'1.5px solid var(--border)',fontWeight:700}}><span>Total recaudado</span><span style={{color:'var(--v)'}}>${totalGeneral.toLocaleString('es-AR')}</span></div>}
     </ReportSection>
+      )}
   )
 }
 
