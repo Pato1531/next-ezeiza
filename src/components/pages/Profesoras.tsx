@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useProfesoras, useHorasHistorial, useLiquidaciones } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
@@ -32,7 +32,10 @@ export default function Profesoras() {
   const puedeEditar = usuario?.rol === 'director'
   const puedeCargarLicencias = usuario?.rol === 'director' || usuario?.rol === 'coordinadora'
   const soloLectura = usuario?.rol === 'coordinadora'
-  const sel = profesoras.find(p => p.id === selId)
+  const selLive = profesoras.find(p => p.id === selId)
+  const selRef = useRef<any>(null)
+  if (selLive) selRef.current = selLive
+  const sel = selLive ?? selRef.current
 
   const irADetalle = (id: string) => {
     setSelId(id)
@@ -189,7 +192,8 @@ export default function Profesoras() {
   )
 
   // ── DETALLE ──
-  if (vista === 'detalle' && sel) {
+  if (vista === 'detalle') {
+    if (!sel) return <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>
     const liq = sel.horas_semana * 4 * sel.tarifa_hora
     return (
       <div className="fade-in">
