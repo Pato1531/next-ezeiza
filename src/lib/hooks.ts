@@ -139,7 +139,6 @@ const LOADERS: Record<string, () => Promise<any[]>> = {
 }
 
 if (typeof window !== 'undefined') {
-  // Refrescar datos cada 90s si hay listeners activos
   setInterval(() => {
     Object.keys(LOADERS).forEach(key => {
       if (listeners[key]?.size > 0 && isStale(key)) {
@@ -148,18 +147,20 @@ if (typeof window !== 'undefined') {
     })
   }, 90000)
 
-  // Al volver a la pestaña: esperar 800ms para que Supabase
-  // termine de refrescar el token ANTES de lanzar queries
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return
+    // Invalidar TODOS los timestamps — no solo los de LOADERS
+    // Esto hace que pagos_xxx, cursoAlumnos_xxx, clases_xxx, etc.
+    // se consideren viejos y se recarguen al montar
+    Object.keys(storeTs).forEach(key => { delete storeTs[key] })
+    // Recargar inmediatamente las keys globales con listeners
     setTimeout(() => {
       Object.keys(LOADERS).forEach(key => {
         if (listeners[key]?.size > 0) {
-          delete storeTs[key]
           loadOnce(key, LOADERS[key], true)
         }
       })
-    }, 800) // dar tiempo al refresh de token
+    }, 300)
   })
 }
 
