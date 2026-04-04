@@ -1,7 +1,5 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
-// Cliente singleton — @supabase/supabase-js maneja el refresh
-// automático del token via localStorage. No necesita middleware ni SSR.
 let _client: ReturnType<typeof createSupabaseClient> | null = null
 
 export function createClient() {
@@ -12,10 +10,11 @@ export function createClient() {
 
   _client = createSupabaseClient(url, key, {
     auth: {
-      persistSession: true,        // guardar sesión en localStorage
-      autoRefreshToken: true,      // refrescar token automáticamente
-      detectSessionInUrl: true,    // detectar sesión en URL (magic links)
-      storageKey: 'sb-session',    // clave en localStorage
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+      // Sin storageKey custom — usar la key por defecto de Supabase
+      // que es sb-[project-ref]-auth-token
     },
   })
 
@@ -26,7 +25,6 @@ export function destroyClient() {
   _client = null
 }
 
-// Tipos TypeScript
 export type Rol = 'director' | 'coordinadora' | 'secretaria' | 'profesora'
 
 export interface Usuario {
