@@ -41,18 +41,19 @@ function subscribe(key: string, fn: () => void) {
 }
 
 // Detectar si un error de Supabase es de autenticación
+// MUY importante: solo detectar errores EXPLÍCITOS de auth.
+// NO incluir 'session' ni mensajes genéricos — Supabase los usa en
+// contextos normales y causan falsos positivos que disparan logout.
 function isAuthError(error: any): boolean {
   if (!error) return false
   const msg = (error.message || '').toLowerCase()
   const code = error.code || error.status || 0
   return (
     code === 401 ||
-    code === 403 ||
+    (code === 403 && msg.includes('jwt')) ||
     msg.includes('jwt expired') ||
-    msg.includes('invalid token') ||
-    msg.includes('not authenticated') ||
-    msg.includes('session') ||
-    msg.includes('unauthorized')
+    msg.includes('invalid jwt') ||
+    msg === 'invalid token'
   )
 }
 
