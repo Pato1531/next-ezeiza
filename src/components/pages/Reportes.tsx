@@ -342,8 +342,8 @@ export default function Reportes() {
         ))}
       </div>
 
-      {!esSecretaria && (
       {/* SECCIÓN: ASISTENCIA DOCENTE */}
+      {!esSecretaria && (
       <ReportSection
         titulo="Asistencia docente"
         subtitulo={`${profesoras.length} docentes — últimos 6 meses`}
@@ -389,8 +389,8 @@ export default function Reportes() {
         )})}
       </ReportSection>
 
-      {!esSecretaria && (
       {/* SECCIÓN: LIQUIDACIÓN */}
+      {!esSecretaria && (
       <ReportSection
         titulo="Liquidación docente"
         subtitulo={`Total estimado: $${totalLiq.toLocaleString('es-AR')}`}
@@ -438,8 +438,8 @@ export default function Reportes() {
       </ReportSection>
 
 
-      {!esSecretaria && (
       {/* SECCIÓN: INGRESOS MENSUALES */}
+      {!esSecretaria && (
       <ReportSection
         titulo="Ingresos mensuales"
         subtitulo={`${alumnos.length} alumnos · Total esperado: $${alumnos.reduce((s,a)=>s+(a.cuota_mensual||0),0).toLocaleString('es-AR')}/mes`}
@@ -510,8 +510,8 @@ export default function Reportes() {
       </ReportSection>
       )}
 
-      {!esSecretaria && (
       {/* SECCIÓN: REPORTE POR PROFESORA */}
+      {!esSecretaria && (
       <ReportSection
         titulo="Reporte por docente"
         subtitulo={`${profesoras.length} docentes activas`}
@@ -691,7 +691,7 @@ function MetodosPagoSection({ alumnos, mesActualNombre, anioActual }: any) {
   const IS = { padding:'8px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
   const COLORES: Record<string,string> = { Efectivo: '#2d7a4f', Transferencia: '#1a73e8', MercadoPago: '#652f8d' }
 
-      {!esSecretaria && (
+  if (esSecretaria) return null
   return (
     <ReportSection titulo="Métodos de pago" subtitulo={`${pagos.length} pagos · ${mes} ${anio}`}
       onCSV={() => {
@@ -726,7 +726,6 @@ function MetodosPagoSection({ alumnos, mesActualNombre, anioActual }: any) {
       {pagos.length === 0 && <div style={{textAlign:'center',padding:'20px',color:'var(--text3)'}}>Sin pagos en {mes} {anio}</div>}
       {totalGeneral > 0 && <div style={{display:'flex',justifyContent:'space-between',paddingTop:'12px',borderTop:'1.5px solid var(--border)',fontWeight:700}}><span>Total recaudado</span><span style={{color:'var(--v)'}}>${totalGeneral.toLocaleString('es-AR')}</span></div>}
     </ReportSection>
-      )}
   )
 }
 
