@@ -1,29 +1,27 @@
-import { createBrowserClient } from '@supabase/ssr'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
-let _client: ReturnType<typeof createBrowserClient> | null = null
+// Cliente singleton — @supabase/supabase-js maneja el refresh
+// automático del token via localStorage. No necesita middleware ni SSR.
+let _client: ReturnType<typeof createSupabaseClient> | null = null
 
 export function createClient() {
   if (_client) return _client
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-  if (!url || !key) {
-    console.error('Supabase env vars missing:', { url: !!url, key: !!key })
-  }
-
-  _client = createBrowserClient(url!, key!, {
+  _client = createSupabaseClient(url, key, {
     auth: {
-      persistSession: true,
-      detectSessionInUrl: true,
-      autoRefreshToken: true,
+      persistSession: true,        // guardar sesión en localStorage
+      autoRefreshToken: true,      // refrescar token automáticamente
+      detectSessionInUrl: true,    // detectar sesión en URL (magic links)
+      storageKey: 'sb-session',    // clave en localStorage
     },
   })
 
   return _client
 }
 
-// Usar SOLO en logout para limpiar el singleton
 export function destroyClient() {
   _client = null
 }
