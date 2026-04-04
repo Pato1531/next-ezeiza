@@ -1,7 +1,5 @@
 import { createBrowserClient } from '@supabase/ssr'
-
 let _client: ReturnType<typeof createBrowserClient> | null = null
-
 export function createClient() {
   if (_client) return _client
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -12,10 +10,8 @@ export function createClient() {
   _client = createBrowserClient(url!, key!)
   return _client
 }
-
 // Tipos TypeScript para la base de datos
 export type Rol = 'director' | 'coordinadora' | 'secretaria' | 'profesora'
-
 export interface Usuario {
   id: string
   nombre: string
@@ -24,7 +20,6 @@ export interface Usuario {
   initials: string
   activo: boolean
 }
-
 export interface Profesora {
   id: string
   nombre: string
@@ -39,7 +34,6 @@ export interface Profesora {
   initials: string
   activa: boolean
 }
-
 export interface Alumno {
   id: string
   nombre: string
@@ -56,7 +50,6 @@ export interface Alumno {
   color: string
   activo: boolean
 }
-
 export interface Pago {
   id: string
   alumno_id: string
@@ -67,7 +60,6 @@ export interface Pago {
   fecha_pago: string
   observaciones?: string
 }
-
 export interface Curso {
   id: string
   nombre: string
@@ -78,7 +70,6 @@ export interface Curso {
   hora_fin: string
   activo: boolean
 }
-
 export interface Clase {
   id: string
   curso_id: string
@@ -86,7 +77,6 @@ export interface Clase {
   tema: string
   observacion_coordinadora?: string
 }
-
 export interface AsistenciaClase {
   id: string
   clase_id: string
@@ -94,7 +84,6 @@ export interface AsistenciaClase {
   estado: 'P' | 'A' | 'T'
   observacion?: string
 }
-
 export interface HorarioItem {
   id: string
   curso_id: string
@@ -104,14 +93,12 @@ export interface HorarioItem {
   hora_inicio: string
   hora_fin: string
 }
-
 // Permisos por rol
 export const PERMISOS: Record<Rol, string[]> = {
-  director:     ['dashboard','profesoras','alumnos','cursos','horarios','reportes','permisos','perfil','comunicados','agenda'],
+  director:     ['dashboard','profesoras','alumnos','cursos','horarios','reportes','permisos','perfil','comunicados','agenda','actividad'],
   coordinadora: ['dashboard','profesoras','alumnos','cursos','horarios','reportes','perfil','comunicados','agenda'],
   secretaria:   ['dashboard','alumnos','cursos','horarios','reportes','perfil','comunicados','agenda'],
   profesora:    ['alumnos','cursos','horarios','perfil','comunicados','agenda'],
 }
-
 export const puedeVer = (rol: Rol, modulo: string) =>
   PERMISOS[rol]?.includes(modulo) ?? false
