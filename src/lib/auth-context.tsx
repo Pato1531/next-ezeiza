@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react'
 import { createClient, destroyClient, Usuario, Rol, puedeVer } from '@/lib/supabase'
-import { setAuthErrorHandler, invalidateStore, clearStore } from '@/lib/hooks'
+import { setAuthErrorHandler, invalidateStore } from '@/lib/hooks'
 
 interface AuthContextType {
   usuario: Usuario | null
@@ -44,21 +44,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Validar sesión contra el servidor — NO usa localStorage
-  const validarSesionReal = async (): Promise<string | null> => {
-    try {
-      const { data: { user }, error } = await supabase.auth.getUser()
-      if (error || !user) return null
-      return user.id
-    } catch {
-      return null
-    }
-  }
-
   const doLogout = async () => {
     setUsuario(null)
     usuarioRef.current = null
-    clearStore() // borra datos + timestamps — solo en logout
+    invalidateStore() // limpiar todo el store global
     try { await supabase.auth.signOut() } catch {}
     destroyClient()
     try {
@@ -87,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (event === 'SIGNED_OUT' || !session) {
           setUsuario(null)
           usuarioRef.current = null
-          clearStore()
+          invalidateStore()
           setLoading(false)
           return
         }
@@ -126,24 +115,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     init()
 
-    // visibilitychange: validar con el servidor al volver
-    const handleVisibility = async () => {
-      if (document.visibilityState !== 'visible') return
-      if (!usuarioRef.current) return
-
-      const uid = await validarSesionReal()
-
-      if (!uid) {
-        // Sesión inválida → desloguear
-        doLogout()
-        return
-      }
-
-      if (!usuarioRef.current) {
-        await cargarUsuario(uid)
-      }
-    }
-
     // online: intentar refresh al recuperar red
     const handleOnline = async () => {
       if (!usuarioRef.current) return
@@ -152,13 +123,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {}
     }
 
-    document.addEventListener('visibilitychange', handleVisibility)
     window.addEventListener('online', handleOnline)
 
     return () => {
       mounted = false
       subscription.unsubscribe()
-      document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('online', handleOnline)
     }
   }, [])
