@@ -4,6 +4,7 @@ import { useAlumnos, usePagos, useMiProfesora, useHistorialCursos, useCuotasHist
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 
+function hoy() { return new Date().toISOString().split('T')[0] }
 
 const NIVELES = ['Básico','Intermedio','Advanced','Cambridge']
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -91,7 +92,7 @@ export default function Alumnos() {
   const [guardandoBaja, setGuardandoBaja] = useState(false)
   const [bajas, setBajas] = useState<any[]>([])
   const [loadingBajas, setLoadingBajas] = useState(false)
-  const [pago, setPago] = useState({ mes: MESES[new Date().getMonth()], anio: new Date().getFullYear(), monto: 0, metodo:'Efectivo', fecha_pago: hoy(), observaciones:'' })
+  const [pago, setPago] = useState({ mes: MESES[new Date().getMonth()], anio: new Date().getFullYear(), monto: 0, metodo:'Efectivo', fecha_pago: new Date().toISOString().split('T')[0], observaciones:'' })
 
   const puedeVerPagos = ['director','coordinadora','secretaria'].includes(usuario?.rol||'')
   const puedeEditar = usuario?.rol !== 'profesora'
@@ -1045,7 +1046,6 @@ Hola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${
   )
 }
 
-function hoy() { return new Date().toISOString().split('T')[0] }
 function fmtFecha(f: string) { if(!f)return'—'; const [y,m,d]=f.split('-'); return `${d}/${m}/${y}` }
 function PagosMasivos({ alumnos, onVolver }: any) {
   const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
