@@ -239,7 +239,11 @@ export default function Cursos() {
 }
 
 function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, onVolver, onEditar, onEliminar, confirmDelete, onCancelDelete, onConfirmDelete, onAsistenciaRapida }: any) {
-  const { alumnosCurso, agregar: agregarAlumno, quitar: quitarAlumno, recargar: recargarAlumnos } = useCursoAlumnos(c.id)
+  const { alumnosCurso: alumnosCursoRaw, agregar: agregarAlumno, quitar: quitarAlumno, recargar: recargarAlumnos } = useCursoAlumnos(c.id)
+  // Mantener datos anteriores durante refetch — evita flash de lista vacía
+  const alumnosCursoRef = useRef<any[]>([])
+  const alumnosCurso = alumnosCursoRaw.length > 0 ? alumnosCursoRaw : alumnosCursoRef.current
+  useEffect(() => { if (alumnosCursoRaw.length > 0) alumnosCursoRef.current = alumnosCursoRaw }, [alumnosCursoRaw])
 
   // Escuchar cuando se asigna un alumno desde otro módulo
   useEffect(() => {
@@ -285,7 +289,10 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
   const [clasesLocal, setClasesLocal] = useState<any[]>([])
 
   // Sincronizar clases locales con las del hook
-  useEffect(() => { setClasesLocal(clases) }, [clases])
+  // Solo actualizar si clases tiene datos — evita limpiar durante refetch
+  useEffect(() => {
+    if (clases.length > 0) setClasesLocal(clases)
+  }, [clases])
 
   const abrirEditClase = (cl: any) => {
     setClaseEditando({ ...cl, descripcion: cl.observacion_coordinadora || '' })
