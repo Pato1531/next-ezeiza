@@ -69,7 +69,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, session) => {
         if (!mounted) return
 
-        if (event === 'SIGNED_OUT' || !session) {
+        if (event === 'SIGNED_OUT') {
+          // Solo limpiar en logout explícito — no en sesión null transitoria
           setUsuario(null)
           usuarioRef.current = null
           invalidateStore()
@@ -77,7 +78,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
 
+        if (!session) {
+          // Sesión null transitoria durante refresh — ignorar si ya hay usuario
+          // Supabase puede emitir esto antes de TOKEN_REFRESHED
+          if (!usuarioRef.current) {
+            setLoading(false)
+          }
+          return
+        }
+
         if (event === 'TOKEN_REFRESHED') {
+          // Token refrescado — cargar usuario si no estaba cargado
           if (!usuarioRef.current && session.user) {
             await cargarUsuario(session.user.id)
           }
