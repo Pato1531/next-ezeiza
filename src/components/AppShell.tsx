@@ -145,19 +145,19 @@ export default function AppShell() {
         </div>
       </div>
 
-      {/* CONTENT — render estático para evitar remount */}
-      <div style={{flex:1,padding:'16px 16px 24px',overflowY:'auto'}}>
-        {page === 'dashboard'   && <Dashboard />}
-        {page === 'alumnos'     && <Alumnos />}
-        {page === 'cursos'      && <Cursos />}
-        {page === 'horarios'    && <Horarios />}
-        {page === 'profesoras'  && <Profesoras />}
-        {page === 'reportes'    && <Reportes />}
-        {page === 'permisos'    && <Permisos />}
-        {page === 'perfil'      && <Perfil />}
-        {page === 'agenda'      && <Agenda />}
-        {page === 'comunicados' && <Comunicados />}
-        {page === 'actividad'   && <Actividad />}
+      {/* CONTENT — display:none para mantener estado sin desmontar */}
+      <div style={{flex:1,overflowY:'auto',position:'relative'}}>
+        <div style={{padding:'16px 16px 24px',display:page==='dashboard'?'block':'none'}}><Dashboard /></div>
+        <div style={{padding:'16px 16px 24px',display:page==='alumnos'?'block':'none'}}><Alumnos /></div>
+        <div style={{padding:'16px 16px 24px',display:page==='cursos'?'block':'none'}}><Cursos /></div>
+        <div style={{padding:'16px 16px 24px',display:page==='horarios'?'block':'none'}}><Horarios /></div>
+        <div style={{padding:'16px 16px 24px',display:page==='profesoras'?'block':'none'}}><Profesoras /></div>
+        <div style={{padding:'16px 16px 24px',display:page==='reportes'?'block':'none'}}><Reportes /></div>
+        <div style={{padding:'16px 16px 24px',display:page==='permisos'?'block':'none'}}><Permisos /></div>
+        <div style={{padding:'16px 16px 24px',display:page==='perfil'?'block':'none'}}><Perfil /></div>
+        <div style={{padding:'16px 16px 24px',display:page==='agenda'?'block':'none'}}><Agenda /></div>
+        <div style={{padding:'16px 16px 24px',display:page==='comunicados'?'block':'none'}}><Comunicados /></div>
+        <div style={{padding:'16px 16px 24px',display:page==='actividad'?'block':'none'}}><Actividad /></div>
       </div>
 
       {/* DRAWER "MÁS" */}
