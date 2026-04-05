@@ -58,6 +58,46 @@ function useRefetchOnFocus(refetch: () => Promise<void> | void, label = 'hook') 
   }, [])
 }
 
+// ── useProfesoras ─────────────────────────────────────────────────────────────
+export function useProfesoras() {
+  const [data, setData] = useState<Profesora[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const loadingRef = useRef(false)
+
+  const cargar = useCallback(async () => {
+    if (loadingRef.current) return
+    loadingRef.current = true
+    try {
+      const { data, error } = await createClient()
+        .from('profesoras').select('*').eq('activa', true).order('apellido')
+      if (error) console.error('[useProfesoras]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useProfesoras] catch', e?.message)
+    } finally {
+      setIsLoading(false)
+      loadingRef.current = false
+    }
+  }, [])
+
+  useEffect(() => { cargar() }, [cargar])
+  useRefetchOnFocus(cargar, 'profesoras')
+
+  const actualizar = async (id: string, cambios: Partial<Profesora>) => {
+    const { error } = await createClient().from('profesoras').update(cambios).eq('id', id)
+    if (!error) setData(prev => prev.map(p => p.id === id ? { ...p, ...cambios } : p))
+    return !error
+  }
+
+  const agregar = async (nueva: any) => {
+    const { data: row, error } = await createClient().from('profesoras').insert(nueva).select().single()
+    if (row && !error) setData(prev => [...prev, row])
+    return row
+  }
+
+  return { profesoras: data, loading: isLoading, actualizar, agregar, recargar: cargar }
+}
+
 // ── useCursos ─────────────────────────────────────────────────────────────────
 export function useCursos() {
   const [data, setData] = useState<Curso[]>([])
