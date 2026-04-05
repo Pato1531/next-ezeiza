@@ -10,7 +10,7 @@ export const store: Record<string, any[]> = {}
 export const storeTs: Record<string, number> = {}
 export function invalidateStore() {}
 export function clearStore() {}
-x
+
 // ── invalidateQuery — forzar refetch desde cualquier componente ───────────────
 const listeners: Record<string, Set<() => void>> = {}
 
@@ -24,6 +24,7 @@ export function invalidateQuery(key: string) {
 const CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutos
 
 function cacheRead<T>(key: string): T[] | null {
+  if (typeof window === 'undefined') return null
   try {
     const raw = sessionStorage.getItem('nq_' + key)
     if (!raw) return null
@@ -37,6 +38,7 @@ function cacheRead<T>(key: string): T[] | null {
 }
 
 function cacheWrite<T>(key: string, data: T[]) {
+  if (typeof window === 'undefined') return
   try {
     sessionStorage.setItem('nq_' + key, JSON.stringify({ data, ts: Date.now() }))
   } catch {}
@@ -440,6 +442,7 @@ export function useExamenes(cursoId: string) {
 // No usa useSupabaseQuery — estructura de datos es Record<claseId, Record<alumnoId, estado>>
 export function useAsistencia(cursoId: string) {
   const [data, setData] = useState<Record<string, Record<string, string>>>(() => {
+    if (typeof window === 'undefined') return {}
     try {
       const raw = sessionStorage.getItem(`nq_asistencia-${cursoId}`)
       if (raw) { const { data: cached } = JSON.parse(raw); if (cached) return cached }
@@ -459,7 +462,8 @@ export function useAsistencia(cursoId: string) {
         })
         setData(m)
         try {
-          sessionStorage.setItem(`nq_asistencia-${cursoId}`, JSON.stringify({ data: m, ts: Date.now() }))
+          if (typeof window !== 'undefined')
+            sessionStorage.setItem(`nq_asistencia-${cursoId}`, JSON.stringify({ data: m, ts: Date.now() }))
         } catch {}
       })
   }, [cursoId])
