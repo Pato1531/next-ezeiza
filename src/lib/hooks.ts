@@ -63,6 +63,7 @@ export function useProfesoras() {
   const [data, setData] = useState<Profesora[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const loadingRef = useRef(false)
+  const initialLoad = useRef(true)
 
   const cargar = useCallback(async () => {
     if (loadingRef.current) return
@@ -75,7 +76,8 @@ export function useProfesoras() {
     } catch (e: any) {
       console.error('[useProfesoras] catch', e?.message)
     } finally {
-      setIsLoading(false)
+      if (initialLoad.current) { setIsLoading(false); initialLoad.current = false }
+      else setIsLoading(false)
       loadingRef.current = false
     }
   }, [])
@@ -103,6 +105,7 @@ export function useCursos() {
   const [data, setData] = useState<Curso[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const loadingRef = useRef(false)
+  const initialLoad = useRef(true)
 
   const cargar = useCallback(async () => {
     if (loadingRef.current) return
@@ -115,7 +118,7 @@ export function useCursos() {
     } catch (e: any) {
       console.error('[useCursos] catch', e?.message)
     } finally {
-      setIsLoading(false)
+      if (initialLoad.current) { setIsLoading(false); initialLoad.current = false }
       loadingRef.current = false
     }
   }, [])
@@ -149,6 +152,7 @@ export function useAlumnos() {
   const [data, setData] = useState<Alumno[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const loadingRef = useRef(false)
+  const initialLoad = useRef(true)
 
   const cargar = useCallback(async () => {
     if (loadingRef.current) return
@@ -161,7 +165,7 @@ export function useAlumnos() {
     } catch (e: any) {
       console.error('[useAlumnos] catch', e?.message)
     } finally {
-      setIsLoading(false)
+      if (initialLoad.current) { setIsLoading(false); initialLoad.current = false }
       loadingRef.current = false
     }
   }, [])
