@@ -63,7 +63,12 @@ const ROLE_STYLES: Record<string,{bg:string,color:string}> = {
 
 export default function AppShell() {
   const { usuario, puedeVer } = useAuth()
-  const [page, setPage] = useState(() => {
+  const [page, setPage] = useState<string>(() => {
+    // Restaurar página activa desde sessionStorage al volver del background
+    if (typeof window !== 'undefined') {
+      const saved = sessionStorage.getItem('nav_page')
+      if (saved) return saved
+    }
     if (!usuario) return 'dashboard'
     const perms = ['dashboard','alumnos','cursos','horarios','profesoras','reportes','permisos']
     return perms.find(p => puedeVer(p)) ?? 'alumnos'
@@ -100,6 +105,7 @@ export default function AppShell() {
     setComunicadosBadge(0)
     setPage('comunicados')
     setMasOpen(false)
+    try { sessionStorage.setItem('nav_page', 'comunicados') } catch {}
   }
 
   if (!usuario) return null
@@ -117,6 +123,7 @@ export default function AppShell() {
     if (id === 'comunicados') { irAComunicados(); return }
     setPage(id)
     setMasOpen(false)
+    try { sessionStorage.setItem('nav_page', id) } catch {}
   }
 
   return (
