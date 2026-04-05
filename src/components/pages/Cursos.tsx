@@ -247,6 +247,18 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
     window.addEventListener('curso-alumno-updated', handler)
     return () => window.removeEventListener('curso-alumno-updated', handler)
   }, [recargarAlumnos])
+
+  // Recargar datos al volver a la pestaña
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        recargarAlumnos()
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [recargarAlumnos])
+
   const { clases, agregar: agregarClase } = useClases(c.id)
   const [modalClase, setModalClase] = useState(false)
   const [modalAlumno, setModalAlumno] = useState(false)
