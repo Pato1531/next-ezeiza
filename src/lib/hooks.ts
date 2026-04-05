@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { devError, devLog } from '@/lib/debug'
 import { createClient } from '@/lib/supabase'
 import type { Profesora, Alumno, Curso, Clase, HorarioItem, Pago, AsistenciaClase } from '@/lib/supabase'
 
@@ -22,12 +23,11 @@ export function clearStore() {}
 // 5. refetchRef siempre apunta al callback más reciente sin recrear listeners
 // 6. Cleanup correcto en unmount
 //
-function useRefetchOnFocus(refetch: () => Promise<void> | void) {
+function useRefetchOnFocus(refetch: () => Promise<void> | void, label = 'hook') {
   const refetchRef = useRef(refetch)
   const lastRun = useRef(0)
   const running = useRef(false)
 
-  // Sincronizar sin recrear listeners
   useEffect(() => { refetchRef.current = refetch })
 
   useEffect(() => {
@@ -36,33 +36,26 @@ function useRefetchOnFocus(refetch: () => Promise<void> | void) {
       if (Date.now() - lastRun.current < 2000) return
       running.current = true
       try {
+        devLog('[refetch] ' + label)
         await refetchRef.current()
-        lastRun.current = Date.now() // actualizar DESPUÉS del éxito
-      } catch {
-        // no actualizar lastRun si falló → reintento permitido en el próximo evento
+        lastRun.current = Date.now()
+      } catch (e: any) {
+        devError('[refetch error] ' + label + ': ' + (e?.message ?? String(e)))
       } finally {
         running.current = false
       }
     }
 
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') run()
-    }
-
-    const handleFocus = () => {
-      // focus se maneja independiente de visibilityState
-      // cubre: alt-tab de vuelta, click en la ventana, volver desde otra app
-      run()
-    }
+    const handleVisibility = () => { if (document.visibilityState === 'visible') run() }
+    const handleFocus = () => { run() }
 
     document.addEventListener('visibilitychange', handleVisibility)
     window.addEventListener('focus', handleFocus)
-
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility)
       window.removeEventListener('focus', handleFocus)
     }
-  }, []) // sin dependencias — refetchRef.current siempre está actualizado
+  }, [])
 }
 
 // ── useCursos ─────────────────────────────────────────────────────────────────
@@ -88,7 +81,7 @@ export function useCursos() {
   }, [])
 
   useEffect(() => { cargar() }, [cargar])
-  useRefetchOnFocus(cargar)
+  useRefetchOnFocus(cargar, 'cursos')
 
   const actualizar = async (id: string, cambios: Partial<Curso>) => {
     const { error } = await createClient().from('cursos').update(cambios).eq('id', id)
@@ -134,7 +127,7 @@ export function useAlumnos() {
   }, [])
 
   useEffect(() => { cargar() }, [cargar])
-  useRefetchOnFocus(cargar)
+  useRefetchOnFocus(cargar, 'alumnos')
 
   const actualizar = async (id: string, cambios: Partial<Alumno>) => {
     const { error } = await createClient().from('alumnos').update(cambios).eq('id', id)
@@ -196,7 +189,7 @@ export function useCursoAlumnos(cursoId: string) {
   }, [cursoId])
 
   useEffect(() => { retryRef.current = 0; cargar() }, [cargar])
-  useRefetchOnFocus(cargar)
+  useRefetchOnFocus(cargar, 'cursos')
 
   const agregar = async (alumnoId: string) => {
     await createClient().from('cursos_alumnos').upsert(
@@ -240,7 +233,7 @@ export function useClases(cursoId: string) {
   }, [cursoId])
 
   useEffect(() => { cargar() }, [cargar])
-  useRefetchOnFocus(cargar)
+  useRefetchOnFocus(cargar, 'alumnos')
 
   const agregar = async (clase: any) => {
     const { data: row, error } = await createClient().from('clases').insert(clase).select().single()
@@ -278,7 +271,7 @@ export function usePagos(alumnoId: string) {
   }, [alumnoId])
 
   useEffect(() => { cargar() }, [cargar])
-  useRefetchOnFocus(cargar)
+  useRefetchOnFocus(cargar, 'cursoAlumnos')
 
   const registrar = async (pago: any) => {
     try {
@@ -326,7 +319,7 @@ export function useExamenes(cursoId: string) {
   }, [cursoId])
 
   useEffect(() => { cargar() }, [cargar])
-  useRefetchOnFocus(cargar)
+  useRefetchOnFocus(cargar, 'clases')
 
   const agregar = async (ex: any) => {
     const { data: row, error } = await createClient().from('examenes').insert(ex).select().single()
@@ -415,7 +408,7 @@ export function useNotasExamen(examenId: string) {
   }, [examenId])
 
   useEffect(() => { cargar() }, [cargar])
-  useRefetchOnFocus(cargar)
+  useRefetchOnFocus(cargar, 'pagos')
 
   const guardarNota = async (alumnoId: string, campos: any) => {
     const { data: row } = await createClient().from('notas_examenes')
@@ -454,7 +447,7 @@ export function useHorario() {
   }, [])
 
   useEffect(() => { cargar() }, [cargar])
-  useRefetchOnFocus(cargar)
+  useRefetchOnFocus(cargar, 'examenes')
 
   const agregar = async (item: any) => {
     const { data: row, error } = await createClient().from('horario').insert(item).select().single()
@@ -494,7 +487,7 @@ export function useComunicados() {
   }, [])
 
   useEffect(() => { cargar() }, [cargar])
-  useRefetchOnFocus(cargar)
+  useRefetchOnFocus(cargar, 'notasExamen')
 
   const agregar = async (c: any) => {
     const { data: row } = await createClient().from('comunicados').insert(c).select().single()
