@@ -1,28 +1,28 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
-let _client: ReturnType<typeof createSupabaseClient> | null = null
+const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
+const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+
+// Cliente único creado UNA SOLA VEZ al cargar el módulo.
+// NO se destruye nunca — destroyClient es no-op.
+// Esto evita el bug donde un cliente recién creado no tiene
+// la sesión cargada del localStorage todavía.
+export const supabaseClient = createSupabaseClient(url, key, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: false,
+  },
+})
 
 export function createClient() {
-  if (_client) return _client
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-  _client = createSupabaseClient(url, key, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: false,
-      // Sin storageKey custom — usar la key por defecto de Supabase
-      // que es sb-[project-ref]-auth-token
-    },
-  })
-
-  return _client
+  return supabaseClient
 }
 
+// No-op — mantener por compatibilidad con auth-context
 export function destroyClient() {
-  _client = null
+  // Intencionalmente vacío — el cliente nunca se destruye
+  // La sesión se limpia via supabase.auth.signOut()
 }
 
 export type Rol = 'director' | 'coordinadora' | 'secretaria' | 'profesora'
