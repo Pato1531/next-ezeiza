@@ -53,9 +53,23 @@ export default function Cursos() {
 
   const puedeEditar = ['director','coordinadora'].includes(usuario?.rol||'')
   const selLive = cursos.find(c => c.id === selId)
+
+  // Leer curso desde cache de sessionStorage para que sel esté disponible
+  // inmediatamente al restaurar navegación (antes de que cursos fetchee)
+  const selCacheRef = useRef<any>(null)
+  if (selCacheRef.current === null && selId && typeof window !== 'undefined') {
+    try {
+      const raw = sessionStorage.getItem('nq_cursos')
+      if (raw) {
+        const { data } = JSON.parse(raw)
+        selCacheRef.current = data?.find((c: any) => c.id === selId) ?? null
+      }
+    } catch {}
+  }
+
   const selRef = useRef<any>(null)
   if (selLive) selRef.current = selLive
-  const sel = selLive ?? selRef.current
+  const sel = selLive ?? selRef.current ?? selCacheRef.current
   const [filtroDia, setFiltroDia] = useState<string|null>(null)
 
   const DIAS_ORD: Record<string,number> = {'Lun':0,'Mar':1,'Mié':2,'Jue':3,'Vie':4,'Sáb':5,'Lunes':0,'Martes':1,'Miercoles':2,'Miércoles':2,'Jueves':3,'Viernes':4,'Sabados':5,'Sábados':5}
@@ -232,10 +246,15 @@ export default function Cursos() {
 
   // ── DETALLE ──
   if (vista === 'detalle') {
-    if (!sel) return <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>
+    // sel puede ser null transitoriamente mientras cursos carga desde Supabase.
+    // selRef.current tiene el último curso válido — usarlo como fallback.
+    // Si ambos son null, mostrar skeleton pero NO desmontar CursoDetalle
+    // para evitar que sus hooks pierdan el estado.
+    const cursoParaDetalle = sel ?? selRef.current
+    if (!cursoParaDetalle) return <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>
     return (
       <CursoDetalle
-        curso={sel}
+        curso={cursoParaDetalle}
         profesoras={profesoras}
         alumnos={alumnos}
         puedeEditar={puedeEditar}
