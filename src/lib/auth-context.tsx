@@ -2,8 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react'
 import { createClient, destroyClient, Usuario, Rol, puedeVer } from '@/lib/supabase'
-import { invalidateStore } from '@/lib/hooks'
-import { devLog, devWarn } from '@/lib/debug'
+import { invalidateStore, setAuthReady } from '@/lib/hooks'
 
 interface AuthContextType {
   usuario: Usuario | null
@@ -34,6 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data && !error) {
         setUsuario(data as Usuario)
         usuarioRef.current = data as Usuario
+        setAuthReady(true)   // ← hooks pueden fetchear ahora
         return true
       }
       return false
@@ -47,6 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const doLogout = async () => {
     setUsuario(null)
     usuarioRef.current = null
+    setAuthReady(false)
     invalidateStore()
     const sb = createClient()
     try { await sb.auth.signOut() } catch {}
@@ -68,7 +69,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // correctamente via localStorage — no necesita middleware
     const { data: { subscription } } = sb.auth.onAuthStateChange(
       async (event, session) => {
-        devLog(`[AUTH] event=${event} session=${!!session} usuarioRef=${!!usuarioRef.current}`)
         if (!mounted) return
 
         if (event === 'SIGNED_OUT') {
