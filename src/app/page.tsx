@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from 'react'
 import { useAuth } from '@/lib/auth-context'
+import { devLog } from '@/lib/debug'
 import LoginPage from '@/components/LoginPage'
 import AppShell from '@/components/AppShell'
 
@@ -16,6 +17,7 @@ export default function Home() {
   }, [])
 
   useEffect(() => {
+    devLog(`[PAGE] usuario=${!!usuario} mostrarApp=${mostrarApp}`)
     // Una vez que hay usuario, mostrar la app y NUNCA ocultarla
     // aunque usuario vuelva a null transitoriamente.
     // Esto evita que AppShell se desmonte y pierda su estado.
