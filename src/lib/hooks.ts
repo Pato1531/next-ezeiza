@@ -4,62 +4,140 @@ import { useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import type { Profesora, Alumno, Curso, Clase, HorarioItem, Pago, AsistenciaClase } from '@/lib/supabase'
 
-// Store mínimo solo para compatibilidad con código que lo importa directamente
+// ── STUBS para compatibilidad ─────────────────────────────────────────────────
 export const store: Record<string, any[]> = {}
 export const storeTs: Record<string, number> = {}
 export function invalidateStore() {}
 export function clearStore() {}
 
-// ── PROFESORAS ──
-export function useProfesoras() {
-  const [data, setData] = useState<Profesora[]>([])
+// ── useRefetchOnFocus ─────────────────────────────────────────────────────────
+//
+// Reglas implementadas:
+// 1. visibilitychange y focus se manejan por separado — cada uno puede
+//    disparar el refetch de forma independiente
+// 2. lastRun se actualiza DESPUÉS del refetch exitoso, no antes
+//    → si falla, el próximo intento no queda bloqueado
+// 3. Throttle de 2s para evitar duplicados cuando llegan juntos
+// 4. running.current evita requests paralelos
+// 5. refetchRef siempre apunta al callback más reciente sin recrear listeners
+// 6. Cleanup correcto en unmount
+//
+function useRefetchOnFocus(refetch: () => Promise<void> | void) {
+  const refetchRef = useRef(refetch)
+  const lastRun = useRef(0)
+  const running = useRef(false)
+
+  // Sincronizar sin recrear listeners
+  useEffect(() => { refetchRef.current = refetch })
+
+  useEffect(() => {
+    const run = async () => {
+      if (running.current) return
+      if (Date.now() - lastRun.current < 2000) return
+      running.current = true
+      try {
+        await refetchRef.current()
+        lastRun.current = Date.now() // actualizar DESPUÉS del éxito
+      } catch {
+        // no actualizar lastRun si falló → reintento permitido en el próximo evento
+      } finally {
+        running.current = false
+      }
+    }
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') run()
+    }
+
+    const handleFocus = () => {
+      // focus se maneja independiente de visibilityState
+      // cubre: alt-tab de vuelta, click en la ventana, volver desde otra app
+      run()
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', handleFocus)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', handleFocus)
+    }
+  }, []) // sin dependencias — refetchRef.current siempre está actualizado
+}
+
+// ── useCursos ─────────────────────────────────────────────────────────────────
+export function useCursos() {
+  const [data, setData] = useState<Curso[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const loadingRef = useRef(false)
 
   const cargar = useCallback(async () => {
-    const sb = createClient()
-    const { data } = await sb.from('profesoras').select('*').eq('activa', true).order('apellido')
-    setData(data ?? [])
-    setIsLoading(false)
+    if (loadingRef.current) return
+    loadingRef.current = true
+    try {
+      const { data, error } = await createClient()
+        .from('cursos').select('*').eq('activo', true).order('nombre')
+      if (error) console.error('[useCursos]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useCursos] catch', e?.message)
+    } finally {
+      setIsLoading(false)
+      loadingRef.current = false
+    }
   }, [])
 
   useEffect(() => { cargar() }, [cargar])
+  useRefetchOnFocus(cargar)
 
-  const actualizar = async (id: string, cambios: Partial<Profesora>) => {
-    const sb = createClient()
-    const { error } = await sb.from('profesoras').update(cambios).eq('id', id)
-    if (!error) setData(prev => prev.map(p => p.id === id ? { ...p, ...cambios } : p))
+  const actualizar = async (id: string, cambios: Partial<Curso>) => {
+    const { error } = await createClient().from('cursos').update(cambios).eq('id', id)
+    if (!error) setData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
     return !error
   }
 
-  const agregar = async (nueva: any) => {
-    const sb = createClient()
-    const { data: row, error } = await sb.from('profesoras').insert(nueva).select().single()
+  const agregar = async (nuevo: any) => {
+    const { data: row, error } = await createClient().from('cursos').insert(nuevo).select().single()
     if (row && !error) setData(prev => [...prev, row])
     return row
   }
 
-  const recargar = cargar
+  const eliminar = async (id: string) => {
+    const { error } = await createClient().from('cursos').update({ activo: false }).eq('id', id)
+    if (!error) setData(prev => prev.filter(c => c.id !== id))
+    return !error
+  }
 
-  return { profesoras: data, loading: isLoading, actualizar, agregar, recargar }
+  return { cursos: data, loading: isLoading, actualizar, agregar, eliminar }
 }
 
-// ── ALUMNOS ──
+// ── useAlumnos ────────────────────────────────────────────────────────────────
 export function useAlumnos() {
   const [data, setData] = useState<Alumno[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const loadingRef = useRef(false)
 
   const cargar = useCallback(async () => {
-    const sb = createClient()
-    const { data } = await sb.from('alumnos').select('*').eq('activo', true).order('apellido')
-    setData(data ?? [])
-    setIsLoading(false)
+    if (loadingRef.current) return
+    loadingRef.current = true
+    try {
+      const { data, error } = await createClient()
+        .from('alumnos').select('*').eq('activo', true).order('apellido')
+      if (error) console.error('[useAlumnos]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useAlumnos] catch', e?.message)
+    } finally {
+      setIsLoading(false)
+      loadingRef.current = false
+    }
   }, [])
 
   useEffect(() => { cargar() }, [cargar])
+  useRefetchOnFocus(cargar)
 
   const actualizar = async (id: string, cambios: Partial<Alumno>) => {
-    const sb = createClient()
-    const { error } = await sb.from('alumnos').update(cambios).eq('id', id)
+    const { error } = await createClient().from('alumnos').update(cambios).eq('id', id)
     if (!error) setData(prev => prev.map(a => a.id === id ? { ...a, ...cambios } : a))
     return !error
   }
@@ -80,109 +158,45 @@ export function useAlumnos() {
         body: JSON.stringify(datos)
       })
       const json = await res.json()
-      if (json.error) return null
-      if (json.data) setData(prev => [...prev, json.data])
-      return json.data
-    } catch { return null }
+      if (json.error) { console.error('[useAlumnos agregar]', json.error); return null }
+      if (json.data) { setData(prev => [...prev, json.data]); return json.data }
+    } catch (e: any) {
+      console.error('[useAlumnos agregar] catch', e?.message)
+    }
+    return null
   }
 
-  const recargar = cargar
-
-  return { alumnos: data, loading: isLoading, actualizar, agregar, recargar }
+  return { alumnos: data, loading: isLoading, actualizar, agregar, recargar: cargar }
 }
 
-// ── CURSOS ──
-export function useCursos() {
-  const [data, setData] = useState<Curso[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-
-  const cargar = useCallback(async () => {
-    const sb = createClient()
-    const { data } = await sb.from('cursos').select('*').eq('activo', true).order('nombre')
-    setData(data ?? [])
-    setIsLoading(false)
-  }, [])
-
-  useEffect(() => { cargar() }, [cargar])
-
-  const actualizar = async (id: string, cambios: Partial<Curso>) => {
-    const sb = createClient()
-    const { error } = await sb.from('cursos').update(cambios).eq('id', id)
-    if (!error) setData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
-    return !error
-  }
-
-  const agregar = async (nuevo: any) => {
-    const sb = createClient()
-    const { data: row, error } = await sb.from('cursos').insert(nuevo).select().single()
-    if (row && !error) setData(prev => [...prev, row])
-    return row
-  }
-
-  const eliminar = async (id: string) => {
-    const sb = createClient()
-    const { error } = await sb.from('cursos').update({ activo: false }).eq('id', id)
-    if (!error) setData(prev => prev.filter(c => c.id !== id))
-    return !error
-  }
-
-  return { cursos: data, loading: isLoading, actualizar, agregar, eliminar }
-}
-
-// ── PAGOS DE UN ALUMNO ──
-export function usePagos(alumnoId: string) {
-  const [data, setData] = useState<Pago[]>([])
-
-  useEffect(() => {
-    if (!alumnoId) return
-    createClient().from('pagos_alumnos').select('*').eq('alumno_id', alumnoId)
-      .order('created_at', { ascending: false })
-      .then(({ data }) => setData(data ?? []))
-  }, [alumnoId])
-
-  const registrar = async (pago: any) => {
-    try {
-      const res = await fetch('/api/registrar-pago', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(pago)
-      })
-      const json = await res.json()
-      if (json.error) return null
-      const row = json.data
-      if (row) setData(prev => {
-        const sinDup = prev.filter(p => !(p.mes === row.mes && p.anio === row.anio))
-        return [row, ...sinDup]
-      })
-      return row
-    } catch { return null }
-  }
-
-  return { pagos: data, registrar }
-}
-
-// ── ALUMNOS DE UN CURSO ──
+// ── useCursoAlumnos ───────────────────────────────────────────────────────────
 export function useCursoAlumnos(cursoId: string) {
   const [data, setData] = useState<Alumno[]>([])
+  const loadingRef = useRef(false)
   const retryRef = useRef(0)
 
   const cargar = useCallback(async () => {
-    if (!cursoId) return
+    if (!cursoId || loadingRef.current) return
+    loadingRef.current = true
     try {
       const { data, error } = await createClient()
         .from('cursos_alumnos').select('alumno_id, alumnos(*)').eq('curso_id', cursoId)
       if (error) throw error
       setData(data?.map((r: any) => r.alumnos).filter(Boolean) ?? [])
       retryRef.current = 0
-    } catch {
+    } catch (e: any) {
+      console.error('[useCursoAlumnos]', e?.message)
       if (retryRef.current < 3) {
         retryRef.current++
         setTimeout(cargar, 2000 * retryRef.current)
       }
+    } finally {
+      loadingRef.current = false
     }
   }, [cursoId])
 
   useEffect(() => { retryRef.current = 0; cargar() }, [cargar])
+  useRefetchOnFocus(cargar)
 
   const agregar = async (alumnoId: string) => {
     await createClient().from('cursos_alumnos').upsert(
@@ -203,20 +217,30 @@ export function useCursoAlumnos(cursoId: string) {
   return { alumnosCurso: data, agregar, quitar, recargar: cargar }
 }
 
-// ── CLASES ──
+// ── useClases ─────────────────────────────────────────────────────────────────
 export function useClases(cursoId: string) {
   const [data, setData] = useState<Clase[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const loadingRef = useRef(false)
 
   const cargar = useCallback(async () => {
-    if (!cursoId) { setIsLoading(false); return }
-    const { data } = await createClient().from('clases')
-      .select('*').eq('curso_id', cursoId).order('fecha', { ascending: false })
-    setData(data ?? [])
-    setIsLoading(false)
+    if (!cursoId || loadingRef.current) { setIsLoading(false); return }
+    loadingRef.current = true
+    try {
+      const { data, error } = await createClient().from('clases')
+        .select('*').eq('curso_id', cursoId).order('fecha', { ascending: false })
+      if (error) console.error('[useClases]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useClases] catch', e?.message)
+    } finally {
+      setIsLoading(false)
+      loadingRef.current = false
+    }
   }, [cursoId])
 
   useEffect(() => { cargar() }, [cargar])
+  useRefetchOnFocus(cargar)
 
   const agregar = async (clase: any) => {
     const { data: row, error } = await createClient().from('clases').insert(clase).select().single()
@@ -233,14 +257,100 @@ export function useClases(cursoId: string) {
   return { clases: data, loading: isLoading, agregar, actualizar, recargar: cargar }
 }
 
-// ── ASISTENCIA ──
+// ── usePagos ──────────────────────────────────────────────────────────────────
+export function usePagos(alumnoId: string) {
+  const [data, setData] = useState<Pago[]>([])
+  const loadingRef = useRef(false)
+
+  const cargar = useCallback(async () => {
+    if (!alumnoId || loadingRef.current) return
+    loadingRef.current = true
+    try {
+      const { data, error } = await createClient().from('pagos_alumnos').select('*')
+        .eq('alumno_id', alumnoId).order('created_at', { ascending: false })
+      if (error) console.error('[usePagos]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[usePagos] catch', e?.message)
+    } finally {
+      loadingRef.current = false
+    }
+  }, [alumnoId])
+
+  useEffect(() => { cargar() }, [cargar])
+  useRefetchOnFocus(cargar)
+
+  const registrar = async (pago: any) => {
+    try {
+      const res = await fetch('/api/registrar-pago', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(pago)
+      })
+      const json = await res.json()
+      if (json.error) { console.error('[usePagos registrar]', json.error); return null }
+      if (json.data) {
+        setData(prev => {
+          const sinDup = prev.filter(p => !(p.mes === json.data.mes && p.anio === json.data.anio))
+          return [json.data, ...sinDup]
+        })
+        return json.data
+      }
+    } catch (e: any) {
+      console.error('[usePagos registrar] catch', e?.message)
+    }
+    return null
+  }
+
+  return { pagos: data, registrar }
+}
+
+// ── useExamenes ───────────────────────────────────────────────────────────────
+export function useExamenes(cursoId: string) {
+  const [data, setData] = useState<any[]>([])
+  const loadingRef = useRef(false)
+
+  const cargar = useCallback(async () => {
+    if (!cursoId || loadingRef.current) return
+    loadingRef.current = true
+    try {
+      const { data, error } = await createClient().from('examenes')
+        .select('*').eq('curso_id', cursoId).order('fecha')
+      if (error) console.error('[useExamenes]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useExamenes] catch', e?.message)
+    } finally {
+      loadingRef.current = false
+    }
+  }, [cursoId])
+
+  useEffect(() => { cargar() }, [cargar])
+  useRefetchOnFocus(cargar)
+
+  const agregar = async (ex: any) => {
+    const { data: row, error } = await createClient().from('examenes').insert(ex).select().single()
+    if (row && !error) setData(prev => [...prev, row])
+    return row
+  }
+
+  const eliminar = async (id: string) => {
+    await createClient().from('examenes').delete().eq('id', id)
+    setData(prev => prev.filter(e => e.id !== id))
+  }
+
+  return { examenes: data, agregar, eliminar, recargar: cargar }
+}
+
+// ── useAsistencia ─────────────────────────────────────────────────────────────
 export function useAsistencia(cursoId: string) {
   const [data, setData] = useState<Record<string, Record<string, string>>>({})
 
   useEffect(() => {
     if (!cursoId) return
     createClient().from('asistencia_clases').select('clase_id, alumno_id, estado')
-      .then(({ data: rows }) => {
+      .then(({ data: rows, error }) => {
+        if (error) { console.error('[useAsistencia]', error.message); return }
         const m: Record<string, Record<string, string>> = {}
         rows?.forEach((r: any) => {
           if (!m[r.clase_id]) m[r.clase_id] = {}
@@ -259,7 +369,7 @@ export function useAsistencia(cursoId: string) {
   return { asistencias: data, guardar }
 }
 
-// ── MI PROFESORA ──
+// ── useMiProfesora ────────────────────────────────────────────────────────────
 export function useMiProfesora() {
   const [data, setData] = useState<Profesora | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -284,41 +394,28 @@ export function useMiProfesora() {
   return { miProfesora: data, loading: isLoading }
 }
 
-// ── EXAMENES ──
-export function useExamenes(cursoId: string) {
-  const [data, setData] = useState<any[]>([])
-
-  const cargar = useCallback(async () => {
-    if (!cursoId) return
-    const { data } = await createClient().from('examenes').select('*').eq('curso_id', cursoId).order('fecha')
-    setData(data ?? [])
-  }, [cursoId])
-
-  useEffect(() => { cargar() }, [cargar])
-
-  const agregar = async (ex: any) => {
-    const { data: row, error } = await createClient().from('examenes').insert(ex).select().single()
-    if (row && !error) setData(prev => [...prev, row])
-    return row
-  }
-
-  const eliminar = async (id: string) => {
-    await createClient().from('examenes').delete().eq('id', id)
-    setData(prev => prev.filter(e => e.id !== id))
-  }
-
-  return { examenes: data, agregar, eliminar, recargar: cargar }
-}
-
-// ── NOTAS EXAMEN ──
+// ── useNotasExamen ────────────────────────────────────────────────────────────
 export function useNotasExamen(examenId: string) {
   const [data, setData] = useState<any[]>([])
+  const loadingRef = useRef(false)
 
-  useEffect(() => {
-    if (!examenId) return
-    createClient().from('notas_examenes').select('*').eq('examen_id', examenId)
-      .then(({ data }) => setData(data ?? []))
+  const cargar = useCallback(async () => {
+    if (!examenId || loadingRef.current) return
+    loadingRef.current = true
+    try {
+      const { data, error } = await createClient().from('notas_examenes')
+        .select('*').eq('examen_id', examenId)
+      if (error) console.error('[useNotasExamen]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useNotasExamen] catch', e?.message)
+    } finally {
+      loadingRef.current = false
+    }
   }, [examenId])
+
+  useEffect(() => { cargar() }, [cargar])
+  useRefetchOnFocus(cargar)
 
   const guardarNota = async (alumnoId: string, campos: any) => {
     const { data: row } = await createClient().from('notas_examenes')
@@ -334,18 +431,30 @@ export function useNotasExamen(examenId: string) {
   return { notas: data, guardarNota }
 }
 
-// ── HORARIO ──
+// ── useHorario ────────────────────────────────────────────────────────────────
 export function useHorario() {
   const [data, setData] = useState<HorarioItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const loadingRef = useRef(false)
 
   const cargar = useCallback(async () => {
-    const { data } = await createClient().from('horario').select('*').eq('activo', true).order('hora_inicio')
-    setData(data ?? [])
-    setIsLoading(false)
+    if (loadingRef.current) return
+    loadingRef.current = true
+    try {
+      const { data, error } = await createClient().from('horario')
+        .select('*').eq('activo', true).order('hora_inicio')
+      if (error) console.error('[useHorario]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useHorario] catch', e?.message)
+    } finally {
+      setIsLoading(false)
+      loadingRef.current = false
+    }
   }, [])
 
   useEffect(() => { cargar() }, [cargar])
+  useRefetchOnFocus(cargar)
 
   const agregar = async (item: any) => {
     const { data: row, error } = await createClient().from('horario').insert(item).select().single()
@@ -362,19 +471,30 @@ export function useHorario() {
   return { horario: data, loading: isLoading, agregar, eliminar, recargar: cargar }
 }
 
-// ── COMUNICADOS ──
+// ── useComunicados ────────────────────────────────────────────────────────────
 export function useComunicados() {
   const [data, setData] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const loadingRef = useRef(false)
 
   const cargar = useCallback(async () => {
-    const { data } = await createClient().from('comunicados')
-      .select('*').eq('activo', true).order('created_at', { ascending: false })
-    setData(data ?? [])
-    setIsLoading(false)
+    if (loadingRef.current) return
+    loadingRef.current = true
+    try {
+      const { data, error } = await createClient().from('comunicados')
+        .select('*').eq('activo', true).order('created_at', { ascending: false })
+      if (error) console.error('[useComunicados]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useComunicados] catch', e?.message)
+    } finally {
+      setIsLoading(false)
+      loadingRef.current = false
+    }
   }, [])
 
   useEffect(() => { cargar() }, [cargar])
+  useRefetchOnFocus(cargar)
 
   const agregar = async (c: any) => {
     const { data: row } = await createClient().from('comunicados').insert(c).select().single()
@@ -390,7 +510,7 @@ export function useComunicados() {
   return { comunicados: data, loading: isLoading, agregar, eliminar, recargar: cargar }
 }
 
-// ── HISTORIAL CURSOS ──
+// ── useHistorialCursos ────────────────────────────────────────────────────────
 export function useHistorialCursos(alumnoId?: string) {
   const [data, setData] = useState<any[]>([])
 
@@ -408,7 +528,7 @@ export function useHistorialCursos(alumnoId?: string) {
   return { historial: data, registrar }
 }
 
-// ── CUOTAS HISTORIAL ──
+// ── useCuotasHistorial ────────────────────────────────────────────────────────
 export function useCuotasHistorial(alumnoId?: string) {
   const [data, setData] = useState<any[]>([])
 
@@ -426,7 +546,7 @@ export function useCuotasHistorial(alumnoId?: string) {
   return { historial: data, registrarCambio }
 }
 
-// ── HORAS HISTORIAL ──
+// ── useHorasHistorial ─────────────────────────────────────────────────────────
 export function useHorasHistorial(profesoraId?: string) {
   const [data, setData] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -445,7 +565,7 @@ export function useHorasHistorial(profesoraId?: string) {
   return { historial: data, loading: isLoading, registrarCambio }
 }
 
-// ── LIQUIDACIONES ──
+// ── useLiquidaciones ──────────────────────────────────────────────────────────
 export function useLiquidaciones(profesoraId?: string) {
   const [data, setData] = useState<any[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -461,7 +581,7 @@ export function useLiquidaciones(profesoraId?: string) {
   const guardar = async (liq: any) => {
     const { data: row, error } = await createClient().from('liquidaciones')
       .upsert(liq, { onConflict: 'profesora_id,mes,anio' }).select().single()
-    if (error) return null
+    if (error) { console.error('[useLiquidaciones guardar]', error.message); return null }
     setData(prev => {
       const idx = prev.findIndex(l => l.mes === liq.mes && l.anio === liq.anio)
       if (idx >= 0) { const n = [...prev]; n[idx] = row; return n }
