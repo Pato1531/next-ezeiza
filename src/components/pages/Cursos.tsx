@@ -29,9 +29,24 @@ export default function Cursos() {
   const cursos = usuario?.rol === 'profesora'
     ? (miProfesora ? todosCursos.filter(c => c.profesora_id === miProfesora.id) : [])
     : todosCursos
-  const [vista, setVista] = useState<Vista>('lista')
-  const [selId, setSelId] = useState<string|null>(null)
-  const [tab, setTab] = useState<'info'|'alumnos'|'planilla'|'examenes'>('info')
+  const [vista, setVista] = useState<Vista>(() => {
+    if (typeof window !== 'undefined') {
+      const v = sessionStorage.getItem('cursos_vista')
+      if (v === 'detalle' || v === 'lista' || v === 'form' || v === 'asistencia_rapida') return v as Vista
+    }
+    return 'lista'
+  })
+  const [selId, setSelId] = useState<string|null>(() => {
+    if (typeof window !== 'undefined') return sessionStorage.getItem('cursos_selId')
+    return null
+  })
+  const [tab, setTab] = useState<'info'|'alumnos'|'planilla'|'examenes'>(() => {
+    if (typeof window !== 'undefined') {
+      const t = sessionStorage.getItem('cursos_tab')
+      if (t === 'info' || t === 'alumnos' || t === 'planilla' || t === 'examenes') return t as any
+    }
+    return 'info'
+  })
   const [form, setForm] = useState<any>(null)
   const [guardando, setGuardando] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -59,8 +74,23 @@ export default function Cursos() {
     recargarAlumnos()
   }, [])
 
-  const irADetalle = (id: string) => { setSelId(id); setTab('info'); setVista('detalle') }
-  const irALista = () => { setSelId(null); setVista('lista') }
+  const irADetalle = (id: string, tabOverride?: 'info'|'alumnos'|'planilla'|'examenes') => {
+    const t = tabOverride ?? 'info'
+    setSelId(id); setTab(t); setVista('detalle')
+    try {
+      sessionStorage.setItem('cursos_vista', 'detalle')
+      sessionStorage.setItem('cursos_selId', id)
+      sessionStorage.setItem('cursos_tab', t)
+    } catch {}
+  }
+  const irALista = () => {
+    setSelId(null); setVista('lista')
+    try {
+      sessionStorage.setItem('cursos_vista', 'lista')
+      sessionStorage.removeItem('cursos_selId')
+      sessionStorage.setItem('cursos_tab', 'info')
+    } catch {}
+  }
   const irAFormNuevo = () => {
     setForm({ nombre:'', nivel:'Básico', profesora_id: profesoras[0]?.id||'', dias:'', hora_inicio:'08:00', hora_fin:'09:30' })
     setVista('form')
@@ -212,12 +242,16 @@ export default function Cursos() {
         tab={tab}
         setTab={setTab}
         onVolver={irALista}
+        onTabChange={(t: any) => { setTab(t); try { sessionStorage.setItem('cursos_tab', t) } catch {} }}
         onEditar={irAFormEditar}
         onEliminar={() => setConfirmDelete(true)}
         confirmDelete={confirmDelete}
         onCancelDelete={() => setConfirmDelete(false)}
         onConfirmDelete={eliminar}
-        onAsistenciaRapida={() => setVista('asistencia_rapida')}
+        onAsistenciaRapida={() => {
+          setVista('asistencia_rapida')
+          try { sessionStorage.setItem('cursos_vista', 'asistencia_rapida') } catch {}
+        }}
       />
     )
   }
@@ -230,7 +264,10 @@ export default function Cursos() {
         curso={sel}
         profesoras={profesoras}
         alumnos={alumnos}
-        onVolver={() => setVista('detalle')}
+        onVolver={() => {
+          setVista('detalle')
+          try { sessionStorage.setItem('cursos_vista', 'detalle') } catch {}
+        }}
       />
     )
   }
@@ -239,11 +276,7 @@ export default function Cursos() {
 }
 
 function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, onVolver, onEditar, onEliminar, confirmDelete, onCancelDelete, onConfirmDelete, onAsistenciaRapida }: any) {
-  const { alumnosCurso: alumnosCursoRaw, agregar: agregarAlumno, quitar: quitarAlumno, recargar: recargarAlumnos } = useCursoAlumnos(c.id)
-  // Mantener datos anteriores durante refetch — evita flash de lista vacía
-  const alumnosCursoRef = useRef<any[]>([])
-  const alumnosCurso = alumnosCursoRaw.length > 0 ? alumnosCursoRaw : alumnosCursoRef.current
-  useEffect(() => { if (alumnosCursoRaw.length > 0) alumnosCursoRef.current = alumnosCursoRaw }, [alumnosCursoRaw])
+  const { alumnosCurso, agregar: agregarAlumno, quitar: quitarAlumno, recargar: recargarAlumnos } = useCursoAlumnos(c.id)
 
   // Escuchar cuando se asigna un alumno desde otro módulo
   useEffect(() => {
@@ -289,10 +322,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
   const [clasesLocal, setClasesLocal] = useState<any[]>([])
 
   // Sincronizar clases locales con las del hook
-  // Solo actualizar si clases tiene datos — evita limpiar durante refetch
-  useEffect(() => {
-    if (clases.length > 0) setClasesLocal(clases)
-  }, [clases])
+  useEffect(() => { setClasesLocal(clases) }, [clases])
 
   const abrirEditClase = (cl: any) => {
     setClaseEditando({ ...cl, descripcion: cl.observacion_coordinadora || '' })
