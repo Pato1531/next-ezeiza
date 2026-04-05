@@ -18,6 +18,24 @@ export function invalidateQuery(key: string) {
   listeners[key]?.forEach(fn => fn())
 }
 
+// ── authReady — flag global que indica si hay sesión confirmada ───────────────
+// Se activa desde auth-context via setAuthReady(true) después de cargarUsuario.
+// Los hooks esperan este flag antes de hacer el primer fetch.
+// Esto evita que fetcheen con RLS sin sesión y sobreescriban el cache con [].
+let _authReady = false
+const _authReadyListeners: Set<() => void> = new Set()
+
+export function setAuthReady(ready: boolean) {
+  _authReady = ready
+  if (ready) _authReadyListeners.forEach(fn => fn())
+}
+
+export function onAuthReady(fn: () => void): () => void {
+  if (_authReady) { fn(); return () => {} }
+  _authReadyListeners.add(fn)
+  return () => { _authReadyListeners.delete(fn) }
+}
+
 // ── Cache helpers (sessionStorage) ───────────────────────────────────────────
 // Permite que al volver del background los datos aparezcan instantáneamente
 // mientras Supabase rehidrata la sesión en background.
@@ -113,8 +131,10 @@ function useSupabaseQuery<T>(
     }
   }, [cacheKey, shouldSkip]) // fetcher intencionalmente fuera — se lee via ref
 
-  // Auto fetch al montar
-  useEffect(() => { fetch() }, [fetch])
+  // Auto fetch al montar — esperar a que haya sesión confirmada
+  useEffect(() => {
+    return onAuthReady(() => { fetch() })
+  }, [fetch])
 
   // Registrar en listeners globales para invalidateQuery()
   useEffect(() => {
