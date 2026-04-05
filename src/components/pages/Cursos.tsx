@@ -276,7 +276,11 @@ export default function Cursos() {
 }
 
 function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, onVolver, onEditar, onEliminar, confirmDelete, onCancelDelete, onConfirmDelete, onAsistenciaRapida }: any) {
-  const { alumnosCurso, agregar: agregarAlumno, quitar: quitarAlumno, recargar: recargarAlumnos } = useCursoAlumnos(c.id)
+  const { alumnosCurso: alumnosCursoRaw, agregar: agregarAlumno, quitar: quitarAlumno, recargar: recargarAlumnos } = useCursoAlumnos(c.id)
+  // Preservar datos durante refetch — evita flash de lista vacía
+  const alumnosCursoRef = useRef<any[]>(alumnosCursoRaw)
+  useEffect(() => { if (alumnosCursoRaw.length > 0) alumnosCursoRef.current = alumnosCursoRaw }, [alumnosCursoRaw])
+  const alumnosCurso = alumnosCursoRaw.length > 0 ? alumnosCursoRaw : alumnosCursoRef.current
 
   // Escuchar cuando se asigna un alumno desde otro módulo
   useEffect(() => {
@@ -319,10 +323,11 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
   const [asistencias, setAsistencias] = useState<Record<string,Record<string,string>>>(
     store[asistCacheKey] ?? {}
   )
-  const [clasesLocal, setClasesLocal] = useState<any[]>([])
+  // Inicializar desde clases — ya tiene cache de sessionStorage al montar
+  const [clasesLocal, setClasesLocal] = useState<any[]>(clases)
 
-  // Sincronizar clases locales con las del hook
-  useEffect(() => { setClasesLocal(clases) }, [clases])
+  // Sincronizar cuando llegan nuevas clases del refetch
+  useEffect(() => { if (clases.length > 0) setClasesLocal(clases) }, [clases])
 
   const abrirEditClase = (cl: any) => {
     setClaseEditando({ ...cl, descripcion: cl.observacion_coordinadora || '' })
