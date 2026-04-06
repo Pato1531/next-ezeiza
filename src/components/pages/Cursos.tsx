@@ -297,11 +297,7 @@ export default function Cursos() {
 }
 
 function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, onVolver, onEditar, onEliminar, confirmDelete, onCancelDelete, onConfirmDelete, onAsistenciaRapida }: any) {
-  const { alumnosCurso: alumnosCursoRaw, agregar: agregarAlumno, quitar: quitarAlumno, recargar: recargarAlumnos } = useCursoAlumnos(c.id)
-  // Preservar datos durante refetch — evita flash de lista vacía
-  const alumnosCursoRef = useRef<any[]>(alumnosCursoRaw)
-  useEffect(() => { if (alumnosCursoRaw.length > 0) alumnosCursoRef.current = alumnosCursoRaw }, [alumnosCursoRaw])
-  const alumnosCurso = alumnosCursoRaw.length > 0 ? alumnosCursoRaw : alumnosCursoRef.current
+  const { alumnosCurso, agregar: agregarAlumno, quitar: quitarAlumno, recargar: recargarAlumnos } = useCursoAlumnos(c.id)
 
   // Escuchar cuando se asigna un alumno desde otro módulo
   useEffect(() => {
