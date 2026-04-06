@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useCursos, useProfesoras, useAlumnos, useCursoAlumnos, useClases, useMiProfesora, useExamenes, useNotasExamen, store, storeTs } from '@/lib/hooks'
+import { devLog } from '@/lib/debug'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 
@@ -54,22 +55,32 @@ export default function Cursos() {
   const puedeEditar = ['director','coordinadora'].includes(usuario?.rol||'')
   const selLive = cursos.find(c => c.id === selId)
 
-  // Leer curso desde cache de sessionStorage para que sel esté disponible
-  // inmediatamente al restaurar navegación (antes de que cursos fetchee)
-  const selCacheRef = useRef<any>(null)
-  if (selCacheRef.current === null && selId && typeof window !== 'undefined') {
-    try {
-      const raw = sessionStorage.getItem('nq_cursos')
-      if (raw) {
-        const { data } = JSON.parse(raw)
-        selCacheRef.current = data?.find((c: any) => c.id === selId) ?? null
-      }
-    } catch {}
-  }
-
+  // selRef: mantiene el último curso válido visto
   const selRef = useRef<any>(null)
   if (selLive) selRef.current = selLive
+
+  // selCacheRef: leer del store global de cursos (más fresco que sessionStorage)
+  // Solo se inicializa una vez y solo si selId existe
+  const selCacheRef = useRef<any>(null)
+  if (selCacheRef.current === null && selId) {
+    // Primero intentar el store global (en memoria, más fresco)
+    if (typeof window !== 'undefined') {
+      try {
+        const raw = sessionStorage.getItem('nq_cursos')
+        if (raw) {
+          const { data } = JSON.parse(raw)
+          const found = data?.find((c: any) => c.id === selId)
+          if (found) selCacheRef.current = found
+        }
+      } catch {}
+    }
+  }
+
   const sel = selLive ?? selRef.current ?? selCacheRef.current
+  // DEBUG: log what sel resolved to
+  if (typeof window !== 'undefined' && vista === 'detalle') {
+    devLog(`[Cursos] selId=${selId?.slice(0,8)} sel=${sel?.nombre?.slice(0,15)} vista=${vista}`)
+  }
   const [filtroDia, setFiltroDia] = useState<string|null>(null)
 
   const DIAS_ORD: Record<string,number> = {'Lun':0,'Mar':1,'Mié':2,'Jue':3,'Vie':4,'Sáb':5,'Lunes':0,'Martes':1,'Miercoles':2,'Miércoles':2,'Jueves':3,'Viernes':4,'Sabados':5,'Sábados':5}
