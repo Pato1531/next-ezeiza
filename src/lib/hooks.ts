@@ -113,21 +113,25 @@ function useSupabaseQuery<T>(
 
     try {
       const result = await fetcherRef.current()
+      // Siempre escribir cache — incluso si el componente se desmontó
+      // Así el próximo mount lee datos frescos
+      cacheWrite(cacheKey, result)
+      devLog(`[${cacheKey}] fetched ${result.length} items`)
       if (!mountedRef.current) return
       setData(result)
-      cacheWrite(cacheKey, result)
       setError(null)
     } catch (e: any) {
-      if (!mountedRef.current) return
       devError(`[${cacheKey}] fetch error: ${e?.message ?? String(e)}`)
+      if (!mountedRef.current) return
       setError(e?.message ?? 'Error desconocido')
       // NO limpiar data — mantener cache anterior visible
     } finally {
+      // SIEMPRE limpiar fetchingRef — nunca dejarlo en true
+      fetchingRef.current = false
       if (mountedRef.current) {
         setIsLoading(false)
         setIsFetching(false)
       }
-      fetchingRef.current = false
     }
   }, [cacheKey, shouldSkip]) // fetcher intencionalmente fuera — se lee via ref
 
