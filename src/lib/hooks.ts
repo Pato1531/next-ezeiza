@@ -383,7 +383,7 @@ export function useClases(cursoId: string) {
     return !error
   }
 
-  return { clases: data, loading: isLoading, agregar, actualizar, recargar: refetch }
+  return { clases: data, setData, loading: isLoading, agregar, actualizar, recargar: refetch }
 }
 
 // ── usePagos ──────────────────────────────────────────────────────────────────
