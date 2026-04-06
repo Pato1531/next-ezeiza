@@ -1,7 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
 import { useCursos, useProfesoras, useAlumnos, useCursoAlumnos, useClases, useMiProfesora, useExamenes, useNotasExamen, store, storeTs } from '@/lib/hooks'
-import { devLog } from '@/lib/debug'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 
@@ -77,10 +76,6 @@ export default function Cursos() {
   }
 
   const sel = selLive ?? selRef.current ?? selCacheRef.current
-  // DEBUG: log what sel resolved to
-  if (typeof window !== 'undefined' && vista === 'detalle') {
-    devLog(`[Cursos] selId=${selId?.slice(0,8)} sel=${sel?.nombre?.slice(0,15)} vista=${vista}`)
-  }
   const [filtroDia, setFiltroDia] = useState<string|null>(null)
 
   const DIAS_ORD: Record<string,number> = {'Lun':0,'Mar':1,'Mié':2,'Jue':3,'Vie':4,'Sáb':5,'Lunes':0,'Martes':1,'Miercoles':2,'Miércoles':2,'Jueves':3,'Viernes':4,'Sabados':5,'Sábados':5}
