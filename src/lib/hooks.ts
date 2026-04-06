@@ -112,14 +112,9 @@ function useSupabaseQuery<T>(
     }
   }
 
-  // Version-based subscription: re-render cuando el store cambia
-  // useState con version number garantiza re-render incluso en componentes
-  // ocultos con display:none, sin depender de useEffect timing
-  const [version, setVersion] = useState(() => storeGetVersion(cacheKey))
-  
-  // Datos siempre leídos del store global — nunca estado local stale
-  const data = storeGet<T>(cacheKey)
-  
+  // Usar useState con el valor actual del store
+  // La suscripción actualiza este estado cuando el store cambia
+  const [data, setLocalData] = useState<T[]>(() => storeGet<T>(cacheKey))
   const [isLoading, setIsLoading] = useState(!shouldSkip && !_storeHasData[cacheKey])
   const [isFetching, setIsFetching] = useState(false)
 
@@ -132,16 +127,16 @@ function useSupabaseQuery<T>(
     return () => { mountedRef.current = false }
   }, [])
 
-  // Suscribirse al store — incrementa version para forzar re-render
+  // Suscribirse al store — setLocalData con nuevo array fuerza re-render
+  // Se lee el store al suscribirse por si ya hay datos frescos
   useEffect(() => {
-    // Chequear si el store ya tiene datos más nuevos que nuestra version
-    const currentVersion = storeGetVersion(cacheKey)
-    if (currentVersion > version) setVersion(currentVersion)
+    const current = storeGet<T>(cacheKey)
+    if (current.length > 0) setLocalData([...current])
 
     return storeSubscribe(cacheKey, () => {
-      setVersion(v => v + 1)
+      setLocalData([...storeGet<T>(cacheKey)])
     })
-  }, [cacheKey])
+  }, [cacheKey]) // solo cacheKey — sin version en deps
 
   // setData público — actualiza store global
   const setData = useCallback((updater: T[] | ((prev: T[]) => T[])) => {
