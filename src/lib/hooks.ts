@@ -62,15 +62,37 @@ function cacheWrite<T>(key: string, data: T[]) {
   } catch {}
 }
 
+// ── Global in-memory store — fuente de verdad compartida entre instancias ─────
+// Resuelve el problema de múltiples instancias del mismo hook:
+// cuando un fetch termina, actualiza el store global y TODOS los suscriptores
+// re-renderizan, sin importar qué instancia hizo el fetch.
+const _store: Record<string, any[]> = {}
+const _storeListeners: Record<string, Set<() => void>> = {}
+
+function storeGet<T>(key: string): T[] {
+  return (_store[key] as T[]) ?? []
+}
+
+function storeSet<T>(key: string, data: T[]) {
+  _store[key] = data
+  cacheWrite(key, data)
+  _storeListeners[key]?.forEach(fn => fn())
+}
+
+function storeSubscribe(key: string, fn: () => void): () => void {
+  if (!_storeListeners[key]) _storeListeners[key] = new Set()
+  _storeListeners[key].add(fn)
+  return () => { _storeListeners[key]?.delete(fn) }
+}
+
+// Flag para saber si el store tiene datos (evitar isLoading incorrecto)
+const _storeHasData: Record<string, boolean> = {}
+
 // ── useSupabaseQuery ──────────────────────────────────────────────────────────
 //
-// Núcleo de todos los hooks de lectura. Flujo:
-//   1. Al montar: leer cache → setear data inmediatamente, isLoading=false
-//   2. Fetch en background → actualizar data + cache
-//   3. Si falla: mantener data anterior, no limpiar nunca
-//   4. fetcherRef estabiliza el fetcher → sin loops infinitos
-//   5. listeners globales → invalidateQuery() propaga a todas las instancias
-//   6. useRefetchOnFocus integrado
+// Usa store global como fuente de verdad.
+// Cuando fetch termina → storeSet → TODOS los suscriptores re-renderizan.
+// Resuelve el problema de múltiples instancias del mismo hook.
 //
 function useSupabaseQuery<T>(
   cacheKey: string,
@@ -79,77 +101,71 @@ function useSupabaseQuery<T>(
 ) {
   const shouldSkip = options?.skip ?? false
 
-  // Leer cache solo una vez al montar
-  const cachedRef = useRef<T[] | null>(null)
-  if (cachedRef.current === null) {
-    cachedRef.current = cacheRead<T>(cacheKey)
+  // Inicializar store desde cache si aún no tiene datos
+  if (!_storeHasData[cacheKey]) {
+    const cached = cacheRead<T>(cacheKey)
+    if (cached && cached.length > 0) {
+      _store[cacheKey] = cached
+      _storeHasData[cacheKey] = true
+    }
   }
 
-  const [data, setData] = useState<T[]>(cachedRef.current ?? [])
-  const [isLoading, setIsLoading] = useState(!shouldSkip && cachedRef.current === null)
+  // Estado local que refleja el store global
+  const [data, setLocalData] = useState<T[]>(() => storeGet<T>(cacheKey))
+  const [isLoading, setIsLoading] = useState(!shouldSkip && !_storeHasData[cacheKey])
   const [isFetching, setIsFetching] = useState(false)
-  const [error, setError] = useState<string | null>(null)
 
   const fetchingRef = useRef(false)
   const mountedRef = useRef(true)
-
-  // fetcherRef: apunta siempre al fetcher más reciente sin que sea dep de useCallback
-  // Esto evita el loop: fetcher inline se recrea → fetch se recrea → useEffect dispara
   const fetcherRef = useRef(fetcher)
   useEffect(() => { fetcherRef.current = fetcher })
-
   useEffect(() => {
     mountedRef.current = true
     return () => { mountedRef.current = false }
   }, [])
 
-  // fetch es estable — no depende de fetcher, lo lee via ref
+  // Suscribirse al store global — re-renderiza cuando cualquier instancia actualiza
+  useEffect(() => {
+    return storeSubscribe(cacheKey, () => {
+      if (mountedRef.current) setLocalData(storeGet<T>(cacheKey))
+    })
+  }, [cacheKey])
+
+  // setData público — actualiza store global (propaga a todas las instancias)
+  const setData = useCallback((updater: T[] | ((prev: T[]) => T[])) => {
+    const current = storeGet<T>(cacheKey)
+    const next = typeof updater === 'function' ? (updater as (p: T[]) => T[])(current) : updater
+    storeSet<T>(cacheKey, next)
+  }, [cacheKey])
+
   const fetch = useCallback(async () => {
     if (fetchingRef.current) return
     if (shouldSkip) return
-
     fetchingRef.current = true
-    setIsFetching(true)
-
+    if (mountedRef.current) setIsFetching(true)
     try {
       const result = await fetcherRef.current()
-      // Siempre escribir cache — incluso si el componente se desmontó
-      // Así el próximo mount lee datos frescos
-      cacheWrite(cacheKey, result)
       devLog(`[${cacheKey}] fetched ${result.length} items`)
-      if (!mountedRef.current) return
-      setData(result)
-      setError(null)
+      // storeSet notifica a TODOS los suscriptores — no importa qué instancia fetcheó
+      storeSet<T>(cacheKey, result)
+      _storeHasData[cacheKey] = true
     } catch (e: any) {
       devError(`[${cacheKey}] fetch error: ${e?.message ?? String(e)}`)
-      if (!mountedRef.current) return
-      setError(e?.message ?? 'Error desconocido')
-      // NO limpiar data — mantener cache anterior visible
     } finally {
-      // SIEMPRE limpiar fetchingRef — nunca dejarlo en true
       fetchingRef.current = false
       if (mountedRef.current) {
         setIsLoading(false)
         setIsFetching(false)
       }
     }
-  }, [cacheKey, shouldSkip]) // fetcher intencionalmente fuera — se lee via ref
+  }, [cacheKey, shouldSkip])
 
-  // Auto fetch al montar — esperar a que haya sesión confirmada
-  // También re-leer cache en ese momento por si fue escrito después del mount
+  // Auto fetch al montar — esperar sesión confirmada
   useEffect(() => {
-    return onAuthReady(() => {
-      // Re-leer cache por si fue escrito por una instancia anterior después de nuestro mount
-      const freshCache = cacheRead<T>(cacheKey)
-      if (freshCache && freshCache.length > 0) {
-        setData(freshCache)
-        setIsLoading(false)
-      }
-      fetch()
-    })
-  }, [fetch, cacheKey])
+    return onAuthReady(() => { fetch() })
+  }, [fetch])
 
-  // Registrar en listeners globales para invalidateQuery()
+  // Registrar en listeners para invalidateQuery()
   useEffect(() => {
     if (!listeners[cacheKey]) listeners[cacheKey] = new Set()
     listeners[cacheKey].add(fetch)
@@ -158,7 +174,7 @@ function useSupabaseQuery<T>(
 
   useRefetchOnFocus(fetch, cacheKey)
 
-  return { data, setData, isLoading, isFetching, error, refetch: fetch }
+  return { data, setData, isLoading, isFetching, refetch: fetch }
 }
 
 // ── useRefetchOnFocus ─────────────────────────────────────────────────────────
