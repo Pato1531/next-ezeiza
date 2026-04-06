@@ -136,9 +136,18 @@ function useSupabaseQuery<T>(
   }, [cacheKey, shouldSkip]) // fetcher intencionalmente fuera — se lee via ref
 
   // Auto fetch al montar — esperar a que haya sesión confirmada
+  // También re-leer cache en ese momento por si fue escrito después del mount
   useEffect(() => {
-    return onAuthReady(() => { fetch() })
-  }, [fetch])
+    return onAuthReady(() => {
+      // Re-leer cache por si fue escrito por una instancia anterior después de nuestro mount
+      const freshCache = cacheRead<T>(cacheKey)
+      if (freshCache && freshCache.length > 0) {
+        setData(freshCache)
+        setIsLoading(false)
+      }
+      fetch()
+    })
+  }, [fetch, cacheKey])
 
   // Registrar en listeners globales para invalidateQuery()
   useEffect(() => {
