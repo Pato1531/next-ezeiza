@@ -319,7 +319,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [recargarAlumnos])
 
-  const { clases, agregar: agregarClase } = useClases(c.id)
+  const { clases, setData: setClases, agregar: agregarClase, actualizar: actualizarClaseHook } = useClases(c.id)
   const [modalClase, setModalClase] = useState(false)
   const [modalAlumno, setModalAlumno] = useState(false)
   const [modalEditClase, setModalEditClase] = useState(false)
@@ -342,11 +342,10 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
   const [asistencias, setAsistencias] = useState<Record<string,Record<string,string>>>(
     store[asistCacheKey] ?? {}
   )
-  // Inicializar desde clases — ya tiene cache de sessionStorage al montar
-  const [clasesLocal, setClasesLocal] = useState<any[]>(clases)
-
-  // Sincronizar cuando llegan nuevas clases del refetch
-  useEffect(() => { if (clases.length > 0) setClasesLocal(clases) }, [clases])
+  // Sin clasesLocal — usamos clases del hook directamente
+  // Las mutaciones (eliminar, editar) llaman setClases para optimistic updates
+  const clasesLocal = clases
+  const setClasesLocal = setClases
 
   const abrirEditClase = (cl: any) => {
     setClaseEditando({ ...cl, descripcion: cl.observacion_coordinadora || '' })
