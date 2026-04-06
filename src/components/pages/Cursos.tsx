@@ -246,14 +246,11 @@ export default function Cursos() {
 
   // ── DETALLE ──
   if (vista === 'detalle') {
-    // sel puede ser null transitoriamente mientras cursos carga desde Supabase.
-    // selRef.current tiene el último curso válido — usarlo como fallback.
-    // Si ambos son null, mostrar skeleton pero NO desmontar CursoDetalle
-    // para evitar que sus hooks pierdan el estado.
     const cursoParaDetalle = sel ?? selRef.current
     if (!cursoParaDetalle) return <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>
     return (
       <CursoDetalle
+        key={cursoParaDetalle.id}
         curso={cursoParaDetalle}
         profesoras={profesoras}
         alumnos={alumnos}
