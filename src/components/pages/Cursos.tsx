@@ -250,7 +250,6 @@ export default function Cursos() {
     if (!cursoParaDetalle) return <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>
     return (
       <CursoDetalle
-        key={cursoParaDetalle.id}
         curso={cursoParaDetalle}
         profesoras={profesoras}
         alumnos={alumnos}
