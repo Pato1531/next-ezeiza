@@ -125,9 +125,14 @@ function useSupabaseQuery<T>(
   }, [])
 
   // Suscribirse al store global — re-renderiza cuando cualquier instancia actualiza
+  // No chequeamos mountedRef — componentes con display:none siguen montados
   useEffect(() => {
+    // Leer store inmediatamente al suscribirse (puede haber datos ya)
+    const current = storeGet<T>(cacheKey)
+    if (current.length > 0) setLocalData(current)
+
     return storeSubscribe(cacheKey, () => {
-      if (mountedRef.current) setLocalData(storeGet<T>(cacheKey))
+      setLocalData([...storeGet<T>(cacheKey)]) // spread para forzar nuevo ref
     })
   }, [cacheKey])
 
@@ -140,7 +145,10 @@ function useSupabaseQuery<T>(
 
   const fetch = useCallback(async () => {
     if (fetchingRef.current) return
-    if (shouldSkip) return
+    if (shouldSkip) {
+      devLog(`[${cacheKey}] skipped (shouldSkip=true)`)
+      return
+    }
     fetchingRef.current = true
     if (mountedRef.current) setIsFetching(true)
     try {
