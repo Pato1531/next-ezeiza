@@ -29,53 +29,18 @@ export default function Cursos() {
   const cursos = usuario?.rol === 'profesora'
     ? (miProfesora ? todosCursos.filter(c => c.profesora_id === miProfesora.id) : [])
     : todosCursos
-  const [vista, setVista] = useState<Vista>(() => {
-    if (typeof window !== 'undefined') {
-      const v = sessionStorage.getItem('cursos_vista')
-      if (v === 'detalle' || v === 'lista' || v === 'form' || v === 'asistencia_rapida') return v as Vista
-    }
-    return 'lista'
-  })
-  const [selId, setSelId] = useState<string|null>(() => {
-    if (typeof window !== 'undefined') return sessionStorage.getItem('cursos_selId')
-    return null
-  })
-  const [tab, setTab] = useState<'info'|'alumnos'|'planilla'|'examenes'>(() => {
-    if (typeof window !== 'undefined') {
-      const t = sessionStorage.getItem('cursos_tab')
-      if (t === 'info' || t === 'alumnos' || t === 'planilla' || t === 'examenes') return t as any
-    }
-    return 'info'
-  })
+  const [vista, setVista] = useState<Vista>('lista')
+  const [selId, setSelId] = useState<string|null>(null)
+  const [tab, setTab] = useState<'info'|'alumnos'|'planilla'|'examenes'>('info')
   const [form, setForm] = useState<any>(null)
   const [guardando, setGuardando] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   const puedeEditar = ['director','coordinadora'].includes(usuario?.rol||'')
   const selLive = cursos.find(c => c.id === selId)
-
-  // selRef: mantiene el último curso válido visto
   const selRef = useRef<any>(null)
   if (selLive) selRef.current = selLive
-
-  // selCacheRef: leer del store global de cursos (más fresco que sessionStorage)
-  // Solo se inicializa una vez y solo si selId existe
-  const selCacheRef = useRef<any>(null)
-  if (selCacheRef.current === null && selId) {
-    // Primero intentar el store global (en memoria, más fresco)
-    if (typeof window !== 'undefined') {
-      try {
-        const raw = sessionStorage.getItem('nq_cursos')
-        if (raw) {
-          const { data } = JSON.parse(raw)
-          const found = data?.find((c: any) => c.id === selId)
-          if (found) selCacheRef.current = found
-        }
-      } catch {}
-    }
-  }
-
-  const sel = selLive ?? selRef.current ?? selCacheRef.current
+  const sel = selLive ?? selRef.current
   const [filtroDia, setFiltroDia] = useState<string|null>(null)
 
   const DIAS_ORD: Record<string,number> = {'Lun':0,'Mar':1,'Mié':2,'Jue':3,'Vie':4,'Sáb':5,'Lunes':0,'Martes':1,'Miercoles':2,'Miércoles':2,'Jueves':3,'Viernes':4,'Sabados':5,'Sábados':5}
@@ -94,23 +59,8 @@ export default function Cursos() {
     recargarAlumnos()
   }, [])
 
-  const irADetalle = (id: string, tabOverride?: 'info'|'alumnos'|'planilla'|'examenes') => {
-    const t = tabOverride ?? 'info'
-    setSelId(id); setTab(t); setVista('detalle')
-    try {
-      sessionStorage.setItem('cursos_vista', 'detalle')
-      sessionStorage.setItem('cursos_selId', id)
-      sessionStorage.setItem('cursos_tab', t)
-    } catch {}
-  }
-  const irALista = () => {
-    setSelId(null); setVista('lista')
-    try {
-      sessionStorage.setItem('cursos_vista', 'lista')
-      sessionStorage.removeItem('cursos_selId')
-      sessionStorage.setItem('cursos_tab', 'info')
-    } catch {}
-  }
+  const irADetalle = (id: string) => { setSelId(id); setTab('info'); setVista('detalle') }
+  const irALista = () => { setSelId(null); setVista('lista') }
   const irAFormNuevo = () => {
     setForm({ nombre:'', nivel:'Básico', profesora_id: profesoras[0]?.id||'', dias:'', hora_inicio:'08:00', hora_fin:'09:30' })
     setVista('form')
@@ -252,27 +202,22 @@ export default function Cursos() {
 
   // ── DETALLE ──
   if (vista === 'detalle') {
-    const cursoParaDetalle = sel ?? selRef.current
-    if (!cursoParaDetalle) return <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>
+    if (!sel) return <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>
     return (
       <CursoDetalle
-        curso={cursoParaDetalle}
+        curso={sel}
         profesoras={profesoras}
         alumnos={alumnos}
         puedeEditar={puedeEditar}
         tab={tab}
         setTab={setTab}
         onVolver={irALista}
-        onTabChange={(t: any) => { setTab(t); try { sessionStorage.setItem('cursos_tab', t) } catch {} }}
         onEditar={irAFormEditar}
         onEliminar={() => setConfirmDelete(true)}
         confirmDelete={confirmDelete}
         onCancelDelete={() => setConfirmDelete(false)}
         onConfirmDelete={eliminar}
-        onAsistenciaRapida={() => {
-          setVista('asistencia_rapida')
-          try { sessionStorage.setItem('cursos_vista', 'asistencia_rapida') } catch {}
-        }}
+        onAsistenciaRapida={() => setVista('asistencia_rapida')}
       />
     )
   }
@@ -285,10 +230,7 @@ export default function Cursos() {
         curso={sel}
         profesoras={profesoras}
         alumnos={alumnos}
-        onVolver={() => {
-          setVista('detalle')
-          try { sessionStorage.setItem('cursos_vista', 'detalle') } catch {}
-        }}
+        onVolver={() => setVista('detalle')}
       />
     )
   }
@@ -296,7 +238,7 @@ export default function Cursos() {
   return null
 }
 
-function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, onVolver, onEditar, onEliminar, confirmDelete, onCancelDelete, onConfirmDelete, onAsistenciaRapida }: any) {
+function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, onVolver, onEditar, onEliminar, confirmDelete, onCancelDelete, onConfirmDelete, onAsistenciaRapida, onNuevoCurso }: any) {
   const { alumnosCurso, agregar: agregarAlumno, quitar: quitarAlumno, recargar: recargarAlumnos } = useCursoAlumnos(c.id)
 
   // Escuchar cuando se asigna un alumno desde otro módulo
@@ -317,7 +259,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
     return () => document.removeEventListener('visibilitychange', handleVisibility)
   }, [recargarAlumnos])
 
-  const { clases, setData: setClases, agregar: agregarClase, actualizar: actualizarClaseHook } = useClases(c.id)
+  const { clases, agregar: agregarClase } = useClases(c.id)
   const [modalClase, setModalClase] = useState(false)
   const [modalAlumno, setModalAlumno] = useState(false)
   const [modalEditClase, setModalEditClase] = useState(false)
@@ -340,32 +282,39 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
   const [asistencias, setAsistencias] = useState<Record<string,Record<string,string>>>(
     store[asistCacheKey] ?? {}
   )
-  // Sin clasesLocal — usamos clases del hook directamente
-  // Las mutaciones (eliminar, editar) llaman setClases para optimistic updates
-  const clasesLocal = clases
-  const setClasesLocal = setClases
+  const [clasesLocal, setClasesLocal] = useState<any[]>([])
+
+  // Sincronizar clases locales con las del hook
+  useEffect(() => { setClasesLocal(clases) }, [clases])
 
   const abrirEditClase = (cl: any) => {
     setClaseEditando({ ...cl, descripcion: cl.observacion_coordinadora || '' })
     setModalEditClase(true)
   }
 
-  const guardarEditClase = () => {
+  const guardarEditClase = async () => {
     if (!claseEditando) return
-    // Actualizar local inmediatamente
-    setClasesLocal(prev => prev.map(cl => cl.id === claseEditando.id
-      ? { ...cl, fecha: claseEditando.fecha, tema: claseEditando.tema, observacion_coordinadora: claseEditando.descripcion }
-      : cl
-    ))
-    setModalEditClase(false)
-    setClaseEditando(null)
-    // Guardar en background
+    setGuardandoEdit(true)
     const sb = createClient()
-    sb.from('clases').update({
+    // Esperar confirmación de Supabase ANTES de actualizar local
+    // Esto evita que el refetch del hook sobreescriba los cambios
+    const { error } = await sb.from('clases').update({
       fecha: claseEditando.fecha,
       tema: claseEditando.tema,
       observacion_coordinadora: claseEditando.descripcion,
-    }).eq('id', claseEditando.id).catch(e => console.error('Error editando clase:', e))
+    }).eq('id', claseEditando.id)
+    if (!error) {
+      // Actualizar store con datos confirmados por Supabase
+      setClasesLocal((prev: any[]) => prev.map(cl => cl.id === claseEditando.id
+        ? { ...cl, fecha: claseEditando.fecha, tema: claseEditando.tema, observacion_coordinadora: claseEditando.descripcion }
+        : cl
+      ))
+    } else {
+      console.error('Error editando clase:', error)
+    }
+    setGuardandoEdit(false)
+    setModalEditClase(false)
+    setClaseEditando(null)
   }
 
   const generarBoletin = async (a: any, curso: any) => {
@@ -673,6 +622,11 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
         <BtnG sm onClick={onVolver}>← Volver</BtnG>
         {puedeEditar && <BtnP sm onClick={onEditar}>Editar</BtnP>}
         {puedeEditar && <BtnDanger sm onClick={onEliminar}>Eliminar</BtnDanger>}
+        {puedeEditar && onNuevoCurso && (
+          <button onClick={onNuevoCurso} style={{padding:'9px 14px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
+            + Nuevo curso
+          </button>
+        )}
         <button onClick={onAsistenciaRapida} style={{padding:'9px 14px',background:'var(--green)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
           <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 12l2 2 4-4"/><path d="M5 7h10M5 11h4M5 15h3"/></svg>
           Asistencia
