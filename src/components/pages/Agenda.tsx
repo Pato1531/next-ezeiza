@@ -2,11 +2,13 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
+import { useProfesoras } from '@/lib/hooks'
 
 const TIPOS = [
   { value: 'reunion', label: 'Reunión', color: '#652f8d', bg: '#f2e8f9', emoji: '👥' },
   { value: 'examen', label: 'Examen', color: '#c0392b', bg: '#fdeaea', emoji: '📝' },
-  { value: 'evento', label: 'Evento especial', color: '#1a73e8', bg: '#e8f0fe', emoji: '🎉' },
+  { value: 'observacion', label: 'Observación de Clases', color: '#1a73e8', bg: '#e8f0fe', emoji: '👁' },
+  { value: 'evento', label: 'Evento especial', color: '#f97316', bg: '#fff7ed', emoji: '🎉' },
   { value: 'feriado', label: 'Feriado / Sin clases', color: '#b45309', bg: '#fef3cd', emoji: '🏖' },
   { value: 'admin', label: 'Administrativo', color: '#2d7a4f', bg: '#e6f4ec', emoji: '📋' },
   { value: 'otro', label: 'Otro', color: '#9b8eaa', bg: '#f9f5fd', emoji: '📌' },
@@ -20,10 +22,11 @@ export default function Agenda() {
   const { usuario } = useAuth()
   const esDirector = usuario?.rol === 'director'
   const esCoord = usuario?.rol === 'coordinadora' || esDirector
+  const { profesoras } = useProfesoras()
 
   const [eventos, setEventos] = useState<any[]>([])
   const [vista, setVista] = useState<'calendario'|'proximos'|'nuevo'>('proximos')
-  const [form, setForm] = useState({ titulo:'', tipo:'reunion', fecha: hoy(), hora_inicio:'', hora_fin:'', descripcion:'', convocados:'todos' })
+  const [form, setForm] = useState({ titulo:'', tipo:'reunion', fecha: hoy(), hora_inicio:'', hora_fin:'', descripcion:'', convocados:'todos', docente_id:'' })
   const [guardando, setGuardando] = useState(false)
   const [mesActual, setMesActual] = useState(new Date().getMonth())
   const [anioActual, setAnioActual] = useState(new Date().getFullYear())
@@ -38,6 +41,7 @@ export default function Agenda() {
 
   const guardar = async () => {
     if (!form.titulo || !form.fecha) return alert('Título y fecha son obligatorios')
+    if (form.tipo === 'observacion' && !form.docente_id) return alert('La docente es obligatoria para Observación de Clases')
     setGuardando(true)
     try {
       const res = await fetch('/api/guardar-evento', {
@@ -49,7 +53,7 @@ export default function Agenda() {
       if (json.error) { alert('Error: ' + json.error); setGuardando(false); return }
       await cargarEventos()
       setVista('proximos')
-      setForm({ titulo:'', tipo:'reunion', fecha: hoy(), hora_inicio:'', hora_fin:'', descripcion:'', convocados:'todos' })
+      setForm({ titulo:'', tipo:'reunion', fecha: hoy(), hora_inicio:'', hora_fin:'', descripcion:'', convocados:'todos', docente_id:'' })
     } catch(e:any) { alert('Error al guardar') }
     setGuardando(false)
   }
@@ -127,6 +131,9 @@ export default function Agenda() {
                         {ev.hora_inicio && <span>{ev.hora_inicio.slice(0,5)}{ev.hora_fin?' – '+ev.hora_fin.slice(0,5):''} · </span>}
                         <span style={{background:tipo.bg,color:tipo.color,padding:'1px 7px',borderRadius:'10px',fontWeight:600,fontSize:'10px'}}>{tipo.label}</span>
                       </div>
+                      {ev.tipo === 'observacion' && ev.docente_nombre && (
+                        <div style={{fontSize:'11px',color:'#1a73e8',marginTop:'3px',fontWeight:600}}>👤 Docente: {ev.docente_nombre}</div>
+                      )}
                       {ev.descripcion && <div style={{fontSize:'12px',color:'var(--text3)',marginTop:'4px'}}>{ev.descripcion}</div>}
                     </div>
                     {esCoord && <button onClick={() => eliminar(ev.id)} style={{background:'none',border:'none',color:'var(--text3)',cursor:'pointer',fontSize:'16px',alignSelf:'flex-start',padding:'0 4px'}}>×</button>}
@@ -206,10 +213,30 @@ export default function Agenda() {
 
           <div style={{marginBottom:'11px'}}>
             <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Tipo</div>
-            <select style={IS} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value})}>
+            <select style={IS} value={form.tipo} onChange={e=>setForm({...form,tipo:e.target.value,docente_id:e.target.value!=='observacion'?'':form.docente_id})}>
               {TIPOS.map(t => <option key={t.value} value={t.value}>{t.emoji} {t.label}</option>)}
             </select>
           </div>
+
+          {/* Campo docente — obligatorio para Observación de Clases */}
+          {(form.tipo === 'observacion' || form.docente_id) && (
+          <div style={{marginBottom:'11px'}}>
+            <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>
+              Docente {form.tipo === 'observacion' && <span style={{color:'var(--red)'}}>*</span>}
+            </div>
+            <select style={{...IS,borderColor:form.tipo==='observacion'&&!form.docente_id?'var(--red)':'var(--border)'}}
+              value={form.docente_id} onChange={e=>setForm({...form,docente_id:e.target.value})}>
+              <option value="">— Seleccioná una docente —</option>
+              {profesoras.map((p:any) => <option key={p.id} value={p.id}>{p.nombre} {p.apellido}</option>)}
+            </select>
+            {form.tipo === 'observacion' && !form.docente_id && (
+              <div style={{fontSize:'11px',color:'var(--red)',marginTop:'3px'}}>La docente es obligatoria para Observación de Clases</div>
+            )}
+            {form.tipo === 'observacion' && form.docente_id && (
+              <div style={{fontSize:'11px',color:'var(--green)',marginTop:'3px'}}>✓ Se enviará una notificación a la docente seleccionada</div>
+            )}
+          </div>
+          )}
 
           <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'11px'}}>
             <div>
