@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react'
 import { createClient, destroyClient, Usuario, Rol, puedeVer } from '@/lib/supabase'
-import { invalidateStore, setAuthReady } from '@/lib/hooks'
+import { invalidateStore, setAuthReady, setCurrentUserName } from '@/lib/hooks'
 
 interface AuthContextType {
   usuario: Usuario | null
@@ -33,7 +33,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data && !error) {
         setUsuario(data as Usuario)
         usuarioRef.current = data as Usuario
-        setAuthReady(true)   // ← hooks pueden fetchear ahora
+        setCurrentUserName(data.nombre || 'Usuario')
         return true
       }
       return false
@@ -47,7 +47,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const doLogout = async () => {
     setUsuario(null)
     usuarioRef.current = null
-    setAuthReady(false)
     invalidateStore()
     const sb = createClient()
     try { await sb.auth.signOut() } catch {}
@@ -72,17 +71,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!mounted) return
 
         if (event === 'SIGNED_OUT') {
-          // Solo limpiar en logout explícito — no en sesión null transitoria
           setUsuario(null)
           usuarioRef.current = null
           invalidateStore()
+          setAuthReady(false)
           setLoading(false)
           return
         }
 
         if (!session) {
-          // Sesión null transitoria durante refresh — ignorar si ya hay usuario
-          // Supabase puede emitir esto antes de TOKEN_REFRESHED
           if (!usuarioRef.current) {
             setLoading(false)
           }
@@ -90,10 +87,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         if (event === 'TOKEN_REFRESHED') {
-          // Token refrescado — cargar usuario si no estaba cargado
           if (!usuarioRef.current && session.user) {
             await cargarUsuario(session.user.id)
           }
+          setAuthReady(true)
           setLoading(false)
           return
         }
@@ -101,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // INITIAL_SESSION, SIGNED_IN
         if (session.user) {
           await cargarUsuario(session.user.id)
+          setAuthReady(true)
         }
         setLoading(false)
       }
