@@ -15,6 +15,7 @@ import Permisos from './pages/Permisos'
 import Perfil from './pages/Perfil'
 import Comunicados from './pages/Comunicados'
 import Actividad from './pages/Actividad'  // ← NUEVO
+import AtencionCliente from './pages/AtencionCliente'
 
 const ALL_NAV = [
   { id: 'dashboard',  label: 'Inicio',    icon: 'M3 3h7v7H3zM13 3h7v7h-7zM3 13h7v7H3zM13 13h7v7h-7z' },
@@ -27,6 +28,7 @@ const ALL_NAV = [
   { id: 'agenda',        label: 'Agenda',        icon: 'M3 4h16v16H3zM16 2v4M8 2v4M3 10h16' },
   { id: 'comunicados',   label: 'Comunicados',   icon: 'M18 8a6 6 0 01-6 6H8l-4 4V8a6 6 0 016-6h2a6 6 0 016 6z' },
   { id: 'actividad',     label: 'Actividad',     icon: 'M10 3a7 7 0 100 14A7 7 0 0010 3zM10 7v3l2 2M3 3l14 14' },  // ← NUEVO
+  { id: 'atencion',      label: 'Atención',      icon: 'M18 8a6 6 0 01-6 6H8l-4 4V8a6 6 0 016-6h2a6 6 0 016 6zM9 10h.01M12 10h.01M15 10h.01' },
 ]
 
 const PAGES: Record<string, React.ComponentType> = {
@@ -41,6 +43,7 @@ const PAGES: Record<string, React.ComponentType> = {
   agenda: Agenda,
   comunicados: Comunicados,
   actividad: Actividad,  // ← NUEVO
+  atencion: AtencionCliente,
 }
 
 const PAGE_TITLES: Record<string,string> = {
@@ -48,6 +51,7 @@ const PAGE_TITLES: Record<string,string> = {
   horarios:'Horarios', profesoras:'Docentes', reportes:'Reportes',
   permisos:'Permisos', perfil:'Mi perfil', agenda:'Agenda', comunicados:'Comunicados',
   actividad:'Actividad',  // ← NUEVO
+  atencion:'Atención al Cliente',
 }
 
 const ROLE_LABELS: Record<string,string> = {
@@ -165,6 +169,7 @@ export default function AppShell() {
         <div style={{padding:'16px 16px 24px',display:page==='agenda'?'block':'none'}}><Agenda /></div>
         <div style={{padding:'16px 16px 24px',display:page==='comunicados'?'block':'none'}}><Comunicados /></div>
         <div style={{padding:'16px 16px 24px',display:page==='actividad'?'block':'none'}}><Actividad /></div>
+        <div style={{padding:'16px 16px 24px',display:page==='atencion'?'block':'none'}}><AtencionCliente /></div>
       </div>
 
       {/* DRAWER "MÁS" */}
