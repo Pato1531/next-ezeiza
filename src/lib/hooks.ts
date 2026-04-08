@@ -11,6 +11,23 @@ export const storeTs: Record<string, number> = {}
 export function invalidateStore() {}
 export function clearStore() {}
 
+
+// ── logActivity — registrar acciones de usuarios en activity_log ─────────────
+// Se llama fire-and-forget desde las mutaciones para no bloquear la UI.
+// La tabla activity_log debe tener: id, usuario_nombre, accion, modulo, detalle, created_at
+// Nombre de usuario en memoria — se actualiza desde auth-context via setCurrentUserName
+let _currentUserName = 'Sistema'
+export function setCurrentUserName(nombre: string) { _currentUserName = nombre }
+
+export function logActivity(accion: string, modulo: string, detalle?: string) {
+  try {
+    createClient()
+      .from('activity_log')
+      .insert({ usuario_nombre: _currentUserName, accion, modulo, detalle: detalle || null })
+      .then(({ error }) => { if (error) console.debug('[logActivity]', error.message) })
+  } catch {}
+}
+
 // ── invalidateQuery — forzar refetch desde cualquier componente ───────────────
 const listeners: Record<string, Set<() => void>> = {}
 
@@ -76,7 +93,8 @@ function storeSet<T>(key: string, data: T[]) {
   _store[key] = data
   _storeVersion[key] = (_storeVersion[key] ?? 0) + 1
   _storeHasData[key] = true
-  cacheWrite(key, data)
+  // Solo escribir cache si hay datos — nunca sobreescribir con array vacío
+  if (data.length > 0) cacheWrite(key, data)
   _storeListeners[key]?.forEach(fn => fn())
 }
 
@@ -281,6 +299,7 @@ export function useCursos() {
     if (!error) {
       setData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
       invalidateQuery('cursos')
+      logActivity('Editó curso', 'Cursos', `ID: ${id}`)
     }
     return !error
   }
@@ -290,6 +309,7 @@ export function useCursos() {
     if (row && !error) {
       setData(prev => [...prev, row])
       invalidateQuery('cursos')
+      logActivity('Creó curso', 'Cursos', row.nombre || '')
     }
     return row
   }
@@ -299,6 +319,7 @@ export function useCursos() {
     if (!error) {
       setData(prev => prev.filter(c => c.id !== id))
       invalidateQuery('cursos')
+      logActivity('Eliminó curso', 'Cursos', `ID: ${id}`)
     }
     return !error
   }
@@ -323,6 +344,7 @@ export function useAlumnos() {
     if (!error) {
       setData(prev => prev.map(a => a.id === id ? { ...a, ...cambios } : a))
       invalidateQuery('alumnos')
+      logActivity('Editó alumno', 'Alumnos', `ID: ${id}`)
     }
     return !error
   }
@@ -347,6 +369,7 @@ export function useAlumnos() {
       if (json.data) {
         setData(prev => [...prev, json.data])
         invalidateQuery('alumnos')
+        logActivity('Agregó alumno', 'Alumnos', `${json.data.nombre} ${json.data.apellido}`)
         return json.data
       }
     } catch (e: any) {
@@ -410,6 +433,7 @@ export function useClases(cursoId: string) {
     if (row && !error) {
       setData(prev => [row, ...prev])
       invalidateQuery(`clases-${cursoId}`)
+      logActivity('Registró clase', 'Cursos', row.fecha || '')
     }
     return row
   }
@@ -449,6 +473,7 @@ export function usePagos(alumnoId: string) {
       })
       const json = await res.json()
       if (json.error) { console.error('[usePagos registrar]', json.error); return null }
+      logActivity('Registró pago', 'Pagos', `${pago.mes} ${pago.anio} - $${pago.monto}`)
       if (json.data) {
         setData(prev => {
           const sinDup = prev.filter(p => !(p.mes === json.data.mes && p.anio === json.data.anio))
@@ -485,6 +510,7 @@ export function useExamenes(cursoId: string) {
     if (row && !error) {
       setData(prev => [...prev, row])
       invalidateQuery(`examenes-${cursoId}`)
+      logActivity('Creó examen', 'Cursos', row.nombre || '')
     }
     return row
   }
