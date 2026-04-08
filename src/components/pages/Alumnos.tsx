@@ -1067,6 +1067,12 @@ function PagosMasivos({ alumnos, onVolver }: any) {
   const [repAnio, setRepAnio] = useState(anioActual)
   const [pagosReporte, setPagosReporte] = useState<any[]>([])
   const [loadingReporte, setLoadingReporte] = useState(false)
+  // Filtros reporte
+  const [filtroRepDia, setFiltroRepDia] = useState('')
+  const [filtroRepMetodo, setFiltroRepMetodo] = useState('')
+  // Editar pago
+  const [pagoEditando, setPagoEditando] = useState<any>(null)
+  const [guardandoEditPago, setGuardandoEditPago] = useState(false)
 
   const cargarReporte = async () => {
     setLoadingReporte(true)
@@ -1083,7 +1089,14 @@ function PagosMasivos({ alumnos, onVolver }: any) {
 
   useEffect(() => { if (vistaTab === 'reporte') cargarReporte() }, [vistaTab, repMes, repAnio])
 
-  const totalRecaudado = pagosReporte.reduce((s, p) => s + (p.monto || 0), 0)
+  // Filtrar pagos del reporte
+  const pagosReporteFiltrados = pagosReporte.filter(p => {
+    const dia = p.fecha_pago ? new Date(p.fecha_pago+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'}) : ''
+    const matchDia = !filtroRepDia || p.fecha_pago === filtroRepDia
+    const matchMetodo = !filtroRepMetodo || p.metodo === filtroRepMetodo
+    return matchDia && matchMetodo
+  })
+  const totalRecaudado = pagosReporteFiltrados.reduce((s, p) => s + (p.monto || 0), 0)
 
   const descargarExcel = () => {
     const rows = [
@@ -1091,7 +1104,7 @@ function PagosMasivos({ alumnos, onVolver }: any) {
       [`Mes: ${repMes} ${repAnio}`, '', '', `Total: $${totalRecaudado.toLocaleString('es-AR')}`],
       [''],
       ['Alumno', 'Nivel', 'Monto', 'Método', 'Fecha', 'Observaciones'],
-      ...pagosReporte.map(p => [
+      ...pagosReporteFiltrados.map(p => [
         `${p.alumnos?.nombre} ${p.alumnos?.apellido}`,
         p.alumnos?.nivel || '—',
         `$${p.monto?.toLocaleString('es-AR')}`,
@@ -1109,7 +1122,7 @@ function PagosMasivos({ alumnos, onVolver }: any) {
   }
 
   const descargarPDF = () => {
-    const filas = pagosReporte.map(p => `
+    const filas = pagosReporteFiltrados.map(p => `
       <tr>
         <td>${p.alumnos?.nombre} ${p.alumnos?.apellido}</td>
         <td>${p.alumnos?.nivel||'—'}</td>
@@ -1236,17 +1249,32 @@ function PagosMasivos({ alumnos, onVolver }: any) {
       {/* VISTA REPORTE */}
       {vistaTab === 'reporte' && <div>
         <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px',marginBottom:'14px'}}>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
             <div>
               <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Mes</div>
-              <select style={IS} value={repMes} onChange={e=>setRepMes(e.target.value)}>
+              <select style={IS} value={repMes} onChange={e=>{setRepMes(e.target.value);setFiltroRepDia('')}}>
                 {MESES.map(m=><option key={m}>{m}</option>)}
               </select>
             </div>
             <div>
               <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Año</div>
-              <select style={IS} value={repAnio} onChange={e=>setRepAnio(+e.target.value)}>
+              <select style={IS} value={repAnio} onChange={e=>{setRepAnio(+e.target.value);setFiltroRepDia('')}}>
                 {[2024,2025,2026,2027].map(y=><option key={y}>{y}</option>)}
+              </select>
+            </div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px'}}>
+            <div>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Filtrar por día</div>
+              <input type="date" style={IS} value={filtroRepDia} onChange={e=>setFiltroRepDia(e.target.value)} />
+            </div>
+            <div>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Método de pago</div>
+              <select style={IS} value={filtroRepMetodo} onChange={e=>setFiltroRepMetodo(e.target.value)}>
+                <option value="">Todos</option>
+                <option>Efectivo</option>
+                <option>Transferencia</option>
+                <option>MercadoPago</option>
               </select>
             </div>
           </div>
@@ -1258,7 +1286,7 @@ function PagosMasivos({ alumnos, onVolver }: any) {
           <>
             <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
               <div>
-                <div style={{fontSize:'15px',fontWeight:700}}>{pagosReporte.length} pagos · {repMes} {repAnio}</div>
+                <div style={{fontSize:'15px',fontWeight:700}}>{pagosReporteFiltrados.length} pagos{filtroRepDia ? ` · ${new Date(filtroRepDia+'T12:00:00').toLocaleDateString('es-AR')}` : ` · ${repMes} ${repAnio}`}</div>
                 <div style={{fontSize:'13px',color:'var(--v)',fontWeight:600}}>Total: ${totalRecaudado.toLocaleString('es-AR')}</div>
               </div>
               <div style={{display:'flex',gap:'8px'}}>
@@ -1269,12 +1297,12 @@ function PagosMasivos({ alumnos, onVolver }: any) {
 
             {pagosReporte.length === 0 ? (
               <div style={{textAlign:'center',padding:'40px',color:'var(--text3)',background:'var(--white)',borderRadius:'14px',border:'1.5px solid var(--border)'}}>
-                No hay pagos registrados para {repMes} {repAnio}
+                No hay pagos para los filtros seleccionados
               </div>
             ) : (
               <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',overflow:'hidden'}}>
-                {pagosReporte.map((p:any, i:number) => (
-                  <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',borderBottom:i<pagosReporte.length-1?'1px solid var(--border)':'none'}}>
+                {pagosReporteFiltrados.map((p:any, i:number) => (
+                  <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 16px',borderBottom:i<pagosReporteFiltrados.length-1?'1px solid var(--border)':'none'}}>
                     <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
                       <div style={{width:32,height:32,borderRadius:8,background:p.alumnos?.color||'#652f8d',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}}>
                         {p.alumnos?.nombre?.[0]}{p.alumnos?.apellido?.[0]}
@@ -1284,7 +1312,26 @@ function PagosMasivos({ alumnos, onVolver }: any) {
                         <div style={{fontSize:'11px',color:'var(--text3)'}}>{p.metodo} · {p.fecha_pago ? new Date(p.fecha_pago+'T12:00:00').toLocaleDateString('es-AR') : '—'}</div>
                       </div>
                     </div>
-                    <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${p.monto?.toLocaleString('es-AR')}</div>
+                    <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                      <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${p.monto?.toLocaleString('es-AR')}</div>
+                      {(() => {
+                        const alumnoData = alumnos.find((a:any) => a.id === p.alumno_id)
+                        const cel = alumnoData?.celular
+                        const texto = `Hola ${p.alumnos?.nombre}, te confirmamos el pago de $${p.monto?.toLocaleString('es-AR')} por ${p.mes} ${p.anio}. ¡Gracias!`
+                        const wsLink = cel ? `https://wa.me/54${cel.replace(/\D/g,'')}?text=${encodeURIComponent(texto)}` : null
+                        return wsLink ? (
+                          <a href={wsLink} target="_blank" rel="noopener noreferrer"
+                            style={{padding:'5px 10px',background:'#25D366',color:'#fff',borderRadius:'7px',fontSize:'11px',fontWeight:600,textDecoration:'none',display:'flex',alignItems:'center',gap:'3px',flexShrink:0}}>
+                            <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                            WS
+                          </a>
+                        ) : null
+                      })()}
+                      <button onClick={() => setPagoEditando({...p})}
+                        style={{padding:'5px 10px',background:'var(--vl)',color:'var(--v)',border:'1px solid #d4a8e8',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                        Editar
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1293,7 +1340,68 @@ function PagosMasivos({ alumnos, onVolver }: any) {
         )}
       </div>}
 
-      {/* VISTA REGISTRAR */}
+      {/* MODAL EDITAR PAGO */}
+      {pagoEditando && <div style={{position:'fixed',inset:0,background:'rgba(20,0,40,.45)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:200}} onClick={e=>{if(e.target===e.currentTarget)setPagoEditando(null)}}>
+        <div style={{background:'var(--white)',borderRadius:'24px 24px 0 0',padding:'28px 20px 32px',width:'100%',maxWidth:'480px'}}>
+          <div style={{width:'40px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 20px'}} />
+          <div style={{fontSize:'18px',fontWeight:700,marginBottom:'20px'}}>Editar pago</div>
+          <div style={{marginBottom:'10px'}}>
+            <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Alumno</div>
+            <div style={{padding:'10px 12px',border:'1.5px solid var(--border)',borderRadius:'10px',background:'var(--bg)',fontSize:'13px'}}>{pagoEditando.alumnos?.nombre} {pagoEditando.alumnos?.apellido}</div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+            <div>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Monto</div>
+              <input type="number" style={IS} value={pagoEditando.monto||''} onChange={e=>setPagoEditando({...pagoEditando,monto:+e.target.value})} />
+            </div>
+            <div>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Método</div>
+              <select style={IS} value={pagoEditando.metodo||'Efectivo'} onChange={e=>setPagoEditando({...pagoEditando,metodo:e.target.value})}>
+                <option>Efectivo</option><option>Transferencia</option><option>MercadoPago</option>
+              </select>
+            </div>
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+            <div>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Mes</div>
+              <select style={IS} value={pagoEditando.mes||''} onChange={e=>setPagoEditando({...pagoEditando,mes:e.target.value})}>
+                {MESES.map((m:string)=><option key={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Fecha pago</div>
+              <input type="date" style={IS} value={pagoEditando.fecha_pago||''} onChange={e=>setPagoEditando({...pagoEditando,fecha_pago:e.target.value})} />
+            </div>
+          </div>
+          <div style={{marginBottom:'14px'}}>
+            <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Observaciones</div>
+            <input type="text" style={IS} value={pagoEditando.observaciones||''} onChange={e=>setPagoEditando({...pagoEditando,observaciones:e.target.value})} placeholder="Opcional..." />
+          </div>
+          <div style={{display:'flex',gap:'10px'}}>
+            <button onClick={()=>setPagoEditando(null)} style={{flex:1,padding:'12px',background:'transparent',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>Cancelar</button>
+            <button disabled={guardandoEditPago} onClick={async () => {
+              setGuardandoEditPago(true)
+              const sb = createClient()
+              const { error } = await sb.from('pagos_alumnos').update({
+                monto: pagoEditando.monto,
+                metodo: pagoEditando.metodo,
+                mes: pagoEditando.mes,
+                fecha_pago: pagoEditando.fecha_pago,
+                observaciones: pagoEditando.observaciones
+              }).eq('id', pagoEditando.id)
+              if (!error) {
+                setPagosReporte(prev => prev.map(p => p.id === pagoEditando.id ? {...p, ...pagoEditando} : p))
+                setPagoEditando(null)
+              }
+              setGuardandoEditPago(false)
+            }} style={{flex:2,padding:'12px',background:guardandoEditPago?'#aaa':'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>
+              {guardandoEditPago?'Guardando...':'Guardar cambios'}
+            </button>
+          </div>
+        </div>
+      </div>}
+
+      {/* VISTA REGISTRAR */}}
       {vistaTab === 'registrar' && <>
 
       {/* Config pago */}
