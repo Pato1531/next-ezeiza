@@ -23,6 +23,17 @@ export default function Dashboard() {
   const [cuotasPendientes, setCuotasPendientes] = useState(0)
   const [alertasAusencia, setAlertasAusencia] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [proximosEventos, setProximosEventos] = useState<any[]>([])
+
+  const TIPOS_AGENDA = [
+    { value: 'reunion', label: 'Reunión', color: '#652f8d', bg: '#f2e8f9', emoji: '👥' },
+    { value: 'examen', label: 'Examen', color: '#c0392b', bg: '#fdeaea', emoji: '📝' },
+    { value: 'observacion', label: 'Observación de Clases', color: '#1a73e8', bg: '#e8f0fe', emoji: '👁' },
+    { value: 'evento', label: 'Evento especial', color: '#f97316', bg: '#fff7ed', emoji: '🎉' },
+    { value: 'feriado', label: 'Feriado / Sin clases', color: '#b45309', bg: '#fef3cd', emoji: '🏖' },
+    { value: 'admin', label: 'Administrativo', color: '#2d7a4f', bg: '#e6f4ec', emoji: '📋' },
+    { value: 'otro', label: 'Otro', color: '#9b8eaa', bg: '#f9f5fd', emoji: '📌' },
+  ]
 
   const today = new Date()
   const mesActual = MESES[today.getMonth()]
@@ -51,6 +62,17 @@ export default function Dashboard() {
     if (!alumnos.length) return
     cargarAlertas()
   }, [alumnos.length])
+
+  useEffect(() => {
+    const cargarEventos = async () => {
+      const sb = createClient()
+      const hoyStr = new Date().toISOString().split('T')[0]
+      const { data } = await sb.from('agenda_eventos')
+        .select('*').gte('fecha', hoyStr).order('fecha').order('hora_inicio').limit(5)
+      setProximosEventos(data || [])
+    }
+    cargarEventos()
+  }, [])
 
   const cargarAlertas = async () => {
     setLoading(true)
@@ -188,6 +210,35 @@ export default function Dashboard() {
                 <span style={{padding:'3px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:'var(--redl)',color:'var(--red)',flexShrink:0}}>2+ ausencias</span>
               </div>
             ))}
+          </div>
+        </>
+      )}
+
+      {/* PRÓXIMOS EVENTOS */}
+      {proximosEventos.length > 0 && (
+        <>
+          <SL style={{marginBottom:'10px'}}>Próximos eventos</SL>
+          <div style={{marginBottom:'18px'}}>
+            {proximosEventos.map((ev:any) => {
+              const tipo = TIPOS_AGENDA.find(t => t.value === ev.tipo) || TIPOS_AGENDA[6]
+              const esHoy = ev.fecha === new Date().toISOString().split('T')[0]
+              const fechaFmt = new Date(ev.fecha+'T12:00:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'})
+              return (
+                <div key={ev.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'11px 14px',background:'var(--white)',border:`1.5px solid ${esHoy?tipo.color:'var(--border)'}`,borderRadius:'14px',marginBottom:'8px'}}>
+                  <div style={{width:40,height:40,borderRadius:12,background:tipo.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',flexShrink:0}}>
+                    {tipo.emoji}
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:'13.5px',fontWeight:600}}>{ev.titulo}</div>
+                    <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'2px'}}>
+                      {esHoy ? <span style={{color:tipo.color,fontWeight:700}}>Hoy</span> : fechaFmt}
+                      {ev.hora_inicio && <span> · {ev.hora_inicio.slice(0,5)}</span>}
+                      <span style={{marginLeft:'6px',padding:'1px 6px',borderRadius:'8px',background:tipo.bg,color:tipo.color,fontSize:'10px',fontWeight:700}}>{tipo.label}</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </>
       )}
