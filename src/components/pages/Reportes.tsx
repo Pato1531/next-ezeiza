@@ -314,7 +314,9 @@ export default function Reportes() {
             const est = alertaEstados[al.alumno_id] || { enviado: false, obs: '' }
             // Buscar celular del alumno
             const alumnoData = alumnos.find((a:any) => a.id === al.alumno_id)
-            const celular = alumnoData?.celular
+            // usar padre_telefono para menores, telefono para adultos
+            const telRaw = alumnoData?.es_menor ? alumnoData?.padre_telefono : alumnoData?.telefono
+            const celular = telRaw || alumnoData?.telefono || alumnoData?.padre_telefono
             const wsLink = celular ? `https://wa.me/54${celular.replace(/\D/g,'')}?text=${encodeURIComponent(`Hola ${al.nombre}, te contactamos desde Next Ezeiza porque registramos ${al.total} ausencia${al.total!==1?'s':''} consecutiva${al.total!==1?'s':''} en el curso ${al.curso}. Queremos saber cómo estás. ¡Esperamos verte pronto!`)}` : null
             return (
             <div key={i} style={{borderTop:'1px solid #f5c5c5',paddingTop:'10px',marginTop:'4px'}}>
