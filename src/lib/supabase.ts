@@ -62,6 +62,8 @@ export interface Alumno {
   padre_nombre?: string
   padre_telefono?: string
   padre_email?: string
+  dni?: string
+  padre_dni?: string
   color: string
   activo: boolean
 }
