@@ -8,8 +8,10 @@ import AppShell from '@/components/AppShell'
 export default function Home() {
   const { usuario, loading } = useAuth()
   const [mostrarApp, setMostrarApp] = useState(false)
-  // hadSession: leído del localStorage para saber si hubo sesión previa.
-  // Evita mostrar LoginPage prematuramente mientras Supabase resuelve el token.
+
+  // Leer localStorage para saber si había sesión activa.
+  // Si había sesión → mostrar spinner mientras carga (no LoginPage).
+  // Si no había sesión → ir directo a LoginPage sin spinner.
   const [hadSession] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false
     return Boolean(localStorage.getItem('ne_session_uid'))
@@ -19,18 +21,23 @@ export default function Home() {
     if (usuario) setMostrarApp(true)
   }, [usuario])
 
-  // Mientras carga Y había sesión previa → mostrar spinner (no LoginPage)
-  // Esto evita el flash de login al volver del background
-  if (loading || (hadSession && !mostrarApp && !usuario)) {
+  // Cargando Y había sesión previa → Spinner (no LoginPage)
+  // El auth-context tiene su propio timeout de 4s como safety net
+  if (loading && hadSession && !mostrarApp) {
     return <Spinner />
   }
 
-  // Sin sesión previa y sin usuario → login
+  // Cargando SIN sesión previa → LoginPage directamente (respuesta instantánea)
+  if (loading && !hadSession && !mostrarApp) {
+    return <LoginPage />
+  }
+
+  // Sin usuario y sin app → LoginPage
   if (!mostrarApp && !usuario) {
     return <LoginPage />
   }
 
-  // App montada — nunca se desmonta aunque usuario sea null transitoriamente
+  // App montada — NUNCA desmonta aunque usuario sea null transitoriamente
   return (
     <>
       {mostrarApp && <AppShell />}
@@ -51,7 +58,8 @@ function Spinner() {
       gap: '16px',
     }}>
       <div style={{
-        width: '48px', height: '48px', border: '3px solid rgba(255,255,255,.3)',
+        width: '48px', height: '48px',
+        border: '3px solid rgba(255,255,255,.3)',
         borderTopColor: '#fff', borderRadius: '50%',
         animation: 'spin 0.8s linear infinite',
       }} />
