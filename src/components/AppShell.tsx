@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, lazy, Suspense } from 'react'
+import React, { useState, useEffect, lazy, Suspense } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useComunicados } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
@@ -65,6 +65,22 @@ const ROLE_STYLES: Record<string,{bg:string,color:string}> = {
   secretaria:   {bg:'var(--bluel)',color:'var(--blue)'},
   profesora:    {bg:'#f1eef8',     color:'var(--text2)'},
 }
+
+// ── ErrorBoundary — previene que un panel crashee toda la app ─────────────────
+class PanelErrorBoundary extends React.Component<{children: React.ReactNode, name: string}, {error: Error | null}> {
+  constructor(props: any) { super(props); this.state = { error: null } }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  componentDidCatch(error: Error) { console.error('[Panel Error]', this.props.name, error) }
+  render() {
+    if (this.state.error) {
+      return <div style={{padding:'40px',textAlign:'center',color:'var(--text3)',fontSize:'13px'}}>
+        Error en módulo {this.props.name}. <button onClick={()=>this.setState({error:null})} style={{color:'var(--v)',background:'none',border:'none',cursor:'pointer',textDecoration:'underline'}}>Reintentar</button>
+      </div>
+    }
+    return this.props.children
+  }
+}
+
 
 export default function AppShell() {
   const { usuario, puedeVer } = useAuth()
@@ -159,16 +175,16 @@ export default function AppShell() {
 
       {/* CONTENT — display:none para mantener estado sin desmontar */}
       <div style={{flex:1,overflowY:'auto',position:'relative'}}>
-        <div style={{padding:'16px 16px 24px',display:page==='dashboard'?'block':'none'}}><Dashboard /></div>
-        <div style={{padding:'16px 16px 24px',display:page==='alumnos'?'block':'none'}}><Alumnos /></div>
-        <div style={{padding:'16px 16px 24px',display:page==='cursos'?'block':'none'}}><Cursos /></div>
-        <div style={{padding:'16px 16px 24px',display:page==='horarios'?'block':'none'}}><Horarios /></div>
-        <div style={{padding:'16px 16px 24px',display:page==='profesoras'?'block':'none'}}><Profesoras /></div>
-        <div style={{padding:'16px 16px 24px',display:page==='reportes'?'block':'none'}}><Reportes /></div>
-        <div style={{padding:'16px 16px 24px',display:page==='permisos'?'block':'none'}}><Permisos /></div>
-        <div style={{padding:'16px 16px 24px',display:page==='perfil'?'block':'none'}}><Perfil /></div>
-        <div style={{padding:'16px 16px 24px',display:page==='agenda'?'block':'none'}}><Agenda /></div>
-        <div style={{padding:'16px 16px 24px',display:page==='comunicados'?'block':'none'}}><Comunicados /></div>
+        <div style={{padding:'16px 16px 24px',display:page==='dashboard'?'block':'none'}}><PanelErrorBoundary name="Dashboard"><Dashboard /></PanelErrorBoundary></div>
+        <div style={{padding:'16px 16px 24px',display:page==='alumnos'?'block':'none'}}><PanelErrorBoundary name="Alumnos"><Alumnos /></PanelErrorBoundary></div>
+        <div style={{padding:'16px 16px 24px',display:page==='cursos'?'block':'none'}}><PanelErrorBoundary name="Cursos"><Cursos /></PanelErrorBoundary></div>
+        <div style={{padding:'16px 16px 24px',display:page==='horarios'?'block':'none'}}><PanelErrorBoundary name="Horarios"><Horarios /></PanelErrorBoundary></div>
+        <div style={{padding:'16px 16px 24px',display:page==='profesoras'?'block':'none'}}><PanelErrorBoundary name="Profesoras"><Profesoras /></PanelErrorBoundary></div>
+        <div style={{padding:'16px 16px 24px',display:page==='reportes'?'block':'none'}}><PanelErrorBoundary name="Reportes"><Reportes /></PanelErrorBoundary></div>
+        <div style={{padding:'16px 16px 24px',display:page==='permisos'?'block':'none'}}><PanelErrorBoundary name="Permisos"><Permisos /></PanelErrorBoundary></div>
+        <div style={{padding:'16px 16px 24px',display:page==='perfil'?'block':'none'}}><PanelErrorBoundary name="Perfil"><Perfil /></PanelErrorBoundary></div>
+        <div style={{padding:'16px 16px 24px',display:page==='agenda'?'block':'none'}}><PanelErrorBoundary name="Agenda"><Agenda /></PanelErrorBoundary></div>
+        <div style={{padding:'16px 16px 24px',display:page==='comunicados'?'block':'none'}}><PanelErrorBoundary name="Comunicados"><Comunicados /></PanelErrorBoundary></div>
         <div style={{padding:'16px 16px 24px',display:page==='actividad'?'block':'none'}}><Suspense fallback={<div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>}><Actividad /></Suspense></div>
         <div style={{padding:'16px 16px 24px',display:page==='atencion'?'block':'none'}}><Suspense fallback={<div>Cargando...</div>}><AtencionCliente /></Suspense></div>
       </div>
