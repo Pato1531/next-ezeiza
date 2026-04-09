@@ -54,6 +54,12 @@ export default function Reportes() {
     })
   }
   const [alumnosConPago, setAlumnosConPago] = useState<Set<string>>(new Set())
+  // Ingresos desglosados: cuotas vs matrículas del mes actual
+  const [ingresosDetalle, setIngresosDetalle] = useState<{cuotas:number, matriculas:number, totalPagos: any[]}>({cuotas:0, matriculas:0, totalPagos:[]})
+  // Altas y bajas del mes
+  const [altasDelMes, setAltasDelMes] = useState<any[]>([])
+  const [bajasDelMes, setBajasDelMes] = useState<any[]>([])
+  const [loadingMovimientos, setLoadingMovimientos] = useState(false)
 
   // Cargar pagos del mes actual para cobranza
   useEffect(() => {
@@ -64,6 +70,51 @@ export default function Reportes() {
       .then(({ data }) => setAlumnosConPago(new Set((data||[]).map((r:any) => r.alumno_id))))
       .catch(() => {})
   }, [alumnos.length, mesActualNombre, anioActual])
+
+  // Cargar desglose de ingresos del mes (cuotas vs matrículas)
+  useEffect(() => {
+    const cargarIngresos = async () => {
+      try {
+        const sb = createClient()
+        const { data } = await sb.from('pagos_alumnos')
+          .select('monto, observaciones, alumnos(nombre, apellido, nivel)')
+          .eq('mes', mesActualNombre).eq('anio', anioActual)
+        const pagos = data || []
+        const matriculas = pagos.filter((p:any) => p.observaciones === 'Matrícula de inscripción')
+        const cuotas = pagos.filter((p:any) => p.observaciones !== 'Matrícula de inscripción')
+        setIngresosDetalle({
+          cuotas: cuotas.reduce((s:number, p:any) => s + (p.monto||0), 0),
+          matriculas: matriculas.reduce((s:number, p:any) => s + (p.monto||0), 0),
+          totalPagos: pagos
+        })
+      } catch {}
+    }
+    cargarIngresos()
+  }, [mesActualNombre, anioActual])
+
+  // Cargar altas y bajas del mes para el reporte de movimientos
+  useEffect(() => {
+    const cargarMovimientos = async () => {
+      setLoadingMovimientos(true)
+      try {
+        const sb = createClient()
+        const inicioMes = `${anioActual}-${String(new Date().getMonth()+1).padStart(2,'0')}-01`
+        const finMes = new Date(anioActual, new Date().getMonth()+1, 0).toISOString().split('T')[0]
+        const [altasRes, bajasRes] = await Promise.all([
+          sb.from('alumnos').select('nombre, apellido, nivel, cuota_mensual, fecha_alta, color')
+            .gte('fecha_alta', inicioMes).lte('fecha_alta', finMes).eq('activo', true)
+            .order('fecha_alta', { ascending: false }),
+          sb.from('bajas_alumnos').select('alumno_nombre, alumno_apellido, nivel, cuota_mensual, fecha_baja, motivo')
+            .gte('fecha_baja', inicioMes).lte('fecha_baja', finMes)
+            .order('fecha_baja', { ascending: false })
+        ])
+        setAltasDelMes(altasRes.data || [])
+        setBajasDelMes(bajasRes.data || [])
+      } catch {}
+      setLoadingMovimientos(false)
+    }
+    cargarMovimientos()
+  }, [mesActualNombre, anioActual])
 
   // Refrescar cuando se registra un pago desde Alumnos
   useEffect(() => {
@@ -541,71 +592,98 @@ export default function Reportes() {
       {(!esSecretaria && !esCoordinadora) && (
       <ReportSection
         titulo="Ingresos mensuales"
-        subtitulo={`${alumnos.length} alumnos · Total esperado: $${alumnos.reduce((s,a)=>s+(a.cuota_mensual||0),0).toLocaleString('es-AR')}/mes`}
+        subtitulo={`${mesActualNombre} ${anioActual} · ${ingresosDetalle.totalPagos.length} pagos cobrados`}
         onCSV={() => {
+          const esperado = alumnos.reduce((s,a)=>s+(a.cuota_mensual||0),0)
           const rows = [
             ['NEXT EZEIZA — INGRESOS MENSUALES'],
-            ['Generado:', new Date().toLocaleDateString('es-AR')],
+            [`Mes: ${mesActualNombre} ${anioActual}`, '', ''],
             [''],
             ['Concepto','Cantidad','Monto'],
-            ['Total alumnos activos', alumnos.length, ''],
-            ['Ingresos esperados/mes', '', `$${alumnos.reduce((s,a)=>s+(a.cuota_mensual||0),0).toLocaleString('es-AR')}`],
-            ['Liquidación docente/mes', '', `$${totalLiq.toLocaleString('es-AR')}`],
-            ['Margen estimado', '', `$${(alumnos.reduce((s,a)=>s+(a.cuota_mensual||0),0)-totalLiq).toLocaleString('es-AR')}`],
+            ['Cuotas cobradas', ingresosDetalle.totalPagos.filter((p:any)=>p.observaciones!=='Matrícula de inscripción').length, `$${ingresosDetalle.cuotas.toLocaleString('es-AR')}`],
+            ['Matrículas cobradas', ingresosDetalle.totalPagos.filter((p:any)=>p.observaciones==='Matrícula de inscripción').length, `$${ingresosDetalle.matriculas.toLocaleString('es-AR')}`],
+            ['Total cobrado', ingresosDetalle.totalPagos.length, `$${(ingresosDetalle.cuotas+ingresosDetalle.matriculas).toLocaleString('es-AR')}`],
             [''],
-            ['Detalle por alumno','Cuota mensual',''],
-            ...alumnos.map(a=>[`${a.nombre} ${a.apellido}`,`$${a.cuota_mensual?.toLocaleString('es-AR')||'0'}`,''])
+            ['Ingresos esperados/mes (cuotas)', '', `$${esperado.toLocaleString('es-AR')}`],
+            ['Liquidación docente/mes', '', `$${totalLiq.toLocaleString('es-AR')}`],
+            ['Margen estimado', '', `$${(esperado-totalLiq).toLocaleString('es-AR')}`],
           ]
           const csv = rows.map((r:any[]) => r.map((c:any)=>`"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n')
           const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'})
           const url = URL.createObjectURL(blob); const el = document.createElement('a')
-          el.href=url; el.download=`ingresos_${new Date().toISOString().split('T')[0]}.csv`; el.click()
+          el.href=url; el.download=`ingresos_${mesActualNombre}_${anioActual}.csv`; el.click()
           URL.revokeObjectURL(url)
         }}
         onPDF={() => {
           const esperado = alumnos.reduce((s,a)=>s+(a.cuota_mensual||0),0)
+          const totalCobrado = ingresosDetalle.cuotas + ingresosDetalle.matriculas
           const margen = esperado - totalLiq
           abrirPDF('Ingresos Mensuales', `
-            <h2>Resumen financiero</h2>
+            <h2>${mesActualNombre} ${anioActual} — Resumen de ingresos</h2>
+            <table>
+              <tr><th>Concepto</th><th>Cantidad</th><th>Monto</th></tr>
+              <tr><td>Cuotas cobradas</td><td>${ingresosDetalle.totalPagos.filter((p:any)=>p.observaciones!=='Matrícula de inscripción').length}</td><td style="font-weight:700;color:#2d7a4f">$${ingresosDetalle.cuotas.toLocaleString('es-AR')}</td></tr>
+              <tr><td>Matrículas cobradas</td><td>${ingresosDetalle.totalPagos.filter((p:any)=>p.observaciones==='Matrícula de inscripción').length}</td><td style="font-weight:700;color:#1a6b8a">$${ingresosDetalle.matriculas.toLocaleString('es-AR')}</td></tr>
+              <tr style="background:#f2e8f9"><td style="font-weight:700">Total cobrado</td><td>${ingresosDetalle.totalPagos.length}</td><td style="font-weight:700;color:#652f8d">$${totalCobrado.toLocaleString('es-AR')}</td></tr>
+            </table>
+            <h2>Proyección mensual</h2>
             <table>
               <tr><th>Concepto</th><th>Monto</th></tr>
-              <tr><td>Ingresos esperados/mes</td><td style="font-weight:700;color:#2d7a4f">$${esperado.toLocaleString('es-AR')}</td></tr>
+              <tr><td>Ingresos esperados (cuotas)</td><td style="font-weight:700;color:#2d7a4f">$${esperado.toLocaleString('es-AR')}</td></tr>
               <tr><td>Liquidación docente</td><td style="font-weight:700;color:#c0392b">$${totalLiq.toLocaleString('es-AR')}</td></tr>
               <tr style="background:#f2e8f9"><td style="font-weight:700">Margen estimado</td><td style="font-weight:700;color:#652f8d">$${margen.toLocaleString('es-AR')}</td></tr>
-            </table>
-            <h2>Cuotas por alumno</h2>
-            <table><tr><th>Alumno</th><th>Nivel</th><th>Cuota mensual</th></tr>
-            ${alumnos.map(a=>`<tr><td>${a.nombre} ${a.apellido}</td><td>${a.nivel}</td><td>$${a.cuota_mensual?.toLocaleString('es-AR')||'0'}</td></tr>`).join('')}
             </table>
           `)
         }}
       >
-        {/* Resumen visual */}
+        {/* Desglose cuotas vs matrículas */}
         {(() => {
           const esperado = alumnos.reduce((s,a)=>s+(a.cuota_mensual||0),0)
+          const totalCobrado = ingresosDetalle.cuotas + ingresosDetalle.matriculas
           const margen = esperado - totalLiq
           return (
-            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'10px',marginBottom:'16px'}}>
-              {[
-                {label:'Ingresos esperados',val:`$${Math.round(esperado/1000)}k`,color:'var(--green)'},
-                {label:'Liquidación docente',val:`$${Math.round(totalLiq/1000)}k`,color:'var(--red)'},
-                {label:'Margen estimado',val:`$${Math.round(margen/1000)}k`,color:margen>=0?'var(--v)':'var(--red)'},
-              ].map(k=>(
-                <div key={k.label} style={{background:'var(--bg)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
-                  <div style={{fontSize:'20px',fontWeight:700,color:k.color}}>{k.val}</div>
-                  <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}}>{k.label}</div>
+            <>
+              {/* Título del mes */}
+              <div style={{fontSize:'12px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'12px'}}>
+                Cobrado en {mesActualNombre} {anioActual}
+              </div>
+              {/* Cuotas y matrículas */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'14px'}}>
+                <div style={{background:'var(--greenl)',borderRadius:'12px',padding:'14px'}}>
+                  <div style={{fontSize:'10.5px',fontWeight:700,color:'var(--green)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'6px'}}>Cuotas del mes</div>
+                  <div style={{fontSize:'22px',fontWeight:800,color:'var(--green)'}}>${Math.round(ingresosDetalle.cuotas/1000)}k</div>
+                  <div style={{fontSize:'11px',color:'var(--green)',marginTop:'2px',opacity:.8}}>{ingresosDetalle.totalPagos.filter((p:any)=>p.observaciones!=='Matrícula de inscripción').length} pagos</div>
                 </div>
-              ))}
-            </div>
+                <div style={{background:'#e0f0f7',borderRadius:'12px',padding:'14px'}}>
+                  <div style={{fontSize:'10.5px',fontWeight:700,color:'#1a6b8a',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'6px'}}>Matrículas del mes</div>
+                  <div style={{fontSize:'22px',fontWeight:800,color:'#1a6b8a'}}>${ingresosDetalle.matriculas > 0 ? Math.round(ingresosDetalle.matriculas/1000)+'k' : '0'}</div>
+                  <div style={{fontSize:'11px',color:'#1a6b8a',marginTop:'2px',opacity:.8}}>{ingresosDetalle.totalPagos.filter((p:any)=>p.observaciones==='Matrícula de inscripción').length} inscripciones</div>
+                </div>
+              </div>
+              {/* Total cobrado */}
+              <div style={{background:'var(--vl)',borderRadius:'12px',padding:'12px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px'}}>
+                <span style={{fontSize:'13px',fontWeight:600,color:'var(--v)'}}>Total cobrado {mesActualNombre}</span>
+                <span style={{fontSize:'20px',fontWeight:800,color:'var(--v)'}}>${totalCobrado.toLocaleString('es-AR')}</span>
+              </div>
+              {/* Separador proyección */}
+              <div style={{fontSize:'12px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'12px',marginTop:'4px'}}>
+                Proyección mensual
+              </div>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'10px'}}>
+                {[
+                  {label:'Ingresos esperados',val:`$${Math.round(esperado/1000)}k`,color:'var(--green)'},
+                  {label:'Liquidación docente',val:`$${Math.round(totalLiq/1000)}k`,color:'var(--red)'},
+                  {label:'Margen estimado',val:`$${Math.round(margen/1000)}k`,color:margen>=0?'var(--v)':'var(--red)'},
+                ].map(k=>(
+                  <div key={k.label} style={{background:'var(--bg)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                    <div style={{fontSize:'20px',fontWeight:700,color:k.color}}>{k.val}</div>
+                    <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}}>{k.label}</div>
+                  </div>
+                ))}
+              </div>
+            </>
           )
         })()}
-        {alumnos.slice(0,5).map(a=>(
-          <div key={a.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
-            <div style={{fontSize:'13.5px',fontWeight:500}}>{a.nombre} {a.apellido}</div>
-            <div style={{fontSize:'14px',fontWeight:700,color:'var(--v)'}}>${a.cuota_mensual?.toLocaleString('es-AR')||'0'}</div>
-          </div>
-        ))}
-        {alumnos.length > 5 && <div style={{fontSize:'12px',color:'var(--text3)',textAlign:'center',padding:'8px 0'}}>y {alumnos.length-5} más... · Descargá el reporte para verlos todos</div>}
       </ReportSection>
       )}
 
@@ -671,6 +749,124 @@ export default function Reportes() {
 
       {/* MÉTODOS DE PAGO */}
       <MetodosPagoSection alumnos={alumnos} mesActualNombre={mesActualNombre} anioActual={anioActual} />
+
+      {/* REPORTE: ALUMNOS ACTIVOS — ALTAS Y BAJAS DEL MES */}
+      {(!esSecretaria && !esCoordinadora) && (
+      <ReportSection
+        titulo="Alumnos activos — Movimientos del mes"
+        subtitulo={`${mesActualNombre} ${anioActual} · ${alumnos.length} activos · ${altasDelMes.length} alta${altasDelMes.length!==1?'s':''} · ${bajasDelMes.length} baja${bajasDelMes.length!==1?'s':''}`}
+        onCSV={() => {
+          const rows = [
+            ['NEXT EZEIZA — MOVIMIENTOS DE ALUMNOS'],
+            [`Mes: ${mesActualNombre} ${anioActual}`],
+            [''],
+            ['ESTADO ACTUAL'],
+            ['Total alumnos activos', alumnos.length],
+            [''],
+            ['ALTAS DEL MES'],
+            ['Nombre', 'Nivel', 'Cuota', 'Fecha de alta'],
+            ...altasDelMes.map((a:any) => [`${a.nombre} ${a.apellido}`, a.nivel, `$${a.cuota_mensual?.toLocaleString('es-AR')||'0'}`, a.fecha_alta ? new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR') : '—']),
+            [''],
+            ['BAJAS DEL MES'],
+            ['Nombre', 'Nivel', 'Cuota', 'Fecha de baja', 'Motivo'],
+            ...bajasDelMes.map((b:any) => [`${b.alumno_nombre} ${b.alumno_apellido}`, b.nivel||'—', `$${b.cuota_mensual?.toLocaleString('es-AR')||'0'}`, b.fecha_baja ? new Date(b.fecha_baja+'T12:00:00').toLocaleDateString('es-AR') : '—', b.motivo||'—']),
+          ]
+          const csv = rows.map((r:any[]) => r.map((c:any)=>`"${String(c||'').replace(/"/g,'""')}"`).join(',')).join('\n')
+          const blob = new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8;'})
+          const url = URL.createObjectURL(blob); const el = document.createElement('a')
+          el.href=url; el.download=`movimientos_${mesActualNombre}_${anioActual}.csv`; el.click()
+          URL.revokeObjectURL(url)
+        }}
+        onPDF={() => {
+          const fmtF = (f:string) => f ? new Date(f+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long'}) : '—'
+          abrirPDF('Movimientos de Alumnos', `
+            <h2>${mesActualNombre} ${anioActual}</h2>
+            <div style="display:flex;gap:16px;margin-bottom:20px">
+              <div style="background:#f2e8f9;padding:12px 20px;border-radius:10px;text-align:center"><div style="font-size:28px;font-weight:800;color:#652f8d">${alumnos.length}</div><div style="font-size:11px;color:#9b8eaa">Alumnos activos</div></div>
+              <div style="background:#e6f4ec;padding:12px 20px;border-radius:10px;text-align:center"><div style="font-size:28px;font-weight:800;color:#2d7a4f">+${altasDelMes.length}</div><div style="font-size:11px;color:#2d7a4f">Altas</div></div>
+              <div style="background:#fde8e8;padding:12px 20px;border-radius:10px;text-align:center"><div style="font-size:28px;font-weight:800;color:#c0392b">-${bajasDelMes.length}</div><div style="font-size:11px;color:#c0392b">Bajas</div></div>
+            </div>
+            ${altasDelMes.length > 0 ? `
+            <h3 style="color:#2d7a4f">Altas del mes</h3>
+            <table><tr><th>Alumno</th><th>Nivel</th><th>Cuota</th><th>Fecha</th></tr>
+            ${altasDelMes.map((a:any)=>`<tr><td>${a.nombre} ${a.apellido}</td><td>${a.nivel}</td><td>$${a.cuota_mensual?.toLocaleString('es-AR')||'0'}</td><td>${fmtF(a.fecha_alta)}</td></tr>`).join('')}
+            </table>` : '<p style="color:#9b8eaa">Sin altas en el mes</p>'}
+            ${bajasDelMes.length > 0 ? `
+            <h3 style="color:#c0392b">Bajas del mes</h3>
+            <table><tr><th>Alumno</th><th>Nivel</th><th>Cuota</th><th>Fecha</th><th>Motivo</th></tr>
+            ${bajasDelMes.map((b:any)=>`<tr><td>${b.alumno_nombre} ${b.alumno_apellido}</td><td>${b.nivel||'—'}</td><td>$${b.cuota_mensual?.toLocaleString('es-AR')||'0'}</td><td>${fmtF(b.fecha_baja)}</td><td>${b.motivo||'—'}</td></tr>`).join('')}
+            </table>` : '<p style="color:#9b8eaa">Sin bajas en el mes</p>'}
+          `)
+        }}
+      >
+        {loadingMovimientos ? (
+          <div style={{textAlign:'center',padding:'20px',color:'var(--text3)'}}>Cargando...</div>
+        ) : (
+          <>
+            {/* KPIs */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'16px'}}>
+              <div style={{background:'var(--vl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                <div style={{fontSize:'24px',fontWeight:800,color:'var(--v)'}}>{alumnos.length}</div>
+                <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}}>Activos ahora</div>
+              </div>
+              <div style={{background:'var(--greenl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                <div style={{fontSize:'24px',fontWeight:800,color:'var(--green)'}}>+{altasDelMes.length}</div>
+                <div style={{fontSize:'11px',color:'var(--green)',marginTop:'2px'}}>Altas {mesActualNombre}</div>
+              </div>
+              <div style={{background:'var(--redl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                <div style={{fontSize:'24px',fontWeight:800,color:'var(--red)'}}>-{bajasDelMes.length}</div>
+                <div style={{fontSize:'11px',color:'var(--red)',marginTop:'2px'}}>Bajas {mesActualNombre}</div>
+              </div>
+            </div>
+
+            {/* Altas */}
+            {altasDelMes.length > 0 && (
+              <div style={{marginBottom:'14px'}}>
+                <div style={{fontSize:'11px',fontWeight:700,color:'var(--green)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'8px'}}>↑ Altas del mes</div>
+                {altasDelMes.map((a:any, i:number) => (
+                  <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+                      <div style={{width:32,height:32,borderRadius:'9px',background:a.color||'#652f8d',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}}>
+                        {a.nombre?.[0]}{a.apellido?.[0]}
+                      </div>
+                      <div>
+                        <div style={{fontSize:'13.5px',fontWeight:600}}>{a.nombre} {a.apellido}</div>
+                        <div style={{fontSize:'11.5px',color:'var(--text2)'}}>{a.nivel}</div>
+                      </div>
+                    </div>
+                    <div style={{textAlign:'right',flexShrink:0}}>
+                      <div style={{fontSize:'12px',fontWeight:700,color:'var(--green)'}}>${a.cuota_mensual?.toLocaleString('es-AR')||'0'}/mes</div>
+                      <div style={{fontSize:'11px',color:'var(--text3)'}}>{a.fecha_alta ? new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'short'}) : '—'}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {altasDelMes.length === 0 && <div style={{fontSize:'12.5px',color:'var(--text3)',padding:'8px 0 12px',borderBottom:'1px solid var(--border)',marginBottom:'12px'}}>Sin altas registradas en {mesActualNombre}</div>}
+
+            {/* Bajas */}
+            {bajasDelMes.length > 0 && (
+              <div>
+                <div style={{fontSize:'11px',fontWeight:700,color:'var(--red)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'8px'}}>↓ Bajas del mes</div>
+                {bajasDelMes.map((b:any, i:number) => (
+                  <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 0',borderBottom:i<bajasDelMes.length-1?'1px solid var(--border)':'none'}}>
+                    <div>
+                      <div style={{fontSize:'13.5px',fontWeight:600}}>{b.alumno_nombre} {b.alumno_apellido}</div>
+                      <div style={{fontSize:'11.5px',color:'var(--text2)'}}>{b.nivel||'—'} · {b.motivo||'—'}</div>
+                    </div>
+                    <div style={{textAlign:'right',flexShrink:0}}>
+                      <div style={{fontSize:'12px',color:'var(--red)',fontWeight:600}}>${b.cuota_mensual?.toLocaleString('es-AR')||'0'}/mes</div>
+                      <div style={{fontSize:'11px',color:'var(--text3)'}}>{b.fecha_baja ? new Date(b.fecha_baja+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'short'}) : '—'}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {bajasDelMes.length === 0 && <div style={{fontSize:'12.5px',color:'var(--text3)',padding:'8px 0'}}>Sin bajas registradas en {mesActualNombre}</div>}
+          </>
+        )}
+      </ReportSection>
+      )}
 
       {/* BOLETÍN DIGITAL */}
       <BoletinSection alumnos={alumnos} />
@@ -883,7 +1079,8 @@ function BoletinSection({ alumnos }: any) {
       <div class="av">${al.nombre[0]}${al.apellido[0]}</div>
       <div><div class="logo">Next <span>Ezeiza</span></div>
       <div style="font-size:15px;font-weight:800;margin-top:4px">${al.nombre} ${al.apellido}</div>
-      <div style="font-size:12px;opacity:.8">${curso} · ${periodo} ${anio}</div></div>
+      <div style="font-size:12px;opacity:.8">${curso} · ${periodo} ${anio}</div>
+      ${al.dni ? `<div style="font-size:11px;opacity:.65;margin-top:2px">DNI: ${al.dni}</div>` : ''}</div>
     </div>
     <div class="body">
       <div class="kpis">
@@ -988,7 +1185,7 @@ function CertificadoSection({ alumnos }: any) {
     <h1>Certificado de ${tipo}</h1>
     <div class="cuerpo">
       La dirección del instituto certifica que<br>
-      <span class="nombre">${al.nombre} ${al.apellido}</span>
+      <span class="nombre">${al.nombre} ${al.apellido}</span>${al.dni ? ` <span style="font-size:14px;font-weight:400;font-style:normal;color:#9b8eaa">DNI: ${al.dni}</span>` : ''}
       es alumno/a regular del curso de inglés <strong>${curso}</strong>,
       con asistencia registrada en el período comprendido entre el <strong>${fmtDesde}</strong> y el <strong>${fmtHasta}</strong>.
       ${destinatario ? `<br><br>El presente certificado se emite a solicitud del/la interesado/a para ser presentado ante <strong>${destinatario}</strong>.` : ''}
