@@ -65,7 +65,7 @@ export function invalidateQuery(key: string) {
 // Se activa desde auth-context via setAuthReady(true) después de cargarUsuario.
 // Los hooks esperan este flag antes de hacer el primer fetch.
 // Esto evita que fetcheen con RLS sin sesión y sobreescriban el cache con [].
-let _authReady = false
+let _authReady = true  // true por defecto — compatible con auth-context viejo
 const _authReadyListeners: Set<() => void> = new Set()
 
 export function setAuthReady(ready: boolean) {
@@ -215,14 +215,8 @@ function useSupabaseQuery<T>(
     }
   }, [cacheKey, shouldSkip])
 
-  // Auto fetch al montar — esperar auth Y sesión confirmada
-  // Doble guard: authReady (Supabase inicializado) + sessionReady (token activo)
-  // Evita devolver [] por RLS cuando el token aún no está activo en remount
-  useEffect(() => {
-    return onAuthReady(() => {
-      return onSessionReady(() => { fetch() })
-    })
-  }, [fetch])
+  // Auto fetch al montar
+  useEffect(() => { fetch() }, [fetch])
 
   // Registrar en listeners para invalidateQuery()
   useEffect(() => {
