@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, lazy, Suspense } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useComunicados } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
@@ -14,8 +14,9 @@ import Agenda from './pages/Agenda'
 import Permisos from './pages/Permisos'
 import Perfil from './pages/Perfil'
 import Comunicados from './pages/Comunicados'
-import Actividad from './pages/Actividad'  // ← NUEVO
-import AtencionCliente from './pages/AtencionCliente'
+// Imports lazy para módulos que pueden no existir en el proyecto
+const Actividad = lazy(() => import('./pages/Actividad').catch(() => ({ default: () => <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Módulo no disponible</div> })))
+const AtencionCliente = lazy(() => import('./pages/AtencionCliente').catch(() => ({ default: () => <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Módulo no disponible</div> })))
 
 const ALL_NAV = [
   { id: 'dashboard',  label: 'Inicio',    icon: 'M3 3h7v7H3zM13 3h7v7h-7zM3 13h7v7H3zM13 13h7v7h-7z' },
@@ -168,8 +169,8 @@ export default function AppShell() {
         <div style={{padding:'16px 16px 24px',display:page==='perfil'?'block':'none'}}><Perfil /></div>
         <div style={{padding:'16px 16px 24px',display:page==='agenda'?'block':'none'}}><Agenda /></div>
         <div style={{padding:'16px 16px 24px',display:page==='comunicados'?'block':'none'}}><Comunicados /></div>
-        <div style={{padding:'16px 16px 24px',display:page==='actividad'?'block':'none'}}>{Actividad ? <Actividad /> : <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Módulo cargando...</div>}</div>
-        <div style={{padding:'16px 16px 24px',display:page==='atencion'?'block':'none'}}><AtencionCliente /></div>
+        <div style={{padding:'16px 16px 24px',display:page==='actividad'?'block':'none'}}><Suspense fallback={<div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>}><Actividad /></Suspense></div>
+        <div style={{padding:'16px 16px 24px',display:page==='atencion'?'block':'none'}}><Suspense fallback={<div>Cargando...</div>}><AtencionCliente /></Suspense></div>
       </div>
 
       {/* DRAWER "MÁS" */}
