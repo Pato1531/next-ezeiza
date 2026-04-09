@@ -24,12 +24,13 @@ export default function Reportes() {
   const [ausentes, setAusentes] = useState<any[]>([])
   const [alertas2Cons, setAlertas2Cons] = useState<any[]>([])
   const [alertaEstados, setAlertaEstados] = useState<Record<string,{enviado:boolean,obs:string}>>(() => {
+    if (typeof window === 'undefined') return {}
     try { return JSON.parse(localStorage.getItem('alerta_ausencias') || '{}') } catch { return {} }
   })
   const setAlertaEstado = (alumnoId: string, campo: 'enviado'|'obs', valor: any) => {
     setAlertaEstados(prev => {
       const next = { ...prev, [alumnoId]: { enviado: prev[alumnoId]?.enviado||false, obs: prev[alumnoId]?.obs||'', [campo]: valor } }
-      try { localStorage.setItem('alerta_ausencias', JSON.stringify(next)) } catch {}
+      if (typeof window !== 'undefined') { try { localStorage.setItem('alerta_ausencias', JSON.stringify(next)) } catch {} }
       return next
     })
   }
