@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAlumnos, useProfesoras, useCursos, useLiquidaciones } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
@@ -23,14 +23,33 @@ export default function Reportes() {
 
   const [ausentes, setAusentes] = useState<any[]>([])
   const [alertas2Cons, setAlertas2Cons] = useState<any[]>([])
-  const [alertaEstados, setAlertaEstados] = useState<Record<string,{enviado:boolean,obs:string}>>(() => {
-    if (typeof window === 'undefined') return {}
-    try { return JSON.parse(localStorage.getItem('alerta_ausencias') || '{}') } catch { return {} }
-  })
+  const [alertaEstados, setAlertaEstados] = useState<Record<string,{enviado:boolean,obs:string}>>({})
+  const alertaGuardRef = useRef<ReturnType<typeof setTimeout>|null>(null)
+
+  // Cargar estados desde Supabase al montar
+  useEffect(() => {
+    createClient().from('alertas_ausencias').select('alumno_id,enviado,obs')
+      .then(({ data }) => {
+        if (data?.length) {
+          const m: Record<string,{enviado:boolean,obs:string}> = {}
+          data.forEach((r:any) => { m[r.alumno_id] = { enviado: r.enviado||false, obs: r.obs||'' } })
+          setAlertaEstados(m)
+        }
+      }).catch(() => {})
+  }, [])
+
   const setAlertaEstado = (alumnoId: string, campo: 'enviado'|'obs', valor: any) => {
     setAlertaEstados(prev => {
       const next = { ...prev, [alumnoId]: { enviado: prev[alumnoId]?.enviado||false, obs: prev[alumnoId]?.obs||'', [campo]: valor } }
-      if (typeof window !== 'undefined') { try { localStorage.setItem('alerta_ausencias', JSON.stringify(next)) } catch {} }
+      // Guardar en Supabase con debounce de 800ms
+      if (alertaGuardRef.current) clearTimeout(alertaGuardRef.current)
+      alertaGuardRef.current = setTimeout(() => {
+        const estado = next[alumnoId]
+        createClient().from('alertas_ausencias').upsert(
+          { alumno_id: alumnoId, enviado: estado.enviado, obs: estado.obs },
+          { onConflict: 'alumno_id' }
+        ).then().catch(() => {})
+      }, 800)
       return next
     })
   }
@@ -931,6 +950,7 @@ function CertificadoSection({ alumnos }: any) {
   const [desde, setDesde] = useState(`${new Date().getFullYear()}-03-01`)
   const [hasta, setHasta] = useState(`${new Date().getFullYear()}-11-30`)
   const [destinatario, setDestinatario] = useState('')
+  const [nivelManual, setNivelManual] = useState('')
   const [generando, setGenerando] = useState(false)
   const IS = { padding:'9px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)', width:'100%' } as const
 
@@ -974,7 +994,7 @@ function CertificadoSection({ alumnos }: any) {
       ${destinatario ? `<br><br>El presente certificado se emite a solicitud del/la interesado/a para ser presentado ante <strong>${destinatario}</strong>.` : ''}
     </div>
     <div class="datos">
-      <div class="dato"><div class="dato-val">${al.nivel||'—'}</div><div class="dato-lab">Nivel</div></div>
+      <div class="dato"><div class="dato-val">${nivelManual||al.nivel||'—'}</div><div class="dato-lab">Nivel</div></div>
       <div class="dato"><div class="dato-val">${curso}</div><div class="dato-lab">Curso</div></div>
     </div>
     <div style="font-size:12px;color:#9b8eaa;text-align:center;margin-bottom:32px">Ezeiza, Buenos Aires · ${hoy}</div>
@@ -1014,6 +1034,10 @@ function CertificadoSection({ alumnos }: any) {
           <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Hasta</div>
           <input style={IS} type="date" value={hasta} onChange={e => setHasta(e.target.value)} />
         </div>
+      </div>
+      <div style={{marginBottom:'10px'}}>
+        <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Nivel (opcional)</div>
+        <input style={IS} type="text" value={nivelManual} onChange={e => setNivelManual(e.target.value)} placeholder="Ej: A1, A2, B1, Intermedio..." />
       </div>
       <div style={{marginBottom:'14px'}}>
         <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Destinatario (opcional)</div>
