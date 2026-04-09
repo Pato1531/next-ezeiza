@@ -4,10 +4,6 @@ import { createContext, useContext, useEffect, useRef, useState, ReactNode } fro
 import { createClient, destroyClient, Usuario, Rol, puedeVer } from '@/lib/supabase'
 import { invalidateStore, setSessionReady } from '@/lib/hooks'
 
-// ── Clave de localStorage para sobrevivir remounts de Chrome/Android ──────────
-// Cuando el proceso JS remonta, localStorage persiste pero los useState no.
-// Guardamos el userId para saber que existía una sesión activa y NO mostrar
-// LoginPage mientras Supabase resuelve el token asíncronamente.
 const SESSION_KEY = 'ne_session_uid'
 
 interface AuthContextType {
@@ -25,14 +21,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const usuarioRef = useRef<Usuario | null>(null)
   const cargandoRef = useRef(false)
+  const loadingResolvedRef = useRef(false)  // garantiza que setLoading(false) solo corre una vez
 
-  // Lee localStorage SINCRÓNICAMENTE al montar para saber si había sesión previa.
-  // Esto sobrevive remounts porque localStorage persiste entre ellos.
-  const hadSessionRef = useRef<boolean>(
-    typeof window !== 'undefined'
-      ? Boolean(localStorage.getItem(SESSION_KEY))
-      : false
-  )
+  // Lee localStorage para saber si había sesión previa (sobrevive remounts)
+  const prevUid = typeof window !== 'undefined' ? localStorage.getItem(SESSION_KEY) : null
+  const hadSessionRef = useRef<boolean>(Boolean(prevUid))
+
+  // ── HELPER: resolver loading de forma segura ──────────────────────────────
+  // Garantiza que una vez resuelto, no vuelve a true accidentalmente
+  const resolveLoading = () => {
+    loadingResolvedRef.current = true
+    setLoading(false)
+  }
+
+  // ── SAFETY NET: timeout máximo de 4 segundos ──────────────────────────────
+  // Si algo falla y loading nunca se resuelve, después de 4s mostramos login.
+  // Mucho mejor que el timeout de 6s original — el usuario no espera tanto.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (!loadingResolvedRef.current) {
+        console.warn('[auth] safety timeout — forzando resolución')
+        // Limpiar ne_session_uid si llegamos aquí — probablemente sesión expirada
+        try { localStorage.removeItem(SESSION_KEY) } catch {}
+        hadSessionRef.current = false
+        resolveLoading()
+      }
+    }, 4000)
+    return () => clearTimeout(t)
+  }, [])
 
   const cargarUsuario = async (uid: string): Promise<boolean> => {
     if (cargandoRef.current) return true
@@ -40,22 +56,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const sb = createClient()
       const { data, error } = await sb
-        .from('usuarios')
-        .select('*')
-        .eq('id', uid)
-        .single()
+        .from('usuarios').select('*').eq('id', uid).single()
       if (data && !error) {
         setUsuario(data as Usuario)
         usuarioRef.current = data as Usuario
         hadSessionRef.current = true
-        // Persistir para sobrevivir remounts
         try { localStorage.setItem(SESSION_KEY, uid) } catch {}
-        // Notificar hooks que pueden fetchear con sesión activa
         setSessionReady(true)
         return true
       }
+      // Falló cargar el usuario — limpiar sesión
+      try { localStorage.removeItem(SESSION_KEY) } catch {}
+      hadSessionRef.current = false
       return false
     } catch {
+      try { localStorage.removeItem(SESSION_KEY) } catch {}
+      hadSessionRef.current = false
       return false
     } finally {
       cargandoRef.current = false
@@ -88,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, session) => {
         if (!mounted) return
 
+        // ── Logout explícito ──
         if (event === 'SIGNED_OUT') {
           setUsuario(null)
           usuarioRef.current = null
@@ -95,68 +112,64 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSessionReady(false)
           invalidateStore()
           try { localStorage.removeItem(SESSION_KEY) } catch {}
-          setLoading(false)
+          resolveLoading()
           return
         }
 
+        // ── Sin sesión ──
         if (!session) {
-          // Session null es SIEMPRE transitoria cuando hadSession=true.
-          // Supabase emite esto mientras resuelve el token desde localStorage.
-          // Si había sesión previa → mantener loading=true y esperar TOKEN_REFRESHED.
-          // Si no había sesión → confirmar que no hay usuario.
+          // Si NO había sesión previa → confirmar que no hay nada y resolver
           if (!hadSessionRef.current && !usuarioRef.current) {
-            setLoading(false)
+            resolveLoading()
           }
-          // hadSession=true: NO hacer nada, esperar el siguiente evento
+          // Si HABÍA sesión previa: esperar TOKEN_REFRESHED.
+          // El safety timeout de 4s es el backstop si TOKEN_REFRESHED nunca llega.
           return
         }
 
-        // Hay session válida
+        // ── Con sesión válida ──
         if (!usuarioRef.current && session.user) {
-          await cargarUsuario(session.user.id)
+          // Cargar usuario — si falla, el safety timeout resuelve loading
+          const ok = await cargarUsuario(session.user.id)
+          if (!ok && mounted) resolveLoading()
         } else if (usuarioRef.current) {
-          // Usuario ya cargado, solo activar sesión para hooks
           setSessionReady(true)
         }
-        setLoading(false)
+        if (mounted) resolveLoading()
       }
     )
 
-    // Verificación inicial: getSession es síncrono con el localStorage
+    // ── Verificación inicial ──────────────────────────────────────────────
+    // getSession() lee el localStorage de Supabase de forma SÍNCRONA-ish.
+    // Si devuelve null, la sesión realmente no existe — no esperar más.
     const init = async () => {
       try {
         const { data: { session } } = await sb.auth.getSession()
         if (!session) {
-          // No hay sesión real en localStorage
+          // Sesión definitivamente no existe — limpiar y resolver
           hadSessionRef.current = false
           try { localStorage.removeItem(SESSION_KEY) } catch {}
-          if (!usuarioRef.current) setLoading(false)
+          // Solo resolver aquí si onAuthStateChange tampoco lo hizo ya
+          if (!loadingResolvedRef.current && !usuarioRef.current) {
+            resolveLoading()
+          }
         }
-        // Con sesión: onAuthStateChange disparará INITIAL_SESSION/TOKEN_REFRESHED
+        // Con sesión: onAuthStateChange ya va a disparar y resolver
       } catch {
-        setLoading(false)
+        // Error de red — el safety timeout lo manejará
+        if (!loadingResolvedRef.current) resolveLoading()
       }
     }
 
     init()
 
-    // Online: refrescar token al reconectarse
-    const handleOnline = async () => {
-      if (!usuarioRef.current) return
-      try {
-        await sb.auth.refreshSession()
-        setSessionReady(true)
-      } catch {}
-    }
-
-    // Visibilitychange: verificar sesión al volver al frente
+    // ── Visibilitychange: verificar sesión al volver al frente ────────────
     const handleVisibility = async () => {
       if (document.visibilityState !== 'visible') return
       if (!usuarioRef.current) return
       try {
         const { data: { session } } = await sb.auth.getSession()
         if (session) {
-          // Sesión válida: activar hooks
           setSessionReady(true)
         } else {
           // Intentar refresh antes de desloguear
@@ -164,41 +177,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           if (data.session) {
             setSessionReady(true)
           } else {
-            // Sesión definitivamente expirada
             doLogout()
           }
         }
       } catch {}
     }
 
-    window.addEventListener('online', handleOnline)
+    const handleOnline = async () => {
+      if (!usuarioRef.current) return
+      try { await sb.auth.refreshSession(); setSessionReady(true) } catch {}
+    }
+
     document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('online', handleOnline)
 
     return () => {
       mounted = false
       subscription.unsubscribe()
-      window.removeEventListener('online', handleOnline)
       document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('online', handleOnline)
     }
   }, [])
 
   const login = async (email: string, password: string) => {
     setLoading(true)
+    loadingResolvedRef.current = false
     const sb = createClient()
     const { data, error } = await sb.auth.signInWithPassword({ email, password })
     if (error) {
-      setLoading(false)
+      resolveLoading()
       return { error: 'Usuario o contraseña incorrectos.' }
     }
     if (data?.user) {
       hadSessionRef.current = true
       const ok = await cargarUsuario(data.user.id)
       if (!ok) {
-        setLoading(false)
+        resolveLoading()
         return { error: 'Usuario no encontrado en el sistema.' }
       }
     }
-    setLoading(false)
+    resolveLoading()
     return {}
   }
 
