@@ -2,7 +2,13 @@
 
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react'
 import { createClient, destroyClient, Usuario, Rol, puedeVer } from '@/lib/supabase'
-import { invalidateStore, setAuthReady, setCurrentUserName } from '@/lib/hooks'
+import { invalidateStore, setSessionReady } from '@/lib/hooks'
+
+// ── Clave de localStorage para sobrevivir remounts de Chrome/Android ──────────
+// Cuando el proceso JS remonta, localStorage persiste pero los useState no.
+// Guardamos el userId para saber que existía una sesión activa y NO mostrar
+// LoginPage mientras Supabase resuelve el token asíncronamente.
+const SESSION_KEY = 'ne_session_uid'
 
 interface AuthContextType {
   usuario: Usuario | null
@@ -20,6 +26,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const usuarioRef = useRef<Usuario | null>(null)
   const cargandoRef = useRef(false)
 
+  // Lee localStorage SINCRÓNICAMENTE al montar para saber si había sesión previa.
+  // Esto sobrevive remounts porque localStorage persiste entre ellos.
+  const hadSessionRef = useRef<boolean>(
+    typeof window !== 'undefined'
+      ? Boolean(localStorage.getItem(SESSION_KEY))
+      : false
+  )
+
   const cargarUsuario = async (uid: string): Promise<boolean> => {
     if (cargandoRef.current) return true
     cargandoRef.current = true
@@ -33,7 +47,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (data && !error) {
         setUsuario(data as Usuario)
         usuarioRef.current = data as Usuario
-        setCurrentUserName(data.nombre || 'Usuario')
+        hadSessionRef.current = true
+        // Persistir para sobrevivir remounts
+        try { localStorage.setItem(SESSION_KEY, uid) } catch {}
+        // Notificar hooks que pueden fetchear con sesión activa
+        setSessionReady(true)
         return true
       }
       return false
@@ -47,7 +65,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const doLogout = async () => {
     setUsuario(null)
     usuarioRef.current = null
+    hadSessionRef.current = false
+    setSessionReady(false)
     invalidateStore()
+    try { localStorage.removeItem(SESSION_KEY) } catch {}
     const sb = createClient()
     try { await sb.auth.signOut() } catch {}
     destroyClient()
@@ -63,9 +84,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let mounted = true
     const sb = createClient()
 
-    // onAuthStateChange es la fuente de verdad
-    // Con @supabase/supabase-js el refresh automático funciona
-    // correctamente via localStorage — no necesita middleware
     const { data: { subscription } } = sb.auth.onAuthStateChange(
       async (event, session) => {
         if (!mounted) return
@@ -73,47 +91,48 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (event === 'SIGNED_OUT') {
           setUsuario(null)
           usuarioRef.current = null
+          hadSessionRef.current = false
+          setSessionReady(false)
           invalidateStore()
-          setAuthReady(false)
+          try { localStorage.removeItem(SESSION_KEY) } catch {}
           setLoading(false)
           return
         }
 
         if (!session) {
-          if (!usuarioRef.current) {
+          // Session null es SIEMPRE transitoria cuando hadSession=true.
+          // Supabase emite esto mientras resuelve el token desde localStorage.
+          // Si había sesión previa → mantener loading=true y esperar TOKEN_REFRESHED.
+          // Si no había sesión → confirmar que no hay usuario.
+          if (!hadSessionRef.current && !usuarioRef.current) {
             setLoading(false)
           }
+          // hadSession=true: NO hacer nada, esperar el siguiente evento
           return
         }
 
-        if (event === 'TOKEN_REFRESHED') {
-          if (!usuarioRef.current && session.user) {
-            await cargarUsuario(session.user.id)
-          }
-          setAuthReady(true)
-          setLoading(false)
-          return
-        }
-
-        // INITIAL_SESSION, SIGNED_IN
-        if (session.user) {
+        // Hay session válida
+        if (!usuarioRef.current && session.user) {
           await cargarUsuario(session.user.id)
-          setAuthReady(true)
+        } else if (usuarioRef.current) {
+          // Usuario ya cargado, solo activar sesión para hooks
+          setSessionReady(true)
         }
         setLoading(false)
       }
     )
 
-    // Arranque: leer sesión del localStorage
+    // Verificación inicial: getSession es síncrono con el localStorage
     const init = async () => {
       try {
         const { data: { session } } = await sb.auth.getSession()
         if (!session) {
-          setUsuario(null)
-          usuarioRef.current = null
-          setLoading(false)
+          // No hay sesión real en localStorage
+          hadSessionRef.current = false
+          try { localStorage.removeItem(SESSION_KEY) } catch {}
+          if (!usuarioRef.current) setLoading(false)
         }
-        // Con sesión: onAuthStateChange dispara INITIAL_SESSION
+        // Con sesión: onAuthStateChange disparará INITIAL_SESSION/TOKEN_REFRESHED
       } catch {
         setLoading(false)
       }
@@ -121,20 +140,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     init()
 
-    // Sin visibilitychange — @supabase/supabase-js con autoRefreshToken
-    // maneja el refresh automáticamente. No necesitamos intervenir.
-
+    // Online: refrescar token al reconectarse
     const handleOnline = async () => {
       if (!usuarioRef.current) return
-      try { await sb.auth.refreshSession() } catch {}
+      try {
+        await sb.auth.refreshSession()
+        setSessionReady(true)
+      } catch {}
+    }
+
+    // Visibilitychange: verificar sesión al volver al frente
+    const handleVisibility = async () => {
+      if (document.visibilityState !== 'visible') return
+      if (!usuarioRef.current) return
+      try {
+        const { data: { session } } = await sb.auth.getSession()
+        if (session) {
+          // Sesión válida: activar hooks
+          setSessionReady(true)
+        } else {
+          // Intentar refresh antes de desloguear
+          const { data } = await sb.auth.refreshSession()
+          if (data.session) {
+            setSessionReady(true)
+          } else {
+            // Sesión definitivamente expirada
+            doLogout()
+          }
+        }
+      } catch {}
     }
 
     window.addEventListener('online', handleOnline)
+    document.addEventListener('visibilitychange', handleVisibility)
 
     return () => {
       mounted = false
       subscription.unsubscribe()
       window.removeEventListener('online', handleOnline)
+      document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, [])
 
@@ -147,6 +191,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { error: 'Usuario o contraseña incorrectos.' }
     }
     if (data?.user) {
+      hadSessionRef.current = true
       const ok = await cargarUsuario(data.user.id)
       if (!ok) {
         setLoading(false)
