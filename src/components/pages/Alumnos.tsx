@@ -712,15 +712,10 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
     const fecha = p.fecha_pago ? new Date(p.fecha_pago+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
     const monto = (p.monto||0).toLocaleString('es-AR')
 
-    // Si el pago tiene id de DB → abrir URL pública (mejor para WS con preview)
+    // Si el pago tiene id de DB → abrir URL pública directamente, sin modal WS
     if (p.id) {
       const urlRecibo = `${window.location.origin}/recibo/${p.id}`
       window.open(urlRecibo, '_blank')
-      if (tel) {
-        const msgWS = `✅ *Recibo de pago — Next Ezeiza*\n\nHola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${a.nombre} ${a.apellido}*.\n\n💰 Monto: *$${monto}*\n📅 Fecha: ${fecha}\n💳 Método: ${p.metodo||'Efectivo'}\n\n📄 Tu recibo: ${urlRecibo}\n\n¡Gracias! 🙌`
-        setUltimoPago({ tel, msg: msgWS, urlRecibo })
-        setModalRecibo(true)
-      }
       return
     }
 
@@ -959,25 +954,11 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
       </ModalSheet>}
 
       {modalRecibo && ultimoPago && <ModalSheet title="Pago registrado ✓" onClose={() => setModalRecibo(false)}>
-        <div style={{textAlign:'center',padding:'8px 0 16px'}}>
+        <div style={{textAlign:'center',padding:'8px 0 20px'}}>
           <div style={{fontSize:'48px',marginBottom:'8px'}}>✅</div>
-          <div style={{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}}>
-            {ultimoPago.urlRecibo ? 'Recibo disponible online' : 'Recibo generado'}
-          </div>
-          <div style={{fontSize:'13px',color:'var(--text2)'}}>
-            {ultimoPago.urlRecibo ? 'El link del recibo va incluido en el mensaje de WhatsApp.' : '¿Querés enviarle el comprobante por WhatsApp?'}
-          </div>
-          {ultimoPago.urlRecibo && (
-            <div style={{marginTop:'10px',padding:'8px 12px',background:'var(--bg)',borderRadius:'10px',fontSize:'11px',color:'var(--text3)',fontFamily:'monospace',wordBreak:'break-all',textAlign:'left'}}>
-              {ultimoPago.urlRecibo}
-            </div>
-          )}
+          <div style={{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}}>Pago registrado</div>
+          <div style={{fontSize:'13px',color:'var(--text2)'}}>El recibo se abrió en una nueva pestaña.</div>
         </div>
-        <button onClick={() => { abrirWS(ultimoPago.tel, ultimoPago.msg); setModalRecibo(false) }}
-          style={{width:'100%',padding:'13px',background:'#25d366',color:'white',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',marginBottom:'8px'}}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.553 4.122 1.523 5.857L0 24l6.338-1.503A11.962 11.962 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.659-.5-5.191-1.375l-.371-.219-3.865.916.977-3.77-.24-.387A9.961 9.961 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z"/></svg>
-          Enviar por WhatsApp
-        </button>
         <BtnG style={{width:'100%'}} onClick={() => setModalRecibo(false)}>Cerrar</BtnG>
       </ModalSheet>}
     </div>
@@ -1267,7 +1248,8 @@ function PagosMasivos({ alumnos, onVolver }: any) {
                         const cel = tel?.replace(/\D/g,'')
                         const contacto = p.alumnos.es_menor ? (p.alumnos.padre_nombre || p.alumnos.nombre) : p.alumnos.nombre
                         const fechaFmt = p.fecha_pago ? new Date(p.fecha_pago+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
-                        const texto = `✅ *Recibo de pago — Next Ezeiza*\n\nHola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${p.alumnos?.nombre} ${p.alumnos?.apellido}*.\n\n💰 Monto: *$${p.monto?.toLocaleString('es-AR')}*\n📅 Fecha: ${fechaFmt}\n💳 Método: ${p.metodo||'Efectivo'}\n\n¡Gracias! 🙌`
+                        const urlRecibo = `${window.location.origin}/recibo/${p.id}`
+                        const texto = `✅ *Recibo de pago — Next Ezeiza*\n\nHola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${p.alumnos?.nombre} ${p.alumnos?.apellido}*.\n\n💰 Monto: *$${p.monto?.toLocaleString('es-AR')}*\n📅 Fecha: ${fechaFmt}\n💳 Método: ${p.metodo||'Efectivo'}\n\n📄 Tu recibo: ${urlRecibo}\n\n¡Gracias! 🙌`
                         return (
                           <a href={`https://wa.me/54${cel}?text=${encodeURIComponent(texto)}`}
                             target="_blank" rel="noopener noreferrer"
