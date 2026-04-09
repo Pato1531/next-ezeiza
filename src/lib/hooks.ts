@@ -33,7 +33,11 @@ export function logActivity(accion: string, modulo: string, detalle?: string) {
 // auth-context llama setSessionReady(true) cuando la sesión está confirmada.
 // Los hooks esperan este flag antes de hacer fetch para evitar devolver []
 // por RLS cuando el token todavía no está activo (race condition en remount).
-let _sessionReady = false
+// Inicializar en true — el authReady ya protege contra fetches prematuros.
+// Se pone en false SOLO cuando auth-context detecta que la sesión expiró,
+// y vuelve a true cuando se confirma la sesión.
+// Así, si auth-context.tsx viejo no llama setSessionReady, los hooks igual fetchean.
+let _sessionReady = true
 const _sessionReadyListeners: Set<() => void> = new Set()
 
 export function setSessionReady(ready: boolean) {
