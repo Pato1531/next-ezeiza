@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { devError, devLog } from '@/lib/debug'
 import { createClient } from '@/lib/supabase'
-import type { Profesora, Alumno, Curso, Clase, HorarioItem, Pago } from '@/lib/supabase'
+import type { Profesora, Alumno, Curso, Clase, HorarioItem, Pago, AsistenciaClase } from '@/lib/supabase'
 
 // ── STUBS para compatibilidad ─────────────────────────────────────────────────
 export const store: Record<string, any[]> = {}
@@ -11,209 +11,38 @@ export const storeTs: Record<string, number> = {}
 export function invalidateStore() {}
 export function clearStore() {}
 
+// ── sessionReady — flag global para sincronizar hooks con la sesión ───────────
+// auth-context llama setSessionReady(true) cuando la sesión está confirmada.
+// Los hooks esperan este flag antes de hacer fetch para evitar devolver []
+// por RLS cuando el token todavía no está activo (race condition en remount).
+let _sessionReady = false
+const _sessionReadyListeners: Set<() => void> = new Set()
 
-// ── logActivity — registrar acciones de usuarios en activity_log ─────────────
-// Se llama fire-and-forget desde las mutaciones para no bloquear la UI.
-// La tabla activity_log debe tener: id, usuario_nombre, accion, modulo, detalle, created_at
-// Nombre de usuario en memoria — se actualiza desde auth-context via setCurrentUserName
-let _currentUserName = 'Sistema'
-export function setCurrentUserName(nombre: string) { _currentUserName = nombre }
-
-export function logActivity(accion: string, modulo: string, detalle?: string) {
-  if (typeof window === 'undefined') return // no-op en SSR
-  try {
-    createClient()
-      .from('activity_log')
-      .insert({ usuario_nombre: _currentUserName, accion, modulo, detalle: detalle || null })
-      .then(({ error }) => { if (error) console.debug('[logActivity]', error.message) })
-  } catch {}
-}
-
-// ── invalidateQuery — forzar refetch desde cualquier componente ───────────────
-const listeners: Record<string, Set<() => void>> = {}
-
-export function invalidateQuery(key: string) {
-  listeners[key]?.forEach(fn => fn())
-}
-
-// ── authReady — flag global que indica si hay sesión confirmada ───────────────
-// Se activa desde auth-context via setAuthReady(true) después de cargarUsuario.
-// Los hooks esperan este flag antes de hacer el primer fetch.
-// Esto evita que fetcheen con RLS sin sesión y sobreescriban el cache con [].
-let _authReady = false
-const _authReadyListeners: Set<() => void> = new Set()
-
-export function setAuthReady(ready: boolean) {
-  _authReady = ready
-  if (ready) _authReadyListeners.forEach(fn => fn())
-}
-
-export function onAuthReady(fn: () => void): () => void {
-  if (_authReady) { fn(); return () => {} }
-  _authReadyListeners.add(fn)
-  return () => { _authReadyListeners.delete(fn) }
-}
-
-// ── Cache helpers (sessionStorage) ───────────────────────────────────────────
-// Permite que al volver del background los datos aparezcan instantáneamente
-// mientras Supabase rehidrata la sesión en background.
-const CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutos
-
-function cacheRead<T>(key: string): T[] | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const raw = sessionStorage.getItem('nq_' + key)
-    if (!raw) return null
-    const { data, ts } = JSON.parse(raw)
-    if (Date.now() - ts > CACHE_TTL_MS) {
-      sessionStorage.removeItem('nq_' + key)
-      return null
-    }
-    return data as T[]
-  } catch { return null }
-}
-
-function cacheWrite<T>(key: string, data: T[]) {
-  if (typeof window === 'undefined') return
-  try {
-    sessionStorage.setItem('nq_' + key, JSON.stringify({ data, ts: Date.now() }))
-  } catch {}
-}
-
-// ── Global in-memory store — fuente de verdad compartida entre instancias ─────
-const _store: Record<string, any[]> = {}
-const _storeVersion: Record<string, number> = {}
-const _storeListeners: Record<string, Set<() => void>> = {}
-const _storeHasData: Record<string, boolean> = {}
-
-function storeGet<T>(key: string): T[] {
-  return (_store[key] as T[]) ?? []
-}
-
-function storeSet<T>(key: string, data: T[]) {
-  _store[key] = data
-  _storeVersion[key] = (_storeVersion[key] ?? 0) + 1
-  _storeHasData[key] = true
-  // Solo escribir cache si hay datos — nunca sobreescribir con array vacío
-  if (data.length > 0) cacheWrite(key, data)
-  _storeListeners[key]?.forEach(fn => fn())
-}
-
-function storeSubscribe(key: string, fn: () => void): () => void {
-  if (!_storeListeners[key]) _storeListeners[key] = new Set()
-  _storeListeners[key].add(fn)
-  return () => { _storeListeners[key]?.delete(fn) }
-}
-
-function storeGetVersion(key: string): number {
-  return _storeVersion[key] ?? 0
-}
-
-// ── useSupabaseQuery ──────────────────────────────────────────────────────────
-//
-// Usa store global como fuente de verdad.
-// Cuando fetch termina → storeSet → TODOS los suscriptores re-renderizan.
-// Resuelve el problema de múltiples instancias del mismo hook.
-//
-function useSupabaseQuery<T>(
-  cacheKey: string,
-  fetcher: () => Promise<T[]>,
-  options?: { skip?: boolean }
-) {
-  const shouldSkip = options?.skip ?? false
-
-  // Inicializar store desde cache si aún no tiene datos
-  if (!_storeHasData[cacheKey]) {
-    const cached = cacheRead<T>(cacheKey)
-    if (cached && cached.length > 0) {
-      _store[cacheKey] = cached
-      _storeHasData[cacheKey] = true
-    }
+export function setSessionReady(ready: boolean) {
+  _sessionReady = ready
+  if (ready) {
+    _sessionReadyListeners.forEach(fn => fn())
+    _sessionReadyListeners.clear()
   }
+}
 
-  // Leer store en cada render — garantiza datos frescos sin depender de useEffect timing
-  // El useState solo se usa para forzar re-renders cuando el store cambia
-  const [, forceUpdate] = useState(0)
-  const data = storeGet<T>(cacheKey)
-  const [isLoading, setIsLoading] = useState(!shouldSkip && !_storeHasData[cacheKey])
-  const [isFetching, setIsFetching] = useState(false)
-
-  const fetchingRef = useRef(false)
-  const mountedRef = useRef(true)
-  const fetcherRef = useRef(fetcher)
-  useEffect(() => { fetcherRef.current = fetcher })
-  useEffect(() => {
-    mountedRef.current = true
-    return () => { mountedRef.current = false }
-  }, [])
-
-  // Suscribirse al store — forceUpdate dispara re-render, data se lee del store
-  // No hay race condition: data = storeGet() siempre lee el valor actual
-  useEffect(() => {
-    // Al suscribirse, forzar re-render por si el store ya fue actualizado
-    forceUpdate(n => n + 1)
-    return storeSubscribe(cacheKey, () => {
-      forceUpdate(n => n + 1)
-      setIsLoading(false)
-    })
-  }, [cacheKey])
-
-  // setData público — actualiza store global
-  const setData = useCallback((updater: T[] | ((prev: T[]) => T[])) => {
-    const current = storeGet<T>(cacheKey)
-    const next = typeof updater === 'function' ? (updater as (p: T[]) => T[])(current) : updater
-    storeSet<T>(cacheKey, next)
-  }, [cacheKey])
-
-  const fetch = useCallback(async () => {
-    if (fetchingRef.current) return
-    if (shouldSkip) {
-      devLog(`[${cacheKey}] skipped (shouldSkip=true)`)
-      return
-    }
-    fetchingRef.current = true
-    if (mountedRef.current) setIsFetching(true)
-    try {
-      const result = await fetcherRef.current()
-      devLog(`[${cacheKey}] fetched ${result.length} items`)
-      // storeSet notifica a TODOS los suscriptores — no importa qué instancia fetcheó
-      storeSet<T>(cacheKey, result)
-      _storeHasData[cacheKey] = true
-    } catch (e: any) {
-      devError(`[${cacheKey}] fetch error: ${e?.message ?? String(e)}`)
-    } finally {
-      fetchingRef.current = false
-      if (mountedRef.current) {
-        setIsLoading(false)
-        setIsFetching(false)
-      }
-    }
-  }, [cacheKey, shouldSkip])
-
-  // Auto fetch al montar — esperar sesión confirmada
-  useEffect(() => {
-    return onAuthReady(() => { fetch() })
-  }, [fetch])
-
-  // Registrar en listeners para invalidateQuery()
-  useEffect(() => {
-    if (!listeners[cacheKey]) listeners[cacheKey] = new Set()
-    listeners[cacheKey].add(fetch)
-    return () => { listeners[cacheKey].delete(fetch) }
-  }, [cacheKey, fetch])
-
-  useRefetchOnFocus(fetch, cacheKey)
-
-  return { data, setData, isLoading, isFetching, refetch: fetch }
+export function onSessionReady(fn: () => void): () => void {
+  if (_sessionReady) { fn(); return () => {} }
+  _sessionReadyListeners.add(fn)
+  return () => { _sessionReadyListeners.delete(fn) }
 }
 
 // ── useRefetchOnFocus ─────────────────────────────────────────────────────────
 //
-// 1. visibilitychange y focus separados — cada uno dispara independiente
-// 2. lastRun actualiza DESPUÉS del éxito → si falla, próximo evento reintenta
-// 3. Throttle 2s — evita duplicados cuando ambos eventos llegan juntos
-// 4. running.current — evita requests paralelos
-// 5. refetchRef — apunta al callback más reciente sin recrear listeners
+// Reglas implementadas:
+// 1. visibilitychange y focus se manejan por separado — cada uno puede
+//    disparar el refetch de forma independiente
+// 2. lastRun se actualiza DESPUÉS del refetch exitoso, no antes
+//    → si falla, el próximo intento no queda bloqueado
+// 3. Throttle de 2s para evitar duplicados cuando llegan juntos
+// 4. running.current evita requests paralelos
+// 5. refetchRef siempre apunta al callback más reciente sin recrear listeners
+// 6. Cleanup correcto en unmount
 //
 function useRefetchOnFocus(refetch: () => Promise<void> | void, label = 'hook') {
   const refetchRef = useRef(refetch)
@@ -226,6 +55,8 @@ function useRefetchOnFocus(refetch: () => Promise<void> | void, label = 'hook') 
     const run = async () => {
       if (running.current) return
       if (Date.now() - lastRun.current < 2000) return
+      // No fetchear hasta que la sesión esté confirmada — evita [] por RLS
+      if (!_sessionReady) return
       running.current = true
       try {
         devLog('[refetch] ' + label)
@@ -250,103 +81,85 @@ function useRefetchOnFocus(refetch: () => Promise<void> | void, label = 'hook') 
   }, [])
 }
 
-// ── useProfesoras ─────────────────────────────────────────────────────────────
-export function useProfesoras() {
-  const { data, setData, isLoading, refetch } = useSupabaseQuery<Profesora>(
-    'profesoras',
-    async () => {
-      const { data, error } = await createClient()
-        .from('profesoras').select('*').eq('activa', true).order('apellido')
-      if (error) throw new Error(error.message)
-      return data ?? []
-    }
-  )
-
-  const actualizar = async (id: string, cambios: Partial<Profesora>) => {
-    const { error } = await createClient().from('profesoras').update(cambios).eq('id', id)
-    if (!error) {
-      setData(prev => prev.map(p => p.id === id ? { ...p, ...cambios } : p))
-      invalidateQuery('profesoras')
-    }
-    return !error
-  }
-
-  const agregar = async (nueva: any) => {
-    const { data: row, error } = await createClient().from('profesoras').insert(nueva).select().single()
-    if (row && !error) {
-      setData(prev => [...prev, row])
-      invalidateQuery('profesoras')
-    }
-    return row
-  }
-
-  return { profesoras: data, loading: isLoading, actualizar, agregar, recargar: refetch }
-}
-
 // ── useCursos ─────────────────────────────────────────────────────────────────
 export function useCursos() {
-  const { data, setData, isLoading, refetch } = useSupabaseQuery<Curso>(
-    'cursos',
-    async () => {
+  const [data, setData] = useState<Curso[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const loadingRef = useRef(false)
+
+  const cargar = useCallback(async () => {
+    if (loadingRef.current) return
+    loadingRef.current = true
+    try {
       const { data, error } = await createClient()
         .from('cursos').select('*').eq('activo', true).order('nombre')
-      if (error) throw new Error(error.message)
-      return data ?? []
+      if (error) console.error('[useCursos]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useCursos] catch', e?.message)
+    } finally {
+      setIsLoading(false)
+      loadingRef.current = false
     }
-  )
+  }, [])
+
+  useEffect(() => {
+    // Esperar sesión confirmada antes del primer fetch
+    return onSessionReady(() => { cargar() })
+  }, [cargar])
+  useRefetchOnFocus(cargar, 'cursos')
 
   const actualizar = async (id: string, cambios: Partial<Curso>) => {
     const { error } = await createClient().from('cursos').update(cambios).eq('id', id)
-    if (!error) {
-      setData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
-      invalidateQuery('cursos')
-      logActivity('Editó curso', 'Cursos', `ID: ${id}`)
-    }
+    if (!error) setData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
     return !error
   }
 
   const agregar = async (nuevo: any) => {
     const { data: row, error } = await createClient().from('cursos').insert(nuevo).select().single()
-    if (row && !error) {
-      setData(prev => [...prev, row])
-      invalidateQuery('cursos')
-      logActivity('Creó curso', 'Cursos', row.nombre || '')
-    }
+    if (row && !error) setData(prev => [...prev, row])
     return row
   }
 
   const eliminar = async (id: string) => {
     const { error } = await createClient().from('cursos').update({ activo: false }).eq('id', id)
-    if (!error) {
-      setData(prev => prev.filter(c => c.id !== id))
-      invalidateQuery('cursos')
-      logActivity('Eliminó curso', 'Cursos', `ID: ${id}`)
-    }
+    if (!error) setData(prev => prev.filter(c => c.id !== id))
     return !error
   }
 
-  return { cursos: data, loading: isLoading, actualizar, agregar, eliminar, recargar: refetch }
+  return { cursos: data, loading: isLoading, actualizar, agregar, eliminar }
 }
 
 // ── useAlumnos ────────────────────────────────────────────────────────────────
 export function useAlumnos() {
-  const { data, setData, isLoading, refetch } = useSupabaseQuery<Alumno>(
-    'alumnos',
-    async () => {
+  const [data, setData] = useState<Alumno[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const loadingRef = useRef(false)
+
+  const cargar = useCallback(async () => {
+    if (loadingRef.current) return
+    loadingRef.current = true
+    try {
       const { data, error } = await createClient()
         .from('alumnos').select('*').eq('activo', true).order('apellido')
-      if (error) throw new Error(error.message)
-      return data ?? []
+      if (error) console.error('[useAlumnos]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useAlumnos] catch', e?.message)
+    } finally {
+      setIsLoading(false)
+      loadingRef.current = false
     }
-  )
+  }, [])
+
+  useEffect(() => {
+    return onSessionReady(() => { cargar() })
+  }, [cargar])
+  useRefetchOnFocus(cargar, 'alumnos')
 
   const actualizar = async (id: string, cambios: Partial<Alumno>) => {
     const { error } = await createClient().from('alumnos').update(cambios).eq('id', id)
-    if (!error) {
-      setData(prev => prev.map(a => a.id === id ? { ...a, ...cambios } : a))
-      invalidateQuery('alumnos')
-      logActivity('Editó alumno', 'Alumnos', `ID: ${id}`)
-    }
+    if (!error) setData(prev => prev.map(a => a.id === id ? { ...a, ...cambios } : a))
     return !error
   }
 
@@ -360,48 +173,58 @@ export function useAlumnos() {
       padre_email: nuevo.padre_email || null, color: nuevo.color || '#652f8d', activo: true,
     }
     try {
-      const res = await window.fetch('/api/crear-alumno', {
+      const res = await fetch('/api/crear-alumno', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(datos)
       })
       const json = await res.json()
       if (json.error) { console.error('[useAlumnos agregar]', json.error); return null }
-      if (json.data) {
-        setData(prev => [...prev, json.data])
-        invalidateQuery('alumnos')
-        logActivity('Agregó alumno', 'Alumnos', `${json.data.nombre} ${json.data.apellido}`)
-        return json.data
-      }
+      if (json.data) { setData(prev => [...prev, json.data]); return json.data }
     } catch (e: any) {
       console.error('[useAlumnos agregar] catch', e?.message)
     }
     return null
   }
 
-  return { alumnos: data, loading: isLoading, actualizar, agregar, recargar: refetch }
+  return { alumnos: data, loading: isLoading, actualizar, agregar, recargar: cargar }
 }
 
 // ── useCursoAlumnos ───────────────────────────────────────────────────────────
 export function useCursoAlumnos(cursoId: string) {
-  const { data, setData, refetch } = useSupabaseQuery<Alumno>(
-    `cursoAlumnos-${cursoId}`,
-    async () => {
-      if (!cursoId) return []
+  const [data, setData] = useState<Alumno[]>([])
+  const loadingRef = useRef(false)
+  const retryRef = useRef(0)
+
+  const cargar = useCallback(async () => {
+    if (!cursoId || loadingRef.current) return
+    loadingRef.current = true
+    try {
       const { data, error } = await createClient()
         .from('cursos_alumnos').select('alumno_id, alumnos(*)').eq('curso_id', cursoId)
-      if (error) throw new Error(error.message)
-      return data?.map((r: any) => r.alumnos).filter(Boolean) ?? []
-    },
-    { skip: !cursoId }
-  )
+      if (error) throw error
+      setData(data?.map((r: any) => r.alumnos).filter(Boolean) ?? [])
+      retryRef.current = 0
+    } catch (e: any) {
+      console.error('[useCursoAlumnos]', e?.message)
+      if (retryRef.current < 3) {
+        retryRef.current++
+        setTimeout(cargar, 2000 * retryRef.current)
+      }
+    } finally {
+      loadingRef.current = false
+    }
+  }, [cursoId])
+
+  useEffect(() => { retryRef.current = 0; cargar() }, [cargar])
+  useRefetchOnFocus(cargar, 'cursos')
 
   const agregar = async (alumnoId: string) => {
     await createClient().from('cursos_alumnos').upsert(
       { curso_id: cursoId, alumno_id: alumnoId, fecha_ingreso: new Date().toISOString().split('T')[0] },
       { onConflict: 'curso_id,alumno_id', ignoreDuplicates: true }
     )
-    refetch()
+    cargar()
     return true
   }
 
@@ -412,75 +235,86 @@ export function useCursoAlumnos(cursoId: string) {
     return true
   }
 
-  return { alumnosCurso: data, agregar, quitar, recargar: refetch }
+  return { alumnosCurso: data, agregar, quitar, recargar: cargar }
 }
 
 // ── useClases ─────────────────────────────────────────────────────────────────
 export function useClases(cursoId: string) {
-  const { data, setData, isLoading, refetch } = useSupabaseQuery<Clase>(
-    `clases-${cursoId}`,
-    async () => {
-      if (!cursoId) return []
+  const [data, setData] = useState<Clase[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const loadingRef = useRef(false)
+
+  const cargar = useCallback(async () => {
+    if (!cursoId || loadingRef.current) { setIsLoading(false); return }
+    loadingRef.current = true
+    try {
       const { data, error } = await createClient().from('clases')
         .select('*').eq('curso_id', cursoId).order('fecha', { ascending: false })
-      if (error) throw new Error(error.message)
-      return data ?? []
-    },
-    { skip: !cursoId }
-  )
+      if (error) console.error('[useClases]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useClases] catch', e?.message)
+    } finally {
+      setIsLoading(false)
+      loadingRef.current = false
+    }
+  }, [cursoId])
+
+  useEffect(() => { cargar() }, [cargar])
+  useRefetchOnFocus(cargar, 'alumnos')
 
   const agregar = async (clase: any) => {
     const { data: row, error } = await createClient().from('clases').insert(clase).select().single()
-    if (row && !error) {
-      setData(prev => [row, ...prev])
-      invalidateQuery(`clases-${cursoId}`)
-      logActivity('Registró clase', 'Cursos', row.fecha || '')
-    }
+    if (row && !error) setData(prev => [row, ...prev])
     return row
   }
 
   const actualizar = async (id: string, cambios: any) => {
     const { error } = await createClient().from('clases').update(cambios).eq('id', id)
-    if (!error) {
-      setData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
-      invalidateQuery(`clases-${cursoId}`)
-    }
+    if (!error) setData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
     return !error
   }
 
-  return { clases: data, setData, loading: isLoading, agregar, actualizar, recargar: refetch }
+  return { clases: data, loading: isLoading, agregar, actualizar, recargar: cargar }
 }
 
 // ── usePagos ──────────────────────────────────────────────────────────────────
 export function usePagos(alumnoId: string) {
-  const { data, setData, refetch } = useSupabaseQuery<Pago>(
-    `pagos-${alumnoId}`,
-    async () => {
-      if (!alumnoId) return []
+  const [data, setData] = useState<Pago[]>([])
+  const loadingRef = useRef(false)
+
+  const cargar = useCallback(async () => {
+    if (!alumnoId || loadingRef.current) return
+    loadingRef.current = true
+    try {
       const { data, error } = await createClient().from('pagos_alumnos').select('*')
         .eq('alumno_id', alumnoId).order('created_at', { ascending: false })
-      if (error) throw new Error(error.message)
-      return data ?? []
-    },
-    { skip: !alumnoId }
-  )
+      if (error) console.error('[usePagos]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[usePagos] catch', e?.message)
+    } finally {
+      loadingRef.current = false
+    }
+  }, [alumnoId])
+
+  useEffect(() => { cargar() }, [cargar])
+  useRefetchOnFocus(cargar, 'cursoAlumnos')
 
   const registrar = async (pago: any) => {
     try {
-      const res = await window.fetch('/api/registrar-pago', {
+      const res = await fetch('/api/registrar-pago', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(pago)
       })
       const json = await res.json()
       if (json.error) { console.error('[usePagos registrar]', json.error); return null }
-      logActivity('Registró pago', 'Pagos', `${pago.mes} ${pago.anio} - $${pago.monto}`)
       if (json.data) {
         setData(prev => {
           const sinDup = prev.filter(p => !(p.mes === json.data.mes && p.anio === json.data.anio))
           return [json.data, ...sinDup]
         })
-        invalidateQuery(`pagos-${alumnoId}`)
         return json.data
       }
     } catch (e: any) {
@@ -494,48 +328,44 @@ export function usePagos(alumnoId: string) {
 
 // ── useExamenes ───────────────────────────────────────────────────────────────
 export function useExamenes(cursoId: string) {
-  const { data, setData, refetch } = useSupabaseQuery<any>(
-    `examenes-${cursoId}`,
-    async () => {
-      if (!cursoId) return []
+  const [data, setData] = useState<any[]>([])
+  const loadingRef = useRef(false)
+
+  const cargar = useCallback(async () => {
+    if (!cursoId || loadingRef.current) return
+    loadingRef.current = true
+    try {
       const { data, error } = await createClient().from('examenes')
         .select('*').eq('curso_id', cursoId).order('fecha')
-      if (error) throw new Error(error.message)
-      return data ?? []
-    },
-    { skip: !cursoId }
-  )
+      if (error) console.error('[useExamenes]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useExamenes] catch', e?.message)
+    } finally {
+      loadingRef.current = false
+    }
+  }, [cursoId])
+
+  useEffect(() => { cargar() }, [cargar])
+  useRefetchOnFocus(cargar, 'clases')
 
   const agregar = async (ex: any) => {
     const { data: row, error } = await createClient().from('examenes').insert(ex).select().single()
-    if (row && !error) {
-      setData(prev => [...prev, row])
-      invalidateQuery(`examenes-${cursoId}`)
-      logActivity('Creó examen', 'Cursos', row.nombre || '')
-    }
+    if (row && !error) setData(prev => [...prev, row])
     return row
   }
 
   const eliminar = async (id: string) => {
     await createClient().from('examenes').delete().eq('id', id)
     setData(prev => prev.filter(e => e.id !== id))
-    invalidateQuery(`examenes-${cursoId}`)
   }
 
-  return { examenes: data, agregar, eliminar, recargar: refetch }
+  return { examenes: data, agregar, eliminar, recargar: cargar }
 }
 
 // ── useAsistencia ─────────────────────────────────────────────────────────────
-// No usa useSupabaseQuery — estructura de datos es Record<claseId, Record<alumnoId, estado>>
 export function useAsistencia(cursoId: string) {
-  const [data, setData] = useState<Record<string, Record<string, string>>>(() => {
-    if (typeof window === 'undefined') return {}
-    try {
-      const raw = sessionStorage.getItem(`nq_asistencia-${cursoId}`)
-      if (raw) { const { data: cached } = JSON.parse(raw); if (cached) return cached }
-    } catch {}
-    return {}
-  })
+  const [data, setData] = useState<Record<string, Record<string, string>>>({})
 
   useEffect(() => {
     if (!cursoId) return
@@ -548,10 +378,6 @@ export function useAsistencia(cursoId: string) {
           m[r.clase_id][r.alumno_id] = r.estado
         })
         setData(m)
-        try {
-          if (typeof window !== 'undefined')
-            sessionStorage.setItem(`nq_asistencia-${cursoId}`, JSON.stringify({ data: m, ts: Date.now() }))
-        } catch {}
       })
   }, [cursoId])
 
@@ -565,7 +391,6 @@ export function useAsistencia(cursoId: string) {
 }
 
 // ── useMiProfesora ────────────────────────────────────────────────────────────
-// No usa useSupabaseQuery — lógica de lookup por email/nombre especial
 export function useMiProfesora() {
   const [data, setData] = useState<Profesora | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -592,30 +417,36 @@ export function useMiProfesora() {
 
 // ── useNotasExamen ────────────────────────────────────────────────────────────
 export function useNotasExamen(examenId: string) {
-  const { data, setData } = useSupabaseQuery<any>(
-    `notasExamen-${examenId}`,
-    async () => {
-      if (!examenId) return []
+  const [data, setData] = useState<any[]>([])
+  const loadingRef = useRef(false)
+
+  const cargar = useCallback(async () => {
+    if (!examenId || loadingRef.current) return
+    loadingRef.current = true
+    try {
       const { data, error } = await createClient().from('notas_examenes')
         .select('*').eq('examen_id', examenId)
-      if (error) throw new Error(error.message)
-      return data ?? []
-    },
-    { skip: !examenId }
-  )
+      if (error) console.error('[useNotasExamen]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useNotasExamen] catch', e?.message)
+    } finally {
+      loadingRef.current = false
+    }
+  }, [examenId])
+
+  useEffect(() => { cargar() }, [cargar])
+  useRefetchOnFocus(cargar, 'pagos')
 
   const guardarNota = async (alumnoId: string, campos: any) => {
     const { data: row } = await createClient().from('notas_examenes')
       .upsert({ examen_id: examenId, alumno_id: alumnoId, ...campos }, { onConflict: 'examen_id,alumno_id' })
       .select().single()
-    if (row) {
-      setData(prev => {
-        const idx = prev.findIndex((n: any) => n.alumno_id === alumnoId)
-        if (idx >= 0) { const n = [...prev]; n[idx] = row; return n }
-        return [...prev, row]
-      })
-      invalidateQuery(`notasExamen-${examenId}`)
-    }
+    if (row) setData(prev => {
+      const idx = prev.findIndex((n: any) => n.alumno_id === alumnoId)
+      if (idx >= 0) { const n = [...prev]; n[idx] = row; return n }
+      return [...prev, row]
+    })
   }
 
   return { notas: data, guardarNota }
@@ -623,65 +454,85 @@ export function useNotasExamen(examenId: string) {
 
 // ── useHorario ────────────────────────────────────────────────────────────────
 export function useHorario() {
-  const { data, setData, isLoading, refetch } = useSupabaseQuery<HorarioItem>(
-    'horario',
-    async () => {
+  const [data, setData] = useState<HorarioItem[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const loadingRef = useRef(false)
+
+  const cargar = useCallback(async () => {
+    if (loadingRef.current) return
+    loadingRef.current = true
+    try {
       const { data, error } = await createClient().from('horario')
         .select('*').eq('activo', true).order('hora_inicio')
-      if (error) throw new Error(error.message)
-      return data ?? []
+      if (error) console.error('[useHorario]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useHorario] catch', e?.message)
+    } finally {
+      setIsLoading(false)
+      loadingRef.current = false
     }
-  )
+  }, [])
+
+  useEffect(() => {
+    return onSessionReady(() => { cargar() })
+  }, [cargar])
+  useRefetchOnFocus(cargar, 'examenes')
 
   const agregar = async (item: any) => {
     const { data: row, error } = await createClient().from('horario').insert(item).select().single()
-    if (row && !error) {
-      setData(prev => [...prev, row])
-      invalidateQuery('horario')
-    }
+    if (row && !error) setData(prev => [...prev, row])
     return row
   }
 
   const eliminar = async (id: string) => {
     const { error } = await createClient().from('horario').delete().eq('id', id)
-    if (!error) {
-      setData(prev => prev.filter(h => h.id !== id))
-      invalidateQuery('horario')
-    }
+    if (!error) setData(prev => prev.filter(h => h.id !== id))
     return !error
   }
 
-  return { horario: data, loading: isLoading, agregar, eliminar, recargar: refetch }
+  return { horario: data, loading: isLoading, agregar, eliminar, recargar: cargar }
 }
 
 // ── useComunicados ────────────────────────────────────────────────────────────
 export function useComunicados() {
-  const { data, setData, isLoading, refetch } = useSupabaseQuery<any>(
-    'comunicados',
-    async () => {
+  const [data, setData] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const loadingRef = useRef(false)
+
+  const cargar = useCallback(async () => {
+    if (loadingRef.current) return
+    loadingRef.current = true
+    try {
       const { data, error } = await createClient().from('comunicados')
         .select('*').eq('activo', true).order('created_at', { ascending: false })
-      if (error) throw new Error(error.message)
-      return data ?? []
+      if (error) console.error('[useComunicados]', error.message)
+      else setData(data ?? [])
+    } catch (e: any) {
+      console.error('[useComunicados] catch', e?.message)
+    } finally {
+      setIsLoading(false)
+      loadingRef.current = false
     }
-  )
+  }, [])
+
+  useEffect(() => {
+    return onSessionReady(() => { cargar() })
+  }, [cargar])
+  useRefetchOnFocus(cargar, 'notasExamen')
 
   const agregar = async (c: any) => {
     const { data: row } = await createClient().from('comunicados').insert(c).select().single()
-    if (row) {
-      setData(prev => [row, ...prev])
-      invalidateQuery('comunicados')
-    }
+    if (row) setData(prev => [row, ...prev])
     return row
   }
 
   const eliminar = async (id: string) => {
     await createClient().from('comunicados').update({ activo: false }).eq('id', id)
     setData(prev => prev.filter(c => c.id !== id))
-    invalidateQuery('comunicados')
   }
 
-  return { comunicados: data, loading: isLoading, agregar, eliminar, recargar: refetch }
+  return { comunicados: data, loading: isLoading, agregar, eliminar, recargar: cargar }
 }
 
 // ── useHistorialCursos ────────────────────────────────────────────────────────
