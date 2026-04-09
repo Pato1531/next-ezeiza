@@ -168,7 +168,7 @@ export default function AppShell() {
         <div style={{padding:'16px 16px 24px',display:page==='perfil'?'block':'none'}}><Perfil /></div>
         <div style={{padding:'16px 16px 24px',display:page==='agenda'?'block':'none'}}><Agenda /></div>
         <div style={{padding:'16px 16px 24px',display:page==='comunicados'?'block':'none'}}><Comunicados /></div>
-        <div style={{padding:'16px 16px 24px',display:page==='actividad'?'block':'none'}}><Actividad /></div>
+        <div style={{padding:'16px 16px 24px',display:page==='actividad'?'block':'none'}}>{Actividad ? <Actividad /> : <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Módulo cargando...</div>}</div>
         <div style={{padding:'16px 16px 24px',display:page==='atencion'?'block':'none'}}><AtencionCliente /></div>
       </div>
 
