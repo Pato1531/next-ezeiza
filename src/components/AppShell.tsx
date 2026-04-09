@@ -95,6 +95,9 @@ export default function AppShell() {
     return perms.find(p => puedeVer(p)) ?? 'alumnos'
   })
   const [masOpen, setMasOpen] = useState(false)
+  // Tracking de paneles ya montados — "mount once, never unmount"
+  // Evita renderizar todos los paneles al inicio (reduce error surface)
+  const [mounted, setMounted] = useState<Set<string>>(() => new Set([page]))
   const [comunicadosBadge, setComunicadosBadge] = useState(0)
   const { comunicados } = useComunicados()
   const [vistosLocal, setVistosLocal] = useState<string[]>([])
@@ -125,6 +128,7 @@ export default function AppShell() {
     setVistosLocal(ids)
     setComunicadosBadge(0)
     setPage('comunicados')
+    setMounted(prev => new Set([...prev, 'comunicados']))
     setMasOpen(false)
     try { sessionStorage.setItem('nav_page', 'comunicados') } catch {}
   }
@@ -143,6 +147,7 @@ export default function AppShell() {
   const navTo = (id: string) => {
     if (id === 'comunicados') { irAComunicados(); return }
     setPage(id)
+    setMounted(prev => new Set([...prev, id]))
     setMasOpen(false)
     try { sessionStorage.setItem('nav_page', id) } catch {}
   }
@@ -175,18 +180,18 @@ export default function AppShell() {
 
       {/* CONTENT — display:none para mantener estado sin desmontar */}
       <div style={{flex:1,overflowY:'auto',position:'relative'}}>
-        <div style={{padding:'16px 16px 24px',display:page==='dashboard'?'block':'none'}}><PanelErrorBoundary name="Dashboard"><Dashboard /></PanelErrorBoundary></div>
-        <div style={{padding:'16px 16px 24px',display:page==='alumnos'?'block':'none'}}><PanelErrorBoundary name="Alumnos"><Alumnos /></PanelErrorBoundary></div>
-        <div style={{padding:'16px 16px 24px',display:page==='cursos'?'block':'none'}}><PanelErrorBoundary name="Cursos"><Cursos /></PanelErrorBoundary></div>
-        <div style={{padding:'16px 16px 24px',display:page==='horarios'?'block':'none'}}><PanelErrorBoundary name="Horarios"><Horarios /></PanelErrorBoundary></div>
-        <div style={{padding:'16px 16px 24px',display:page==='profesoras'?'block':'none'}}><PanelErrorBoundary name="Profesoras"><Profesoras /></PanelErrorBoundary></div>
-        <div style={{padding:'16px 16px 24px',display:page==='reportes'?'block':'none'}}><PanelErrorBoundary name="Reportes"><Reportes /></PanelErrorBoundary></div>
-        <div style={{padding:'16px 16px 24px',display:page==='permisos'?'block':'none'}}><PanelErrorBoundary name="Permisos"><Permisos /></PanelErrorBoundary></div>
-        <div style={{padding:'16px 16px 24px',display:page==='perfil'?'block':'none'}}><PanelErrorBoundary name="Perfil"><Perfil /></PanelErrorBoundary></div>
-        <div style={{padding:'16px 16px 24px',display:page==='agenda'?'block':'none'}}><PanelErrorBoundary name="Agenda"><Agenda /></PanelErrorBoundary></div>
-        <div style={{padding:'16px 16px 24px',display:page==='comunicados'?'block':'none'}}><PanelErrorBoundary name="Comunicados"><Comunicados /></PanelErrorBoundary></div>
-        <div style={{padding:'16px 16px 24px',display:page==='actividad'?'block':'none'}}><Suspense fallback={<div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>}><Actividad /></Suspense></div>
-        <div style={{padding:'16px 16px 24px',display:page==='atencion'?'block':'none'}}><Suspense fallback={<div>Cargando...</div>}><AtencionCliente /></Suspense></div>
+        {mounted.has('dashboard') && <div style={{padding:'16px 16px 24px',display:page==='dashboard'?'block':'none'}}><PanelErrorBoundary name="Dashboard"><Dashboard /></PanelErrorBoundary></div>}
+        {mounted.has('alumnos') && <div style={{padding:'16px 16px 24px',display:page==='alumnos'?'block':'none'}}><PanelErrorBoundary name="Alumnos"><Alumnos /></PanelErrorBoundary></div>}
+        {mounted.has('cursos') && <div style={{padding:'16px 16px 24px',display:page==='cursos'?'block':'none'}}><PanelErrorBoundary name="Cursos"><Cursos /></PanelErrorBoundary></div>}
+        {mounted.has('horarios') && <div style={{padding:'16px 16px 24px',display:page==='horarios'?'block':'none'}}><PanelErrorBoundary name="Horarios"><Horarios /></PanelErrorBoundary></div>}
+        {mounted.has('profesoras') && <div style={{padding:'16px 16px 24px',display:page==='profesoras'?'block':'none'}}><PanelErrorBoundary name="Profesoras"><Profesoras /></PanelErrorBoundary></div>}
+        {mounted.has('reportes') && <div style={{padding:'16px 16px 24px',display:page==='reportes'?'block':'none'}}><PanelErrorBoundary name="Reportes"><Reportes /></PanelErrorBoundary></div>}
+        {mounted.has('permisos') && <div style={{padding:'16px 16px 24px',display:page==='permisos'?'block':'none'}}><PanelErrorBoundary name="Permisos"><Permisos /></PanelErrorBoundary></div>}
+        {mounted.has('perfil') && <div style={{padding:'16px 16px 24px',display:page==='perfil'?'block':'none'}}><PanelErrorBoundary name="Perfil"><Perfil /></PanelErrorBoundary></div>}
+        {mounted.has('agenda') && <div style={{padding:'16px 16px 24px',display:page==='agenda'?'block':'none'}}><PanelErrorBoundary name="Agenda"><Agenda /></PanelErrorBoundary></div>}
+        {mounted.has('comunicados') && <div style={{padding:'16px 16px 24px',display:page==='comunicados'?'block':'none'}}><PanelErrorBoundary name="Comunicados"><Comunicados /></PanelErrorBoundary></div>}
+        {mounted.has('actividad') && <div style={{padding:'16px 16px 24px',display:page==='actividad'?'block':'none'}}><Suspense fallback={<div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>}><Actividad /></Suspense></div>}
+        {mounted.has('atencion') && <div style={{padding:'16px 16px 24px',display:page==='atencion'?'block':'none'}}><Suspense fallback={<div>Cargando...</div>}><AtencionCliente /></Suspense></div>}
       </div>
 
       {/* DRAWER "MÁS" */}
