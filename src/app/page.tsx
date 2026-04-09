@@ -1,42 +1,36 @@
 'use client'
 
-import { useEffect, useState, useRef } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import LoginPage from '@/components/LoginPage'
 import AppShell from '@/components/AppShell'
 
 export default function Home() {
   const { usuario, loading } = useAuth()
-  const [timedOut, setTimedOut] = useState(false)
   const [mostrarApp, setMostrarApp] = useState(false)
+  // hadSession: leído del localStorage para saber si hubo sesión previa.
+  // Evita mostrar LoginPage prematuramente mientras Supabase resuelve el token.
+  const [hadSession] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false
+    return Boolean(localStorage.getItem('ne_session_uid'))
+  })
 
   useEffect(() => {
-    const t = setTimeout(() => setTimedOut(true), 6000)
-    return () => clearTimeout(t)
-  }, [])
-
-  useEffect(() => {
-    // Una vez que hay usuario, mostrar la app y NUNCA ocultarla
-    // aunque usuario vuelva a null transitoriamente.
-    // Esto evita que AppShell se desmonte y pierda su estado.
-    if (usuario) {
-      setMostrarApp(true)
-    }
+    if (usuario) setMostrarApp(true)
   }, [usuario])
 
-  // Carga inicial
-  if (loading && !timedOut) {
+  // Mientras carga Y había sesión previa → mostrar spinner (no LoginPage)
+  // Esto evita el flash de login al volver del background
+  if (loading || (hadSession && !mostrarApp && !usuario)) {
     return <Spinner />
   }
 
-  // Si nunca hubo usuario, mostrar login
+  // Sin sesión previa y sin usuario → login
   if (!mostrarApp && !usuario) {
     return <LoginPage />
   }
 
-  // AppShell siempre montado una vez que el usuario se logueó
-  // Si usuario es null transitoriamente, AppShell sigue montado
-  // con su estado intacto hasta que se confirme la sesión
+  // App montada — nunca se desmonta aunque usuario sea null transitoriamente
   return (
     <>
       {mostrarApp && <AppShell />}
