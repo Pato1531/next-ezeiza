@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { useAlumnos, usePagos, useMiProfesora, useHistorialCursos, useCuotasHistorial, useCursos } from '@/lib/hooks'
+import { useAlumnos, usePagos, useMiProfesora, useHistorialCursos, useCuotasHistorial, useCursos, logActivity } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 
@@ -113,7 +113,7 @@ export default function Alumnos() {
     setLoadingBajas(false)
   }
   const irAFormNuevo = () => {
-    setForm({ nombre:'', apellido:'', edad:0, fecha_nacimiento:'', fecha_alta:new Date().toISOString().split('T')[0], matricula:0, telefono:'', email:'', nivel:'Básico', cuota_mensual:0, es_menor:false, padre_nombre:'', padre_telefono:'', padre_email:'', color: COLORES[alumnos.length % COLORES.length] })
+    setForm({ nombre:'', apellido:'', dni:'', edad:0, fecha_nacimiento:'', fecha_alta:new Date().toISOString().split('T')[0], matricula:0, telefono:'', email:'', nivel:'Básico', cuota_mensual:0, es_menor:false, padre_nombre:'', padre_telefono:'', padre_email:'', padre_dni:'', color: COLORES[alumnos.length % COLORES.length] })
     setVista('form')
   }
   const irAFormEditar = () => { if (sel) { setForm({...sel}); setVista('form') } }
@@ -128,6 +128,7 @@ export default function Alumnos() {
         const nuevo = await agregar(datos)
         clearTimeout(t)
         if (nuevo) {
+          logActivity('Creó alumno', 'Alumnos', `${datos.nombre} ${datos.apellido}`)
           // Registrar matrícula como pago si tiene valor
           if (datos.matricula > 0) {
             const sb = createClient()
@@ -151,6 +152,7 @@ export default function Alumnos() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id, datos })
         }).catch(e => console.error('Error API actualizar:', e))
+        logActivity('Editó alumno', 'Alumnos', `${datos.nombre} ${datos.apellido}`)
         clearTimeout(t)
         irADetalle(id)
       }
@@ -184,6 +186,7 @@ export default function Alumnos() {
         sb.from('cursos_alumnos').delete().eq('alumno_id', sel.id),
         sb.from('alumnos').update({ activo: false }).eq('id', sel.id)
       ])
+      logActivity('Dio de baja alumno', 'Alumnos', `${sel.nombre} ${sel.apellido} — ${motivoBaja === 'Otro' ? motivoLibre : motivoBaja}`)
       await recargar()
     } catch (e) { console.error(e) }
     setGuardandoBaja(false)
@@ -201,7 +204,7 @@ export default function Alumnos() {
   }
 
   const filtrados = alumnos.filter(a => {
-    const matchBusq = !busqueda || `${a.nombre} ${a.apellido} ${a.nivel}`.toLowerCase().includes(busqueda.toLowerCase())
+    const matchBusq = !busqueda || `${a.nombre} ${a.apellido} ${a.nivel} ${a.dni||''}`.toLowerCase().includes(busqueda.toLowerCase())
     const matchSinCurso = !soloSinCurso || alumnosSinCurso.has(a.id)
     const matchSinCuota = !soloSinCuota || !a.cuota_mensual || a.cuota_mensual === 0
     const matchPago = filtroPago === 'todos' ? true
@@ -344,28 +347,35 @@ export default function Alumnos() {
           <Field2 label="Teléfono"><Input value={form?.telefono||''} onChange={(v:string)=>setForm({...form,telefono:v})} /></Field2>
         </Row2>
         <Row2>
+          <Field2 label="DNI alumno"><Input value={form?.dni||''} onChange={(v:string)=>setForm({...form,dni:v})} placeholder="Sin puntos..." /></Field2>
           <Field2 label="Fecha de alta">
             <input type="date" style={IS} value={form?.fecha_alta||new Date().toISOString().split('T')[0]} onChange={(e:any)=>setForm({...form,fecha_alta:e.target.value})} />
           </Field2>
-          <Field2 label="Matrícula de inscripción ($)"><Input type="number" value={form?.matricula||''} onChange={(v:string)=>setForm({...form,matricula:+v})} /></Field2>
         </Row2>
-        <Field2 label="Email"><Input type="email" value={form?.email||''} onChange={(v:string)=>setForm({...form,email:v})} /></Field2>
+        <Field2 label="Email"><Input type="email" value={form?.email||''} onChange={(v:string)=>setForm({...form,email:v})} />
+        </Field2>
+        <Row2>
+          <Field2 label="Matrícula de inscripción ($)"><Input type="number" value={form?.matricula||''} onChange={(v:string)=>setForm({...form,matricula:+v})} /></Field2>
+          <Field2 label="Cuota mensual ($)"><Input type="number" value={form?.cuota_mensual||''} onChange={(v:string)=>setForm({...form,cuota_mensual:+v})} /></Field2>
+        </Row2>
         <Row2>
           <Field2 label="Nivel">
             <select style={IS} value={form?.nivel||'Básico'} onChange={(e:any)=>setForm({...form,nivel:e.target.value})}>
               {NIVELES.map(n=><option key={n}>{n}</option>)}
             </select>
           </Field2>
-          <Field2 label="Cuota mensual ($)"><Input type="number" value={form?.cuota_mensual||''} onChange={(v:string)=>setForm({...form,cuota_mensual:+v})} /></Field2>
+          <Field2 label="¿Es menor de edad?">
+            <select style={IS} value={form?.es_menor?'si':'no'} onChange={(e:any)=>setForm({...form,es_menor:e.target.value==='si'})}>
+              <option value="no">No</option>
+              <option value="si">Sí</option>
+            </select>
+          </Field2>
         </Row2>
-        <Field2 label="¿Es menor de edad?">
-          <select style={IS} value={form?.es_menor?'si':'no'} onChange={(e:any)=>setForm({...form,es_menor:e.target.value==='si'})}>
-            <option value="no">No</option>
-            <option value="si">Sí</option>
-          </select>
-        </Field2>
         {form?.es_menor && <>
-          <Field2 label="Nombre padre/madre"><Input value={form?.padre_nombre||''} onChange={(v:string)=>setForm({...form,padre_nombre:v})} /></Field2>
+          <Row2>
+            <Field2 label="Nombre padre/madre"><Input value={form?.padre_nombre||''} onChange={(v:string)=>setForm({...form,padre_nombre:v})} /></Field2>
+            <Field2 label="DNI padre/madre"><Input value={form?.padre_dni||''} onChange={(v:string)=>setForm({...form,padre_dni:v})} placeholder="Sin puntos..." /></Field2>
+          </Row2>
           <Row2>
             <Field2 label="Tel. contacto"><Input value={form?.padre_telefono||''} onChange={(v:string)=>setForm({...form,padre_telefono:v})} /></Field2>
             <Field2 label="Email contacto"><Input value={form?.padre_email||''} onChange={(v:string)=>setForm({...form,padre_email:v})} /></Field2>
@@ -576,10 +586,6 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
   const { historial } = useHistorialCursos(a.id)
   const { historial: histCuotas } = useCuotasHistorial(a.id)
   const [guardandoPago, setGuardandoPago] = useState(false)
-  const [modalEditPago, setModalEditPago] = useState(false)
-  const [pagoEditando, setPagoEditando] = useState<any>(null)
-  const [confirmDeletePago, setConfirmDeletePago] = useState<any>(null)
-  const [eliminandoPago, setEliminandoPago] = useState(false)
   const [cursoActual, setCursoActual] = useState<any>(null)
   const { cursos: todosLosCursos } = useCursos()
   const [modalAsignarCurso, setModalAsignarCurso] = useState(false)
@@ -675,106 +681,49 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
     const contacto = a.es_menor ? a.padre_nombre || a.nombre : a.nombre
     const tel = a.es_menor ? a.padre_telefono : a.telefono
     const fecha = p.fecha_pago ? new Date(p.fecha_pago+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
+    const monto = (p.monto||0).toLocaleString('es-AR')
+
+    // Si el pago tiene id de DB → abrir URL pública (mejor para WS con preview)
+    if (p.id) {
+      const urlRecibo = `${window.location.origin}/recibo/${p.id}`
+      window.open(urlRecibo, '_blank')
+      if (tel) {
+        const msgWS = `✅ *Recibo de pago — Next Ezeiza*\n\nHola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${a.nombre} ${a.apellido}*.\n\n💰 Monto: *$${monto}*\n📅 Fecha: ${fecha}\n💳 Método: ${p.metodo||'Efectivo'}\n\n📄 Tu recibo: ${urlRecibo}\n\n¡Gracias! 🙌`
+        setUltimoPago({ tel, msg: msgWS, urlRecibo })
+        setModalRecibo(true)
+      }
+      return
+    }
+
+    // Fallback: pago sin id todavía → HTML local con print automático
     const num = Math.floor(Math.random()*900000)+100000
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo ${a.nombre} ${a.apellido}</title>
-    <style>
-      body{font-family:Arial,sans-serif;padding:0;margin:0;background:#f5f0fa}
-      .wrap{max-width:400px;margin:20px auto;background:white;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(101,47,141,.15)}
-      .hdr{background:linear-gradient(135deg,#652f8d,#8b4fc4);padding:24px;color:white}
-      .logo{font-size:20px;font-weight:900;margin-bottom:4px}.logo span{opacity:.7;font-weight:400}
-      .rec-num{font-size:12px;opacity:.7;margin-top:2px}
-      .monto-sec{background:#f2e8f9;padding:20px;text-align:center;border-bottom:2px dashed #d4a8e8}
-      .monto-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}
-      .monto{font-size:44px;font-weight:900;color:#652f8d;letter-spacing:-2px}
-      .monto-mes{font-size:13px;color:#9b8eaa;margin-top:4px}
-      .body{padding:20px}
-      .fila{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0edf5}
-      .fila:last-child{border-bottom:none}
-      .fila-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
-      .fila-val{font-size:13px;color:#1a1020;font-weight:700;text-align:right;max-width:60%}
-      .badge{background:#e6f4ec;color:#2d7a4f;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}
-      .footer{background:#faf7fd;padding:14px 20px;text-align:center;font-size:11px;color:#9b8eaa}
-      @media print{body{background:white}.wrap{box-shadow:none;margin:0;border-radius:0}}
-    </style></head><body>
-    <div class="wrap">
-      <div class="hdr">
-        <div class="logo">Next <span>Ezeiza</span></div>
-        <div class="rec-num">Comprobante #${num} · ${fecha}</div>
-      </div>
-      <div class="monto-sec">
-        <div class="monto-lab">Total abonado</div>
-        <div class="monto">$${(p.monto||0).toLocaleString('es-AR')}</div>
-        <div class="monto-mes">Cuota ${p.mes} ${p.anio}</div>
-      </div>
-      <div class="body">
-        <div class="fila"><div class="fila-lab">Alumno</div><div class="fila-val">${a.nombre} ${a.apellido}</div></div>
-        <div class="fila"><div class="fila-lab">Curso</div><div class="fila-val">${cursoActual?.nombre||'—'}</div></div>
-        <div class="fila"><div class="fila-lab">Método</div><div class="fila-val">${p.metodo||'Efectivo'}</div></div>
-        <div class="fila"><div class="fila-lab">Fecha</div><div class="fila-val">${fecha}</div></div>
-        ${p.observaciones?`<div class="fila"><div class="fila-lab">Nota</div><div class="fila-val">${p.observaciones}</div></div>`:''}
-        <div class="fila"><div class="fila-lab">Estado</div><div class="fila-val"><span class="badge">✓ Pagado</span></div></div>
-      </div>
-      <div class="footer">Next Ezeiza English Institute · Ezeiza, Buenos Aires</div>
-    </div>
-    <script>setTimeout(function(){window.print()},400)</script>
-    </body></html>`
+    <style>body{font-family:Arial,sans-serif;padding:0;margin:0;background:#f5f0fa}.wrap{max-width:400px;margin:20px auto;background:white;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(101,47,141,.15)}.hdr{background:#652f8d;padding:24px;color:white}.logo{font-size:20px;font-weight:900}.logo span{opacity:.7;font-weight:400}.rec-num{font-size:12px;opacity:.7;margin-top:2px}.monto-sec{background:#f2e8f9;padding:20px;text-align:center;border-bottom:2px dashed #d4a8e8}.monto-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}.monto{font-size:44px;font-weight:900;color:#652f8d;letter-spacing:-2px}.monto-mes{font-size:13px;color:#9b8eaa;margin-top:4px}.body{padding:20px}.fila{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0edf5}.fila:last-child{border-bottom:none}.fila-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.04em}.fila-val{font-size:13px;color:#1a1020;font-weight:700;text-align:right;max-width:60%}.badge{background:#e6f4ec;color:#2d7a4f;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}.footer{background:#faf7fd;padding:14px 20px;text-align:center;font-size:11px;color:#9b8eaa}@media print{body{background:white}.wrap{box-shadow:none;margin:0;border-radius:0}}</style></head><body>
+    <div class="wrap"><div class="hdr"><div class="logo">Next <span>Ezeiza</span></div><div class="rec-num">Comprobante #${num} · ${fecha}</div></div>
+    <div class="monto-sec"><div class="monto-lab">Total abonado</div><div class="monto">$${monto}</div><div class="monto-mes">Cuota ${p.mes} ${p.anio}</div></div>
+    <div class="body"><div class="fila"><div class="fila-lab">Alumno</div><div class="fila-val">${a.nombre} ${a.apellido}</div></div><div class="fila"><div class="fila-lab">Método</div><div class="fila-val">${p.metodo||'Efectivo'}</div></div><div class="fila"><div class="fila-lab">Fecha</div><div class="fila-val">${fecha}</div></div><div class="fila"><div class="fila-lab">Estado</div><div class="fila-val"><span class="badge">✓ Pagado</span></div></div></div>
+    <div class="footer">Next Ezeiza English Institute · Ezeiza, Buenos Aires</div></div>
+    <script>setTimeout(function(){window.print()},400)</script></body></html>`
     const blob = new Blob([html], {type:'text/html;charset=utf-8'})
     const url = URL.createObjectURL(blob)
     window.open(url, '_blank')
     setTimeout(() => URL.revokeObjectURL(url), 15000)
-    // WS con aviso de pago
     if (tel) {
-      const msgWS = `✅ *Recibo de pago — Next Ezeiza*
-
-Hola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${a.nombre} ${a.apellido}*.
-
-💰 Monto: *$${(p.monto||0).toLocaleString('es-AR')}*
-📅 Fecha: ${fecha}
-💳 Método: ${p.metodo||'Efectivo'}
-
-¡Gracias! 🙌`
-      setUltimoPago({ tel, msg: msgWS })
+      const msgWS = `✅ *Recibo de pago — Next Ezeiza*\n\nHola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${a.nombre} ${a.apellido}*.\n\n💰 Monto: *$${monto}*\n📅 Fecha: ${fecha}\n💳 Método: ${p.metodo||'Efectivo'}\n\n¡Gracias! 🙌`
+      setUltimoPago({ tel, msg: msgWS, urlRecibo: null })
       setModalRecibo(true)
     }
   }
-
   const guardarPago = async () => {
     setGuardandoPago(true)
     const resultado = await registrar({ ...pago, alumno_id: a.id })
     setGuardandoPago(false)
     setModalPago(false)
     if (resultado) {
+      logActivity('Registró pago', 'Pagos', `${a.nombre} ${a.apellido} — ${pago.mes} ${pago.anio} — $${pago.monto}`)
       window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: a.id } }))
       generarRecibo({ ...pago, alumno_id: a.id })
     }
-  }
-
-  const guardarEditPago = async () => {
-    if (!pagoEditando) return
-    setGuardandoPago(true)
-    try {
-      await fetch('/api/registrar-pago', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...pagoEditando, alumno_id: a.id })
-      })
-      window.dispatchEvent(new CustomEvent('recargar-pagos', { detail: { alumno_id: a.id } }))
-    } catch(e) { console.error(e) }
-    setGuardandoPago(false)
-    setModalEditPago(false)
-    setPagoEditando(null)
-  }
-
-  const eliminarPago = async () => {
-    if (!confirmDeletePago) return
-    setEliminandoPago(true)
-    try {
-      const sb = createClient()
-      await sb.from('pagos_alumnos').delete().eq('id', confirmDeletePago.id)
-      window.dispatchEvent(new CustomEvent('recargar-pagos', { detail: { alumno_id: a.id } }))
-    } catch(e) { console.error(e) }
-    setEliminandoPago(false)
-    setConfirmDeletePago(null)
   }
 
   const cursosFiltrados = busqCurso
@@ -821,6 +770,7 @@ Hola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${
 
       {tab === 'datos' && <Card>
         <FieldRO label="Nombre" value={`${a.nombre} ${a.apellido}`} />
+        {a.dni && <FieldRO label="DNI" value={a.dni} />}
         <FieldRO label="Fecha de nacimiento" value={a.fecha_nacimiento ? new Date(a.fecha_nacimiento+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'}) : '—'} />
         <FieldRO label="Edad" value={a.edad ? `${a.edad} años` : '—'} />
         {a.fecha_alta && <FieldRO label="Alumno activo desde" value={new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})} />}
@@ -853,6 +803,7 @@ Hola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${
             <SL style={{marginBottom:'8px'}}>Contacto padre/madre</SL>
             <div style={{fontSize:'14px',fontWeight:600}}>{a.padre_nombre}</div>
             <div style={{fontSize:'13px',color:'var(--text2)',marginTop:'3px'}}>{a.padre_telefono} · {a.padre_email}</div>
+            {a.padre_dni && <div style={{fontSize:'12px',color:'var(--text3)',marginTop:'3px'}}>DNI: {a.padre_dni}</div>}
           </div>
         )}
 
@@ -891,12 +842,6 @@ Hola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px'}}>
           <SL>Historial de pagos</SL>
           <BtnP sm onClick={() => setModalPago(true)}>+ Registrar pago</BtnP>
-          {(a.telefono || a.padre_telefono) && (
-            <button onClick={msgCuotaPendiente} style={{padding:'9px 12px',background:'#25d366',color:'white',border:'none',borderRadius:'10px',fontSize:'12px',fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.553 4.122 1.523 5.857L0 24l6.338-1.503A11.962 11.962 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.659-.5-5.191-1.375l-.371-.219-3.865.916.977-3.77-.24-.387A9.961 9.961 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z"/></svg>
-              Avisar
-            </button>
-          )}
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(12,1fr)',gap:'3px',marginBottom:'14px'}}>
           {MESES.map((m,i) => {
@@ -924,14 +869,6 @@ Hola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${
                 <button onClick={() => generarRecibo(p)} style={{padding:'7px 10px',background:'var(--vl)',color:'var(--v)',border:'none',borderRadius:'9px',fontSize:'11px',fontWeight:700,cursor:'pointer',flexShrink:0}}>
                   Recibo
                 </button>
-                {puedeEditar && <>
-                  <button onClick={() => { setPagoEditando({...p}); setModalEditPago(true) }} style={{padding:'7px 10px',background:'var(--bg)',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'9px',fontSize:'11px',fontWeight:700,cursor:'pointer',flexShrink:0}}>
-                    Editar
-                  </button>
-                  <button onClick={() => setConfirmDeletePago(p)} style={{padding:'7px 10px',background:'var(--redl)',color:'var(--red)',border:'none',borderRadius:'9px',fontSize:'11px',fontWeight:700,cursor:'pointer',flexShrink:0}}>
-                    ✕
-                  </button>
-                </>}
               </div>
             </div>
           )
@@ -992,58 +929,20 @@ Hola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${
         </div>
       </ModalSheet>}
 
-      {/* MODAL EDITAR PAGO */}
-      {modalEditPago && pagoEditando && <ModalSheet title="Editar pago" onClose={() => { setModalEditPago(false); setPagoEditando(null) }}>
-        <Field2 label="Mes">
-          <select style={IS} value={pagoEditando.mes} onChange={e=>setPagoEditando({...pagoEditando,mes:e.target.value})}>
-            {MESES.map(m=><option key={m}>{m}</option>)}
-          </select>
-        </Field2>
-        <Field2 label="Monto ($)"><Input type="number" value={pagoEditando.monto||''} onChange={(v:string)=>setPagoEditando({...pagoEditando,monto:+v})} /></Field2>
-        <Field2 label="Método">
-          <select style={IS} value={pagoEditando.metodo} onChange={e=>setPagoEditando({...pagoEditando,metodo:e.target.value})}>
-            <option>Efectivo</option><option>Transferencia</option><option>MercadoPago</option>
-          </select>
-        </Field2>
-        <Field2 label="Fecha"><input style={IS} type="date" value={pagoEditando.fecha_pago} onChange={e=>setPagoEditando({...pagoEditando,fecha_pago:e.target.value})} /></Field2>
-        <Field2 label="Observaciones"><Input value={pagoEditando.observaciones||''} onChange={(v:string)=>setPagoEditando({...pagoEditando,observaciones:v})} placeholder="Opcional..." /></Field2>
-        <div style={{display:'flex',gap:'10px',marginTop:'8px'}}>
-          <BtnG style={{flex:1}} onClick={() => { setModalEditPago(false); setPagoEditando(null) }}>Cancelar</BtnG>
-          <BtnP style={{flex:2}} onClick={guardarEditPago} disabled={guardandoPago}>{guardandoPago?'Guardando...':'Guardar cambios'}</BtnP>
-        </div>
-      </ModalSheet>}
-
-      {/* MODAL CONFIRMAR ELIMINAR PAGO */}
-      {confirmDeletePago && <ModalSheet title="¿Eliminar pago?" onClose={() => setConfirmDeletePago(null)}>
-        <div style={{textAlign:'center',padding:'8px 0 16px'}}>
-          <div style={{fontSize:'40px',marginBottom:'10px'}}>🗑️</div>
-          <div style={{fontSize:'15px',fontWeight:700,marginBottom:'6px'}}>
-            Pago de {confirmDeletePago.mes} {confirmDeletePago.anio}
-          </div>
-          <div style={{fontSize:'22px',fontWeight:800,color:'var(--red)',marginBottom:'6px'}}>
-            ${confirmDeletePago.monto?.toLocaleString('es-AR')}
-          </div>
-          <div style={{fontSize:'13px',color:'var(--text2)'}}>
-            {confirmDeletePago.metodo} · {fmtFecha(confirmDeletePago.fecha_pago)}
-          </div>
-          <div style={{fontSize:'12px',color:'var(--text3)',marginTop:'10px'}}>
-            Esta acción no se puede deshacer.
-          </div>
-        </div>
-        <div style={{display:'flex',gap:'10px'}}>
-          <BtnG style={{flex:1}} onClick={() => setConfirmDeletePago(null)}>Cancelar</BtnG>
-          <button onClick={eliminarPago} disabled={eliminandoPago}
-            style={{flex:2,padding:'12px',background:'var(--red)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:700,cursor:'pointer',opacity:eliminandoPago?.5:1}}>
-            {eliminandoPago ? 'Eliminando...' : 'Sí, eliminar'}
-          </button>
-        </div>
-      </ModalSheet>}
-
       {modalRecibo && ultimoPago && <ModalSheet title="Pago registrado ✓" onClose={() => setModalRecibo(false)}>
         <div style={{textAlign:'center',padding:'8px 0 16px'}}>
           <div style={{fontSize:'48px',marginBottom:'8px'}}>✅</div>
-          <div style={{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}}>Recibo generado</div>
-          <div style={{fontSize:'13px',color:'var(--text2)'}}>¿Querés enviarle el comprobante por WhatsApp?</div>
+          <div style={{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}}>
+            {ultimoPago.urlRecibo ? 'Recibo disponible online' : 'Recibo generado'}
+          </div>
+          <div style={{fontSize:'13px',color:'var(--text2)'}}>
+            {ultimoPago.urlRecibo ? 'El link del recibo va incluido en el mensaje de WhatsApp.' : '¿Querés enviarle el comprobante por WhatsApp?'}
+          </div>
+          {ultimoPago.urlRecibo && (
+            <div style={{marginTop:'10px',padding:'8px 12px',background:'var(--bg)',borderRadius:'10px',fontSize:'11px',color:'var(--text3)',fontFamily:'monospace',wordBreak:'break-all',textAlign:'left'}}>
+              {ultimoPago.urlRecibo}
+            </div>
+          )}
         </div>
         <button onClick={() => { abrirWS(ultimoPago.tel, ultimoPago.msg); setModalRecibo(false) }}
           style={{width:'100%',padding:'13px',background:'#25d366',color:'white',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',marginBottom:'8px'}}>
@@ -1073,6 +972,8 @@ function PagosMasivos({ alumnos, onVolver }: any) {
   // Editar pago
   const [pagoEditando, setPagoEditando] = useState<any>(null)
   const [guardandoEditPago, setGuardandoEditPago] = useState(false)
+  // IDs de alumnos que ya pagaron el mes seleccionado en "registrar pagos"
+  const [alumnosPagadosMes, setAlumnosPagadosMes] = useState<Set<string>>(new Set())
 
   const cargarReporte = async () => {
     setLoadingReporte(true)
@@ -1088,6 +989,21 @@ function PagosMasivos({ alumnos, onVolver }: any) {
   }
 
   useEffect(() => { if (vistaTab === 'reporte') cargarReporte() }, [vistaTab, repMes, repAnio])
+
+  // Cargar quiénes ya pagaron cuando cambia el mes seleccionado en "registrar pagos"
+  useEffect(() => {
+    const cargarPagadosMes = async () => {
+      try {
+        const sb = createClient()
+        const { data } = await sb.from('pagos_alumnos')
+          .select('alumno_id')
+          .eq('mes', mes)
+          .eq('anio', anio)
+        setAlumnosPagadosMes(new Set((data || []).map((r: any) => r.alumno_id)))
+      } catch {}
+    }
+    cargarPagadosMes()
+  }, [mes, anio])
 
   // Filtrar pagos del reporte
   const pagosReporteFiltrados = pagosReporte.filter(p => {
@@ -1215,7 +1131,6 @@ function PagosMasivos({ alumnos, onVolver }: any) {
     setSeleccionados(new Set())
     setTimeout(() => setGuardado(false), 3000)
     // Guardar en background
-    // Guardar cada pago via API route con service role
     Promise.all(inserts.map(ins =>
       fetch('/api/registrar-pago', {
         method: 'POST',
@@ -1225,6 +1140,8 @@ function PagosMasivos({ alumnos, onVolver }: any) {
     )).then(() => {
       // Disparar evento para refrescar filtros
       inserts.forEach(ins => window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: ins.alumno_id } })))
+      // Actualizar badge "ya pagó" localmente
+      setAlumnosPagadosMes(prev => new Set([...prev, ...inserts.map(i => i.alumno_id)]))
     }).catch(e => console.error('Error pagos masivos:', e))
   }
 
@@ -1463,9 +1380,10 @@ function PagosMasivos({ alumnos, onVolver }: any) {
           {filtrados.map((a:any) => {
             const sel = seleccionados.has(a.id)
             const monto = usarCuotaIndividual ? a.cuota_mensual : parseFloat(montoFijo)||0
+            const yaPago = alumnosPagadosMes.has(a.id)
             return (
               <div key={a.id} onClick={() => toggleAlumno(a.id)}
-                style={{display:'flex',alignItems:'center',gap:'12px',padding:'11px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'var(--vl)':'var(--white)',transition:'background .1s'}}>
+                style={{display:'flex',alignItems:'center',gap:'12px',padding:'11px 16px',borderBottom:'1px solid var(--border)',cursor:'pointer',background:sel?'var(--vl)':yaPago?'#f0fdf4':'var(--white)',transition:'background .1s'}}>
                 <input type="checkbox" checked={sel} onChange={() => toggleAlumno(a.id)}
                   onClick={e=>e.stopPropagation()} style={{width:'16px',height:'16px',cursor:'pointer',accentColor:'var(--v)',flexShrink:0}} />
                 <Av color={a.color} size={32}>{a.nombre[0]}{a.apellido[0]}</Av>
@@ -1473,9 +1391,10 @@ function PagosMasivos({ alumnos, onVolver }: any) {
                   <div style={{fontSize:'13.5px',fontWeight:600}}>{a.nombre} {a.apellido}</div>
                   <div style={{fontSize:'11.5px',color:'var(--text2)'}}>{a.nivel}</div>
                 </div>
-                <div style={{fontSize:'13px',fontWeight:700,color:sel?'var(--v)':'var(--text3)',flexShrink:0}}>
-                  ${monto?.toLocaleString('es-AR')||'0'}
-                </div>
+                {yaPago
+                  ? <span style={{fontSize:'11px',fontWeight:700,color:'var(--green)',background:'var(--greenl)',padding:'3px 10px',borderRadius:'20px',flexShrink:0}}>✓ Ya pagó</span>
+                  : <div style={{fontSize:'13px',fontWeight:700,color:sel?'var(--v)':'var(--text3)',flexShrink:0}}>${monto?.toLocaleString('es-AR')||'0'}</div>
+                }
               </div>
             )
           })}
