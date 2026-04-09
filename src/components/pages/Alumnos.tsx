@@ -1318,7 +1318,9 @@ function PagosMasivos({ alumnos, onVolver }: any) {
                       {(p.alumnos?.telefono || p.alumnos?.padre_telefono) && (() => {
                         const tel = p.alumnos.es_menor ? (p.alumnos.padre_telefono || p.alumnos.telefono) : (p.alumnos.telefono || p.alumnos.padre_telefono)
                         const cel = tel?.replace(/\D/g,'')
-                        const texto = `Hola ${p.alumnos?.nombre}, te confirmamos el pago de $${p.monto?.toLocaleString('es-AR')} correspondiente a ${p.mes} ${p.anio}. ¡Gracias!`
+                        const contacto = p.alumnos.es_menor ? (p.alumnos.padre_nombre || p.alumnos.nombre) : p.alumnos.nombre
+                        const fechaFmt = p.fecha_pago ? new Date(p.fecha_pago+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
+                        const texto = `✅ *Recibo de pago — Next Ezeiza*\n\nHola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${p.alumnos?.nombre} ${p.alumnos?.apellido}*.\n\n💰 Monto: *$${p.monto?.toLocaleString('es-AR')}*\n📅 Fecha: ${fechaFmt}\n💳 Método: ${p.metodo||'Efectivo'}\n\n¡Gracias! 🙌`
                         return (
                           <a href={`https://wa.me/54${cel}?text=${encodeURIComponent(texto)}`}
                             target="_blank" rel="noopener noreferrer"
