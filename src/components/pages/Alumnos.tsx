@@ -1019,20 +1019,6 @@ function PagosMasivos({ alumnos, onVolver }: any) {
 
   useEffect(() => { if (vistaTab === 'reporte') cargarReporte() }, [vistaTab, repMes, repAnio])
 
-  // Cargar quiénes ya pagaron cuando cambia el mes seleccionado en "registrar pagos"
-  useEffect(() => {
-    const cargarPagadosMes = async () => {
-      try {
-        const sb = createClient()
-        const { data } = await sb.from('pagos_alumnos')
-          .select('alumno_id')
-          .eq('mes', mes)
-          .eq('anio', anio)
-        setAlumnosPagadosMes(new Set((data || []).map((r: any) => r.alumno_id)))
-      } catch {}
-    }
-    cargarPagadosMes()
-  }, [mes, anio])
 
   // Filtrar pagos del reporte
   const pagosReporteFiltrados = pagosReporte.filter(p => {
@@ -1110,6 +1096,21 @@ function PagosMasivos({ alumnos, onVolver }: any) {
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [mes, setMes] = useState(mesActual)
   const [anio] = useState(anioActual)
+
+  // Cargar quiénes ya pagaron cuando cambia el mes seleccionado en "registrar pagos"
+  useEffect(() => {
+    const cargarPagadosMes = async () => {
+      try {
+        const sb = createClient()
+        const { data } = await sb.from('pagos_alumnos')
+          .select('alumno_id')
+          .eq('mes', mes)
+          .eq('anio', anio)
+        setAlumnosPagadosMes(new Set((data || []).map((r: any) => r.alumno_id)))
+      } catch {}
+    }
+    cargarPagadosMes()
+  }, [mes, anio])
   const [metodo, setMetodo] = useState('Efectivo')
   const [usarCuotaIndividual, setUsarCuotaIndividual] = useState(true)
   const [montoFijo, setMontoFijo] = useState('')
