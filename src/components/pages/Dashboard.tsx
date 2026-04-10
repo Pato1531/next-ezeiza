@@ -30,6 +30,7 @@ export default function Dashboard() {
     { value: 'examen', label: 'Examen', color: '#c0392b', bg: '#fdeaea', emoji: '📝' },
     { value: 'observacion', label: 'Observación de Clases', color: '#1a73e8', bg: '#e8f0fe', emoji: '👁' },
     { value: 'evento', label: 'Evento especial', color: '#f97316', bg: '#fff7ed', emoji: '🎉' },
+    { value: 'cumpleanos', label: 'Cumpleaños', color: '#db2777', bg: '#fce7f3', emoji: '🎂' },
     { value: 'feriado', label: 'Feriado / Sin clases', color: '#b45309', bg: '#fef3cd', emoji: '🏖' },
     { value: 'admin', label: 'Administrativo', color: '#2d7a4f', bg: '#e6f4ec', emoji: '📋' },
     { value: 'otro', label: 'Otro', color: '#9b8eaa', bg: '#f9f5fd', emoji: '📌' },
@@ -62,6 +63,18 @@ export default function Dashboard() {
     if (!alumnos.length) return
     cargarAlertas()
   }, [alumnos.length])
+
+  // Actualizar contador de pagos pendientes en tiempo real cuando se registra un pago
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (detail?.alumno_id) {
+        setCuotasPendientes(prev => Math.max(0, prev - 1))
+      }
+    }
+    window.addEventListener('pago-registrado', handler)
+    return () => window.removeEventListener('pago-registrado', handler)
+  }, [])
 
   useEffect(() => {
     const cargarEventos = async () => {
