@@ -661,10 +661,25 @@ export default function Reportes() {
                 </div>
               </div>
               {/* Total cobrado */}
-              <div style={{background:'var(--vl)',borderRadius:'12px',padding:'12px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px'}}>
+              <div style={{background:'var(--vl)',borderRadius:'12px',padding:'12px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
                 <span style={{fontSize:'13px',fontWeight:600,color:'var(--v)'}}>Total cobrado {mesActualNombre}</span>
                 <span style={{fontSize:'20px',fontWeight:800,color:'var(--v)'}}>${totalCobrado.toLocaleString('es-AR')}</span>
               </div>
+              {/* Resta a cobrar */}
+              {(() => {
+                const restaCuotas = esperado - ingresosDetalle.cuotas
+                const resta = restaCuotas > 0 ? restaCuotas : 0
+                const pct = esperado > 0 ? Math.round((ingresosDetalle.cuotas / esperado) * 100) : 0
+                return (
+                  <div style={{background:'var(--amberl)',borderRadius:'12px',padding:'12px 14px',display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'14px',border:'1px solid #e8d080'}}>
+                    <div>
+                      <span style={{fontSize:'13px',fontWeight:600,color:'var(--amber)'}}>Resta cobrar en cuotas</span>
+                      <div style={{fontSize:'11px',color:'var(--amber)',opacity:.8,marginTop:'2px'}}>{pct}% cobrado de {alumnos.length} alumnos</div>
+                    </div>
+                    <span style={{fontSize:'20px',fontWeight:800,color:'var(--amber)'}}>${resta.toLocaleString('es-AR')}</span>
+                  </div>
+                )
+              })()}
               {/* Separador proyección */}
               <div style={{fontSize:'12px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'12px',marginTop:'4px'}}>
                 Proyección mensual
