@@ -218,6 +218,8 @@ export default function Dashboard() {
       </div>
     )
   }
+
+  return (
     <div className="fade-in">
       {/* Saludo */}
       <div style={{marginBottom:'20px'}}>
