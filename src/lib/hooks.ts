@@ -22,10 +22,11 @@ export function setCurrentUserName(nombre: string) { _currentUserName = nombre }
 export function logActivity(accion: string, modulo: string, detalle?: string) {
   if (typeof window === 'undefined') return // no-op en SSR
   try {
-    createClient()
-      .from('activity_log')
-      .insert({ usuario_nombre: _currentUserName, accion, modulo, detalle: detalle || null })
-      .then(({ error }) => { if (error) console.debug('[logActivity]', error.message) })
+    fetch('/api/log-activity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ usuario_nombre: _currentUserName, accion, modulo, detalle: detalle || null })
+    }).catch(() => {})
   } catch {}
 }
 
