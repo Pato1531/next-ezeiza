@@ -396,12 +396,17 @@ function LiquidacionTab({ prof, licencias }: any) {
   const mesActual = MESES[new Date().getMonth()]
   const anioActual = new Date().getFullYear()
 
+  const [mesLiq, setMesLiq] = useState(mesActual)
+  const [anioLiq, setAnioLiq] = useState(anioActual)
   const [ajuste, setAjuste] = useState(0)
   const [descLic, setDescLic] = useState(0)
   const [notaAjuste, setNotaAjuste] = useState('')
   const [notaLic, setNotaLic] = useState('')
   const [guardandoLiq, setGuardandoLiq] = useState(false)
   const [liqGuardada, setLiqGuardada] = useState(false)
+  const [liqEditando, setLiqEditando] = useState<any>(null)
+  const [guardandoEdit, setGuardandoEdit] = useState(false)
+  const [confirmDelLiq, setConfirmDelLiq] = useState<any>(null)
 
   const { liquidaciones, guardar: guardarLiq } = useLiquidaciones(prof.id)
   const { historial: histHoras } = useHorasHistorial(prof.id)
@@ -418,13 +423,17 @@ function LiquidacionTab({ prof, licencias }: any) {
 
   const base = (prof.horas_semana || 0) * 4 * (prof.tarifa_hora || 0)
 
-  // Reemplazos que hizo ESTA docente (aparece como reemplazante en licencias de otras)
   const reemplazosHechos = licComoReemplazo
   const totalReemplazosHechos = reemplazosHechos.reduce((s:number, l:any) =>
     s + (l.reemplazo_horas || 0) * (prof.tarifa_hora || 0), 0)
 
-  // Descuento por ausencias impagas — resta las horas del reemplazo x tarifa propia
-  const ausenciasImpagas = licencias.filter((l:any) => !l.es_paga)
+  // ── BUG FIX: filtrar licencias SOLO del mes seleccionado ──
+  const mesIdx = MESES.indexOf(mesLiq)
+  const ausenciasImpagas = licencias.filter((l:any) => {
+    if (l.es_paga) return false
+    const fechaLic = new Date(l.fecha_desde + 'T12:00:00')
+    return fechaLic.getMonth() === mesIdx && fechaLic.getFullYear() === anioLiq
+  })
   const totalDescuentoAusencias = ausenciasImpagas.reduce((s:number, l:any) =>
     s + (l.reemplazo_horas > 0 ? l.reemplazo_horas : (l.dias || 0)) * (prof.tarifa_hora || 0), 0)
 
@@ -436,8 +445,8 @@ function LiquidacionTab({ prof, licencias }: any) {
     await guardarLiq({
       profesora_id: prof.id,
       profesora_nombre: `${prof.nombre} ${prof.apellido}`,
-      mes: mesActual,
-      anio: anioActual,
+      mes: mesLiq,
+      anio: anioLiq,
       horas_semana: prof.horas_semana,
       horas_mes: (prof.horas_semana || 0) * 4,
       tarifa_hora: prof.tarifa_hora,
@@ -454,11 +463,53 @@ function LiquidacionTab({ prof, licencias }: any) {
     setTimeout(() => setLiqGuardada(false), 3000)
   }
 
+  const guardarEdicionLiq = async () => {
+    if (!liqEditando) return
+    setGuardandoEdit(true)
+    const sb = createClient()
+    await sb.from('liquidaciones').update({
+      ajuste: liqEditando.ajuste || 0,
+      ajuste_concepto: liqEditando.ajuste_concepto || '',
+      descuento_licencias: liqEditando.descuento_licencias || 0,
+      descuento_concepto: liqEditando.descuento_concepto || '',
+      total: (liqEditando.subtotal || 0) + (liqEditando.ajuste || 0) - (liqEditando.descuento_licencias || 0),
+      estado: liqEditando.estado,
+    }).eq('id', liqEditando.id)
+    setGuardandoEdit(false)
+    setLiqEditando(null)
+  }
+
+  const eliminarLiq = async (id: string) => {
+    const sb = createClient()
+    await sb.from('liquidaciones').delete().eq('id', id)
+    setConfirmDelLiq(null)
+  }
+
   return (
     <Card>
-      <SL style={{marginBottom:'14px'}}>Liquidación mensual — {mesActual} {anioActual}</SL>
+      {/* Selector de mes/año */}
+      <div style={{display:'flex',gap:'10px',marginBottom:'16px'}}>
+        <div style={{flex:1}}>
+          <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Mes</div>
+          <select style={IS} value={mesLiq} onChange={e=>{setMesLiq(e.target.value);setDescLic(0)}}>
+            {MESES.map(m=><option key={m}>{m}</option>)}
+          </select>
+        </div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Año</div>
+          <select style={IS} value={anioLiq} onChange={e=>{setAnioLiq(+e.target.value);setDescLic(0)}}>
+            {[2025,2026,2027].map(y=><option key={y}>{y}</option>)}
+          </select>
+        </div>
+      </div>
+      <SL style={{marginBottom:'14px'}}>Liquidación — {mesLiq} {anioLiq}</SL>
 
-      {/* Base */}
+      {/* Licencias del mes seleccionado */}
+      {ausenciasImpagas.length > 0 && (
+        <div style={{padding:'10px 12px',background:'var(--amberl)',borderRadius:'10px',border:'1px solid #e8d080',marginBottom:'14px',fontSize:'12px',color:'var(--amber)'}}>
+          {ausenciasImpagas.length} ausencia{ausenciasImpagas.length!==1?'s':''} impaga{ausenciasImpagas.length!==1?'s':''} en {mesLiq}: descuento automático de ${totalDescuentoAusencias.toLocaleString('es-AR')}
+        </div>
+      )}
       {[
         ['Hs/semana', `${prof.horas_semana}hs`],
         ['Hs/mes', `${prof.horas_semana * 4}hs`],
@@ -597,7 +648,7 @@ function LiquidacionTab({ prof, licencias }: any) {
             <div class="logo"><span>Next</span> Ezeiza</div>
             <div style="color:#888;font-size:12px">${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
           </div>
-          <h1>Liquidacion - ${mesActual} ${anioActual}</h1>
+          <h1>Liquidacion - ${mesLiq} ${anioLiq}</h1>
           <div class="sub">${prof.nombre} ${prof.apellido} &bull; ${prof.nivel} &bull; ${prof.horas_semana}hs/sem &bull; $${prof.tarifa_hora?.toLocaleString('es-AR')}/h</div>
           <table>${filas}</table>
           <div class="total">
@@ -613,7 +664,7 @@ function LiquidacionTab({ prof, licencias }: any) {
             // Fallback: download directo
             const a = document.createElement('a')
             a.href = url
-            a.download = `liquidacion-${prof.nombre}-${prof.apellido}-${mesActual}-${anioActual}.html`
+            a.download = `liquidacion-${prof.nombre}-${prof.apellido}-${mesLiq}-${anioLiq}.html`
             a.click()
           }
           setTimeout(() => URL.revokeObjectURL(url), 10000)
@@ -636,16 +687,89 @@ function LiquidacionTab({ prof, licencias }: any) {
                 <div style={{fontSize:'13.5px',fontWeight:600}}>{l.mes} {l.anio}</div>
                 <div style={{fontSize:'11.5px',color:'var(--text3)',marginTop:'1px'}}>{l.horas_semana}hs/sem · ${l.tarifa_hora?.toLocaleString('es-AR')}/h</div>
               </div>
-              <div style={{textAlign:'right'}}>
-                <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${l.total?.toLocaleString('es-AR')}</div>
-                <span style={{fontSize:'10px',fontWeight:600,padding:'1px 7px',borderRadius:'8px',
-                  background:l.estado==='pagada'?'var(--greenl)':l.estado==='confirmada'?'var(--vl)':'var(--amberl)',
-                  color:l.estado==='pagada'?'var(--green)':l.estado==='confirmada'?'var(--v)':'var(--amber)'}}>
-                  {l.estado}
-                </span>
+              <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                <div style={{textAlign:'right'}}>
+                  <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${l.total?.toLocaleString('es-AR')}</div>
+                  <span style={{fontSize:'10px',fontWeight:600,padding:'1px 7px',borderRadius:'8px',
+                    background:l.estado==='pagada'?'var(--greenl)':l.estado==='confirmada'?'var(--vl)':'var(--amberl)',
+                    color:l.estado==='pagada'?'var(--green)':l.estado==='confirmada'?'var(--v)':'var(--amber)'}}>
+                    {l.estado}
+                  </span>
+                </div>
+                <button onClick={() => setLiqEditando({...l})}
+                  style={{padding:'5px 9px',background:'var(--vl)',color:'var(--v)',border:'1px solid #d4a8e8',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                  Editar
+                </button>
+                <button onClick={() => setConfirmDelLiq(l)}
+                  style={{padding:'5px 9px',background:'var(--redl)',color:'var(--red)',border:'none',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                  ✕
+                </button>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* MODAL EDITAR LIQUIDACIÓN */}
+      {liqEditando && (
+        <div style={{position:'fixed',inset:0,background:'rgba(20,0,40,.45)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:200}} onClick={e=>{if(e.target===e.currentTarget)setLiqEditando(null)}}>
+          <div style={{background:'var(--white)',borderRadius:'24px 24px 0 0',padding:'28px 20px 32px',width:'100%',maxWidth:'480px',maxHeight:'90vh',overflowY:'auto'}}>
+            <div style={{width:'40px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 20px'}} />
+            <div style={{fontSize:'18px',fontWeight:700,marginBottom:'4px'}}>Editar liquidación</div>
+            <div style={{fontSize:'13px',color:'var(--text2)',marginBottom:'16px'}}>{liqEditando.mes} {liqEditando.anio} · ${liqEditando.subtotal?.toLocaleString('es-AR')} base</div>
+            <div style={{marginBottom:'10px'}}>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Ajuste ($)</div>
+              <input type="number" style={IS} value={liqEditando.ajuste||''} onChange={e=>setLiqEditando({...liqEditando,ajuste:+e.target.value})} placeholder="0" />
+            </div>
+            <div style={{marginBottom:'10px'}}>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Concepto ajuste</div>
+              <input type="text" style={IS} value={liqEditando.ajuste_concepto||''} onChange={e=>setLiqEditando({...liqEditando,ajuste_concepto:e.target.value})} placeholder="Opcional..." />
+            </div>
+            <div style={{marginBottom:'10px'}}>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Descuento ausencias ($)</div>
+              <input type="number" min="0" style={IS} value={liqEditando.descuento_licencias||''} onChange={e=>setLiqEditando({...liqEditando,descuento_licencias:Math.abs(+e.target.value)})} placeholder="0" />
+            </div>
+            <div style={{marginBottom:'10px'}}>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Concepto descuento</div>
+              <input type="text" style={IS} value={liqEditando.descuento_concepto||''} onChange={e=>setLiqEditando({...liqEditando,descuento_concepto:e.target.value})} placeholder="Opcional..." />
+            </div>
+            <div style={{marginBottom:'14px'}}>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Estado</div>
+              <select style={IS} value={liqEditando.estado||'confirmada'} onChange={e=>setLiqEditando({...liqEditando,estado:e.target.value})}>
+                <option value="borrador">Borrador</option>
+                <option value="confirmada">Confirmada</option>
+                <option value="pagada">Pagada</option>
+              </select>
+            </div>
+            <div style={{padding:'12px 14px',background:'var(--vl)',borderRadius:'10px',display:'flex',justifyContent:'space-between',marginBottom:'14px'}}>
+              <span style={{fontSize:'13px',fontWeight:600,color:'var(--v)'}}>Total calculado</span>
+              <span style={{fontSize:'16px',fontWeight:700,color:'var(--v)'}}>
+                ${((liqEditando.subtotal||0) + (liqEditando.ajuste||0) - (liqEditando.descuento_licencias||0)).toLocaleString('es-AR')}
+              </span>
+            </div>
+            <div style={{display:'flex',gap:'10px'}}>
+              <button onClick={()=>setLiqEditando(null)} style={{flex:1,padding:'12px',background:'transparent',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>Cancelar</button>
+              <button onClick={guardarEdicionLiq} disabled={guardandoEdit} style={{flex:2,padding:'12px',background:guardandoEdit?'#aaa':'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>
+                {guardandoEdit?'Guardando...':'Guardar cambios'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRMAR ELIMINAR LIQUIDACIÓN */}
+      {confirmDelLiq && (
+        <div style={{position:'fixed',inset:0,background:'rgba(20,0,40,.45)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:200}} onClick={e=>{if(e.target===e.currentTarget)setConfirmDelLiq(null)}}>
+          <div style={{background:'var(--white)',borderRadius:'24px 24px 0 0',padding:'28px 20px 32px',width:'100%',maxWidth:'480px'}}>
+            <div style={{width:'40px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 20px'}} />
+            <div style={{fontSize:'18px',fontWeight:700,marginBottom:'8px'}}>¿Eliminar liquidación?</div>
+            <div style={{fontSize:'14px',color:'var(--text2)',marginBottom:'6px'}}>{confirmDelLiq.mes} {confirmDelLiq.anio} — ${confirmDelLiq.total?.toLocaleString('es-AR')}</div>
+            <div style={{fontSize:'12px',color:'var(--text3)',marginBottom:'20px'}}>Esta acción no se puede deshacer.</div>
+            <div style={{display:'flex',gap:'10px'}}>
+              <button onClick={()=>setConfirmDelLiq(null)} style={{flex:1,padding:'12px',background:'transparent',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>Cancelar</button>
+              <button onClick={()=>eliminarLiq(confirmDelLiq.id)} style={{flex:2,padding:'12px',background:'var(--red)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>Sí, eliminar</button>
+            </div>
+          </div>
         </div>
       )}
 
