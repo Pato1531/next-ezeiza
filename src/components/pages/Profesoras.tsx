@@ -408,7 +408,7 @@ function LiquidacionTab({ prof, licencias }: any) {
   const [guardandoEdit, setGuardandoEdit] = useState(false)
   const [confirmDelLiq, setConfirmDelLiq] = useState<any>(null)
 
-  const { liquidaciones, guardar: guardarLiq } = useLiquidaciones(prof.id)
+  const { liquidaciones, guardar: guardarLiq, recargar: recargarLiqs } = useLiquidaciones(prof.id)
   const { historial: histHoras } = useHorasHistorial(prof.id)
   const [licComoReemplazo, setLicComoReemplazo] = useState<any[]>([])
 
@@ -466,22 +466,34 @@ function LiquidacionTab({ prof, licencias }: any) {
   const guardarEdicionLiq = async () => {
     if (!liqEditando) return
     setGuardandoEdit(true)
-    const sb = createClient()
-    await sb.from('liquidaciones').update({
-      ajuste: liqEditando.ajuste || 0,
-      ajuste_concepto: liqEditando.ajuste_concepto || '',
-      descuento_licencias: liqEditando.descuento_licencias || 0,
-      descuento_concepto: liqEditando.descuento_concepto || '',
-      total: (liqEditando.subtotal || 0) + (liqEditando.ajuste || 0) - (liqEditando.descuento_licencias || 0),
-      estado: liqEditando.estado,
-    }).eq('id', liqEditando.id)
+    const res = await fetch('/api/liquidaciones', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: liqEditando.id,
+        subtotal: liqEditando.subtotal || 0,
+        ajuste: liqEditando.ajuste || 0,
+        ajuste_concepto: liqEditando.ajuste_concepto || '',
+        descuento_licencias: liqEditando.descuento_licencias || 0,
+        descuento_concepto: liqEditando.descuento_concepto || '',
+        estado: liqEditando.estado,
+      })
+    })
+    const json = await res.json()
+    if (!json.error) {
+      await recargarLiqs()
+    }
     setGuardandoEdit(false)
     setLiqEditando(null)
   }
 
   const eliminarLiq = async (id: string) => {
-    const sb = createClient()
-    await sb.from('liquidaciones').delete().eq('id', id)
+    await fetch('/api/liquidaciones', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id })
+    })
+    await recargarLiqs()
     setConfirmDelLiq(null)
   }
 
