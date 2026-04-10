@@ -1000,7 +1000,7 @@ function PagosMasivos({ alumnos, onVolver }: any) {
     try {
       const sb = createClient()
       const { data } = await sb.from('pagos_alumnos')
-        .select('*, alumnos(nombre,apellido,nivel,cuota_mensual,color,telefono,padre_telefono,es_menor)')
+        .select('*, alumnos(nombre,apellido,nivel,cuota_mensual,color,telefono,padre_nombre,padre_telefono,es_menor)')
         .eq('mes', repMes).eq('anio', repAnio)
         .order('created_at', { ascending: false })
       setPagosReporte(data || [])
