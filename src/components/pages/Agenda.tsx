@@ -9,6 +9,7 @@ const TIPOS = [
   { value: 'examen', label: 'Examen', color: '#c0392b', bg: '#fdeaea', emoji: '📝' },
   { value: 'observacion', label: 'Observación de Clases', color: '#1a73e8', bg: '#e8f0fe', emoji: '👁' },
   { value: 'evento', label: 'Evento especial', color: '#f97316', bg: '#fff7ed', emoji: '🎉' },
+  { value: 'cumpleanos', label: 'Cumpleaños', color: '#db2777', bg: '#fce7f3', emoji: '🎂' },
   { value: 'feriado', label: 'Feriado / Sin clases', color: '#b45309', bg: '#fef3cd', emoji: '🏖' },
   { value: 'admin', label: 'Administrativo', color: '#2d7a4f', bg: '#e6f4ec', emoji: '📋' },
   { value: 'otro', label: 'Otro', color: '#9b8eaa', bg: '#f9f5fd', emoji: '📌' },
