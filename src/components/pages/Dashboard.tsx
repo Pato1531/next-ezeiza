@@ -129,7 +129,95 @@ export default function Dashboard() {
 
   // Sin bloqueo de loading
 
-  return (
+  // ── VISTA PROFESORA ──
+  if (usuario?.rol === 'profesora') {
+    return (
+      <div className="fade-in">
+        <div style={{marginBottom:'20px'}}>
+          <div style={{fontSize:'13px',color:'var(--text2)',fontWeight:500}}>Hola, {usuario?.nombre.split(' ')[0]} 👋</div>
+          <div style={{fontSize:'22px',fontWeight:700,letterSpacing:'-.3px',marginTop:'2px'}}>
+            {today.toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})}
+          </div>
+        </div>
+
+        {/* Alertas de ausencias para profesora */}
+        {alertasAusencia.length > 0 && (
+          <div style={{marginBottom:'18px'}}>
+            <SL style={{marginBottom:'10px'}}>Alertas de ausencias</SL>
+            {alertasAusencia.map((al:any,i:number) => (
+              <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'11px 14px',background:'var(--white)',border:'1.5px solid #f5c5c5',borderRadius:'14px',marginBottom:'8px'}}>
+                <div style={{width:36,height:36,borderRadius:11,background:al.color||'#652f8d',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}}>
+                  {al.nombre?.[0]}{al.apellido?.[0]}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'13.5px',fontWeight:600}}>{al.nombre} {al.apellido}</div>
+                  <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'1px'}}>{al.total} ausencias registradas</div>
+                </div>
+                <span style={{padding:'3px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:'var(--redl)',color:'var(--red)',flexShrink:0}}>⚠ 2+ faltas</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Clases de hoy — solo las de esta profesora */}
+        <SL style={{marginBottom:'10px'}}>
+          {diaHoy ? `Clases de hoy · ${diaHoy}` : 'Clases del día'}
+        </SL>
+        {cursosHoy.length === 0 ? (
+          <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'20px',textAlign:'center',color:'var(--text3)',marginBottom:'18px'}}>
+            {today.getDay() === 0 ? '🌅 Hoy es domingo' : 'No hay clases programadas para hoy'}
+          </div>
+        ) : (
+          <div style={{marginBottom:'18px'}}>
+            {cursosHoy.map(c => {
+              const col = NIVEL_COL[c.nivel] ?? NIVEL_COL['Básico']
+              return (
+                <div key={c.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'13px 14px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',marginBottom:'8px'}}>
+                  <div style={{width:42,height:42,borderRadius:13,background:col.bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                    <span style={{fontSize:'10px',fontWeight:700,color:col.text}}>{(c.nivel||'').slice(0,3).toUpperCase()}</span>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:'14px',fontWeight:600}}>{c.nombre}</div>
+                    <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'2px'}}>{c.hora_inicio?.slice(0,5)||'—'}–{c.hora_fin?.slice(0,5)||'—'}</div>
+                  </div>
+                  <div style={{fontSize:'13px',fontWeight:700,color:'var(--v)',flexShrink:0}}>{c.hora_inicio?.slice(0,5)||'—'}</div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Próximos eventos */}
+        {proximosEventos.length > 0 && (
+          <>
+            <SL style={{marginBottom:'10px'}}>Próximos eventos</SL>
+            <div style={{marginBottom:'18px'}}>
+              {proximosEventos.map((ev:any) => {
+                const tipo = TIPOS_AGENDA.find(t => t.value === ev.tipo) || TIPOS_AGENDA[6]
+                const esHoy = ev.fecha === new Date().toISOString().split('T')[0]
+                const fechaFmt = new Date(ev.fecha+'T12:00:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'})
+                return (
+                  <div key={ev.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'11px 14px',background:'var(--white)',border:`1.5px solid ${esHoy?tipo.color:'var(--border)'}`,borderRadius:'14px',marginBottom:'8px'}}>
+                    <div style={{width:40,height:40,borderRadius:12,background:tipo.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',flexShrink:0}}>
+                      {tipo.emoji}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:'13.5px',fontWeight:600}}>{ev.titulo}</div>
+                      <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'2px'}}>
+                        {esHoy ? <span style={{color:tipo.color,fontWeight:700}}>Hoy</span> : fechaFmt}
+                        {ev.hora_inicio && <span> · {ev.hora_inicio.slice(0,5)}</span>}
+                        <span style={{marginLeft:'6px',padding:'1px 6px',borderRadius:'8px',background:tipo.bg,color:tipo.color,fontSize:'10px',fontWeight:700}}>{tipo.label}</span>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </>
+        )}
+      </div>
+    )
+  }
     <div className="fade-in">
       {/* Saludo */}
       <div style={{marginBottom:'20px'}}>
