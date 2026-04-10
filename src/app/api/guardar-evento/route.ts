@@ -10,6 +10,7 @@ export async function POST(req: NextRequest) {
       hora_inicio: datos.hora_inicio || null,
       hora_fin:    datos.hora_fin    || null,
       descripcion: datos.descripcion || null,
+      docente_id:  datos.docente_id  || null,
     }
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
