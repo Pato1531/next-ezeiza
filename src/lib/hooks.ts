@@ -777,9 +777,14 @@ export function useLiquidaciones(profesoraId?: string) {
   }, [profesoraId])
 
   const guardar = async (liq: any) => {
-    const { data: row, error } = await createClient().from('liquidaciones')
-      .upsert(liq, { onConflict: 'profesora_id,mes,anio' }).select().single()
-    if (error) { console.error('[useLiquidaciones guardar]', error.message); return null }
+    const res = await fetch('/api/liquidaciones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(liq)
+    })
+    const json = await res.json()
+    if (json.error) { console.error('[useLiquidaciones guardar]', json.error); return null }
+    const row = json.data
     setData(prev => {
       const idx = prev.findIndex(l => l.mes === liq.mes && l.anio === liq.anio)
       if (idx >= 0) { const n = [...prev]; n[idx] = row; return n }
@@ -788,5 +793,14 @@ export function useLiquidaciones(profesoraId?: string) {
     return row
   }
 
-  return { liquidaciones: data, loading: isLoading, guardar }
+  const recargar = async () => {
+    const sb = createClient()
+    let q = sb.from('liquidaciones').select('*')
+      .order('anio', { ascending: false }).order('created_at', { ascending: false })
+    if (profesoraId) q = (q as any).eq('profesora_id', profesoraId)
+    const { data } = await q.limit(24)
+    if (data) setData(data)
+  }
+
+  return { liquidaciones: data, loading: isLoading, guardar, recargar }
 }
