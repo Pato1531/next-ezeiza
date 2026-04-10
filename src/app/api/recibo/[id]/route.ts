@@ -36,7 +36,6 @@ export async function GET(
     const estadoColor = ok ? '#2d7a4f' : parc ? '#b45309' : '#c0392b'
     const estadoBg = ok ? '#e6f4ec' : parc ? '#fef3cd' : '#fdeaea'
     const dniRow = al?.dni ? `<div class="fila"><div class="fila-lab">DNI</div><div class="fila-val">${al.dni}</div></div>` : ''
-    const obsRow = p.observaciones ? `<div class="fila"><div class="fila-lab">Nota</div><div class="fila-val">${p.observaciones}</div></div>` : ''
 
     const html = `<!DOCTYPE html>
 <html lang="es">
@@ -86,7 +85,6 @@ export async function GET(
       ${dniRow}
       <div class="fila"><div class="fila-lab">M&eacute;todo</div><div class="fila-val">${p.metodo || 'Efectivo'}</div></div>
       <div class="fila"><div class="fila-lab">Fecha</div><div class="fila-val">${fecha}</div></div>
-      ${obsRow}
       <div class="fila">
         <div class="fila-lab">Estado</div>
         <div class="fila-val"><span class="badge" style="background:${estadoBg};color:${estadoColor}">&#10003; ${estadoLabel}</span></div>
