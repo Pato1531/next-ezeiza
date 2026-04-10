@@ -1,4 +1,5 @@
 'use client'
+import React from 'react'
 import { useState, useEffect, useRef } from 'react'
 import { useAlumnos, useProfesoras, useCursos, useLiquidaciones } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
@@ -522,24 +523,84 @@ export default function Reportes() {
         onCSV={exportCobranzaCSV}
         onPDF={exportCobranzaPDF}
       >
-        {alumnos.map(a => {
-          const estado = getEstadoCobranza(a.id)
-          const bgColor = estado.label === 'Pagado' ? 'var(--greenl)' : estado.label === 'Al día' ? '#fef3cd' : '#fdeaea'
+        {(() => {
+          const [filtroCobranza, setFiltroCobranza] = React.useState<'todos'|'Pagado'|'Al día'|'Deudor'>('todos')
+          const normalizarTelWS = (tel: string) => {
+            if (!tel) return ''
+            let t = tel.replace(/\D/g, '')
+            if (t.startsWith('0')) t = t.slice(1)
+            if (t.startsWith('54')) t = t.slice(2)
+            if (t.startsWith('9') && t.length > 10) t = t.slice(1)
+            return '549' + t
+          }
+          const alumnosFiltrados = filtroCobranza === 'todos'
+            ? alumnos
+            : alumnos.filter((a:any) => getEstadoCobranza(a.id).label === filtroCobranza)
+          const counts = {
+            Pagado: alumnos.filter((a:any) => getEstadoCobranza(a.id).label === 'Pagado').length,
+            'Al día': alumnos.filter((a:any) => getEstadoCobranza(a.id).label === 'Al día').length,
+            Deudor: alumnos.filter((a:any) => getEstadoCobranza(a.id).label === 'Deudor').length,
+          }
           return (
-          <div key={a.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
-            <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
-              <Av color={a.color} size={28}>{a.nombre[0]}{a.apellido[0]}</Av>
-              <div>
-                <div style={{fontSize:'13.5px',fontWeight:600}}>{a.nombre} {a.apellido}</div>
-                <div style={{fontSize:'12px',color:'var(--text2)'}}>{a.nivel} · ${a.cuota_mensual?.toLocaleString('es-AR')}/mes</div>
+            <>
+              <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'14px'}}>
+                {(['todos','Pagado','Al día','Deudor'] as const).map(f => {
+                  const colores: Record<string,{active:string,bg:string,border:string}> = {
+                    todos: {active:'var(--v)',bg:'var(--vl)',border:'var(--v)'},
+                    Pagado: {active:'var(--green)',bg:'var(--greenl)',border:'var(--green)'},
+                    'Al día': {active:'var(--amber)',bg:'var(--amberl)',border:'#e8d080'},
+                    Deudor: {active:'var(--red)',bg:'var(--redl)',border:'#f5c5c5'},
+                  }
+                  const c = colores[f]
+                  const activo = filtroCobranza === f
+                  const count = f === 'todos' ? alumnos.length : counts[f as keyof typeof counts]
+                  return (
+                    <button key={f} onClick={() => setFiltroCobranza(f)}
+                      style={{padding:'6px 12px',borderRadius:'20px',fontSize:'12px',fontWeight:600,cursor:'pointer',border:`1.5px solid ${activo?c.border:'var(--border)'}`,background:activo?c.bg:'var(--white)',color:activo?c.active:'var(--text2)',display:'flex',alignItems:'center',gap:'5px'}}>
+                      {f === 'todos' ? 'Todos' : f}
+                      <span style={{background:activo?c.active:'var(--border)',color:activo?'#fff':'var(--text2)',borderRadius:'20px',padding:'1px 6px',fontSize:'10px',fontWeight:700}}>{count}</span>
+                    </button>
+                  )
+                })}
               </div>
-            </div>
-            <span style={{padding:'3px 10px',borderRadius:'20px',fontSize:'11.5px',fontWeight:600,background:bgColor,color:estado.color}}>{estado.label}</span>
-          </div>
-        )})}
+              {alumnosFiltrados.map((a:any) => {
+                const estado = getEstadoCobranza(a.id)
+                const bgColor = estado.label === 'Pagado' ? 'var(--greenl)' : estado.label === 'Al día' ? '#fef3cd' : '#fdeaea'
+                const tel = a.es_menor ? (a.padre_telefono || a.telefono) : (a.telefono || a.padre_telefono)
+                const contacto = a.es_menor ? (a.padre_nombre || a.nombre) : a.nombre
+                const msgAlDia = `Hola ${contacto}, ¿cómo estás? 😄\nTe escribimos desde Next English Institute para consultarte si pudiste realizar el pago de la cuota de este mes.\n📌 En caso de ya haberlo abonado, podés ignorar este mensaje. 📲 Si aún no, estamos a disposición por cualquier consulta.\nMuchas gracias 🙌`
+                const msgDeudor = `Hola ${contacto}, ¿cómo estás? 😄\nTe escribimos desde Next English Institute ya que la cuota del mes se encuentra vencida.\n📌 A partir de ahora se aplica el recargo correspondiente, según política del instituto.\n📲 Cualquier consulta o si necesitás ayuda con el pago, estamos a disposición.\nMuchas gracias 🙌`
+                const msg = estado.label === 'Deudor' ? msgDeudor : msgAlDia
+                const num = normalizarTelWS(tel || '')
+                return (
+                  <div key={a.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                      <Av color={a.color} size={28}>{a.nombre[0]}{a.apellido[0]}</Av>
+                      <div>
+                        <div style={{fontSize:'13.5px',fontWeight:600}}>{a.nombre} {a.apellido}</div>
+                        <div style={{fontSize:'12px',color:'var(--text2)'}}>{a.nivel} · ${a.cuota_mensual?.toLocaleString('es-AR')}/mes</div>
+                      </div>
+                    </div>
+                    <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                      {estado.label !== 'Pagado' && tel && num.length >= 12 && (
+                        <a href={`https://wa.me/${num}?text=${encodeURIComponent(msg)}`}
+                          target="_blank" rel="noopener noreferrer"
+                          style={{padding:'5px 9px',background:'#25D366',color:'#fff',borderRadius:'7px',fontSize:'11px',fontWeight:600,textDecoration:'none',display:'flex',alignItems:'center',gap:'3px',flexShrink:0}}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                          WS
+                        </a>
+                      )}
+                      <span style={{padding:'3px 10px',borderRadius:'20px',fontSize:'11.5px',fontWeight:600,background:bgColor,color:estado.color}}>{estado.label}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </>
+          )
+        })()}
       </ReportSection>}
 
-      {/* SECCIÓN: LIQUIDACIÓN */}
+            {/* SECCIÓN: LIQUIDACIÓN */}
       {(!esSecretaria && !esCoordinadora) && (
       <ReportSection
         titulo="Liquidación docente"
