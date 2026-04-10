@@ -714,7 +714,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
 
     // Si el pago tiene id de DB → abrir URL pública directamente, sin modal WS
     if (p.id) {
-      const urlRecibo = `${window.location.origin}/recibo/${p.id}`
+      const urlRecibo = `${window.location.origin}/api/recibo/${p.id}`
       window.open(urlRecibo, '_blank')
       return
     }
@@ -1248,7 +1248,7 @@ function PagosMasivos({ alumnos, onVolver }: any) {
                         const cel = tel?.replace(/\D/g,'')
                         const contacto = p.alumnos.es_menor ? (p.alumnos.padre_nombre || p.alumnos.nombre) : p.alumnos.nombre
                         const fechaFmt = p.fecha_pago ? new Date(p.fecha_pago+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
-                        const urlRecibo = `${window.location.origin}/recibo/${p.id}`
+                        const urlRecibo = `${window.location.origin}/api/recibo/${p.id}`
                         const texto = `✅ *Recibo de pago — Next Ezeiza*\n\nHola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${p.alumnos?.nombre} ${p.alumnos?.apellido}*.\n\n💰 Monto: *$${p.monto?.toLocaleString('es-AR')}*\n📅 Fecha: ${fechaFmt}\n💳 Método: ${p.metodo||'Efectivo'}\n\n📄 Tu recibo: ${urlRecibo}\n\n¡Gracias! 🙌`
                         return (
                           <a href={`https://wa.me/54${cel}?text=${encodeURIComponent(texto)}`}
