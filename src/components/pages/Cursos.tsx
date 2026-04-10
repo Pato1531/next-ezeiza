@@ -62,7 +62,7 @@ export default function Cursos() {
   const irADetalle = (id: string) => { setSelId(id); setTab('info'); setVista('detalle') }
   const irALista = () => { setSelId(null); setVista('lista') }
   const irAFormNuevo = () => {
-    setForm({ nombre:'', nivel:'Básico', profesora_id: profesoras[0]?.id||'', dias:'', hora_inicio:'08:00', hora_fin:'09:30' })
+    setForm({ nombre:'', nivel:'', profesora_id: profesoras[0]?.id||'', dias:'', hora_inicio:'08:00', hora_fin:'09:30', bibliografia:'' })
     setVista('form')
   }
   const irAFormEditar = () => { if (sel) { setForm({...sel, hora_inicio: sel.hora_inicio?.slice(0,5)||'08:00', hora_fin: sel.hora_fin?.slice(0,5)||'09:30'}); setVista('form') } }
@@ -120,7 +120,49 @@ export default function Cursos() {
     <div className="fade-in">
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}}>
         <SL>{cursos.length} cursos</SL>
-        {puedeEditar && <BtnP sm onClick={irAFormNuevo}>+ Nuevo curso</BtnP>}
+        <div style={{display:'flex',gap:'8px'}}>
+          <button onClick={() => {
+            const prof = (id: string) => profesoras.find((p:any) => p.id === id)
+            const filas = [...cursos]
+              .sort((a,b) => (a.dias||'').localeCompare(b.dias||'') || (a.hora_inicio||'').localeCompare(b.hora_inicio||''))
+              .map(c => {
+                const p = prof(c.profesora_id)
+                const profNombre = p ? `${p.nombre} ${p.apellido}` : '—'
+                return `<tr>
+                  <td style="font-weight:600">${c.nombre}</td>
+                  <td>${c.nivel||'—'}</td>
+                  <td>${profNombre}</td>
+                  <td>${c.dias||'—'}</td>
+                  <td>${c.hora_inicio?.slice(0,5)||'—'} – ${c.hora_fin?.slice(0,5)||'—'}</td>
+                  <td>${c.bibliografia||'—'}</td>
+                </tr>`
+              }).join('')
+            const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Cursos — Next Ezeiza</title>
+            <style>body{font-family:Arial,sans-serif;padding:28px;font-size:13px;color:#1a1020}
+            .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #652f8d;padding-bottom:14px;margin-bottom:20px}
+            .logo{font-size:20px;font-weight:700}.logo span{color:#652f8d}
+            h1{color:#652f8d;font-size:16px;margin:0 0 4px}
+            table{width:100%;border-collapse:collapse}
+            th{border-bottom:2px solid #652f8d;padding:9px 8px;text-align:left;font-size:11px;text-transform:uppercase;color:#652f8d;letter-spacing:.04em}
+            td{padding:9px 8px;border-bottom:1px solid #f0edf5;vertical-align:top}
+            @media print{body{padding:16px}}</style></head><body>
+            <div class="hd"><div class="logo"><span>Next</span> Ezeiza</div>
+            <div style="font-size:12px;color:#888">${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div></div>
+            <h1>Cursos activos — ${cursos.length} cursos</h1>
+            <table><tr><th>Nombre</th><th>Nivel</th><th>Docente</th><th>Días</th><th>Horario</th><th>Bibliografía</th></tr>
+            ${filas}</table>
+            <script>setTimeout(function(){window.print()},400)</script></body></html>`
+            const blob = new Blob([html], {type:'text/html;charset=utf-8'})
+            const url = URL.createObjectURL(blob)
+            const win = window.open(url, '_blank')
+            if (!win) { const a = document.createElement('a'); a.href=url; a.download='cursos.html'; a.click() }
+            setTimeout(() => URL.revokeObjectURL(url), 10000)
+          }} style={{padding:'9px 14px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 16v1a1 1 0 001 1h10a1 1 0 001-1v-1M7 10l3 3 3-3M10 3v10"/></svg>
+            Reporte
+          </button>
+          {puedeEditar && <BtnP sm onClick={irAFormNuevo}>+ Nuevo curso</BtnP>}
+        </div>
       </div>
       {/* Filtro por día */}
       <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginBottom:'14px'}}>
@@ -163,9 +205,7 @@ export default function Cursos() {
         <Field2 label="Nombre del curso *"><Input value={form?.nombre||''} onChange={(v:string)=>setForm({...form,nombre:v})} placeholder="Ej: Intermediate B" /></Field2>
         <Row2>
           <Field2 label="Nivel">
-            <select style={IS} value={form?.nivel||'Básico'} onChange={e=>setForm({...form,nivel:e.target.value})}>
-              {NIVELES.map(n=><option key={n}>{n}</option>)}
-            </select>
+            <Input value={form?.nivel||''} onChange={(v:string)=>setForm({...form,nivel:v})} placeholder="Ej: A2, B1, Básico..." />
           </Field2>
           <Field2 label="Profesora">
             <select style={IS} value={form?.profesora_id||''} onChange={e=>setForm({...form,profesora_id:e.target.value})}>
@@ -174,6 +214,9 @@ export default function Cursos() {
             </select>
           </Field2>
         </Row2>
+        <Field2 label="Bibliografía">
+          <Input value={form?.bibliografia||''} onChange={(v:string)=>setForm({...form,bibliografia:v})} placeholder="Ej: English File B1, Oxford..." />
+        </Field2>
         <Field2 label="Días de clase">
           <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'4px'}}>
             {DIAS_OPCIONES.map(d => {
@@ -529,6 +572,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
     <h1>${c.nombre}</h1>
     <div class="meta">
       ${prof ? prof.nombre+' '+prof.apellido+' · ' : ''}${c.nivel} · ${c.dias||'—'} · ${c.hora_inicio?.slice(0,5)||'—'}–${c.hora_fin?.slice(0,5)||'—'}<br>
+      ${c.bibliografia ? `<strong>Bibliografía:</strong> ${c.bibliografia}<br>` : ''}
       ${sorted.length} clase${sorted.length!==1?'s':''} registrada${sorted.length!==1?'s':''}
     </div>
     ${sorted.map((cl:any, idx:number) => {
@@ -704,6 +748,11 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
           <FieldRO label="Nombre" value={c.nombre} />
           <FieldRO label="Nivel" value={c.nivel} />
           <FieldRO label="Días" value={c.dias||'—'} />
+          <Row2>
+            <FieldRO label="Inicio" value={c.hora_inicio?.slice(0,5)||'—'} />
+            <FieldRO label="Fin" value={c.hora_fin?.slice(0,5)||'—'} />
+          </Row2>
+          {c.bibliografia && <FieldRO label="Bibliografía" value={c.bibliografia} />}
           <Row2>
             <FieldRO label="Inicio" value={c.hora_inicio?.slice(0,5)||'—'} />
             <FieldRO label="Fin" value={c.hora_fin?.slice(0,5)||'—'} />
