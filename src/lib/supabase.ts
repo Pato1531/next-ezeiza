@@ -115,7 +115,7 @@ export const PERMISOS: Record<Rol, string[]> = {
   director:     ['dashboard','profesoras','alumnos','cursos','horarios','reportes','permisos','perfil','comunicados','agenda','actividad','atencion'],
   coordinadora: ['dashboard','profesoras','alumnos','cursos','horarios','reportes','perfil','comunicados','agenda','atencion'],
   secretaria:   ['dashboard','alumnos','cursos','horarios','reportes','perfil','comunicados','agenda','atencion'],
-  profesora:    ['alumnos','cursos','horarios','perfil','comunicados','agenda'],
+  profesora:    ['dashboard','alumnos','cursos','horarios','perfil','comunicados','agenda'],
 }
 
 export const puedeVer = (rol: Rol, modulo: string) =>
