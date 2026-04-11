@@ -19,12 +19,23 @@ export function clearStore() {}
 let _currentUserName = 'Sistema'
 export function setCurrentUserName(nombre: string) { _currentUserName = nombre }
 
+let _institutoId = ''
+export function setInstitutoId(id: string) { _institutoId = id }
+
+// Header estándar para todas las API Routes — incluye instituto_id para multi-tenancy
+export function apiHeaders(): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    ..._institutoId ? { 'x-instituto-id': _institutoId } : {},
+  }
+}
+
 export function logActivity(accion: string, modulo: string, detalle?: string) {
   if (typeof window === 'undefined') return
   const payload = { usuario_nombre: _currentUserName, accion, modulo, detalle: detalle || null }
   fetch('/api/activity', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: apiHeaders(),
     body: JSON.stringify(payload)
   }).then(async res => {
     if (!res.ok) {
@@ -390,7 +401,7 @@ export function useAlumnos() {
     try {
       const res = await window.fetch('/api/crear-alumno', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: apiHeaders(),
         body: JSON.stringify(datos)
       })
       const json = await res.json()
@@ -497,7 +508,7 @@ export function usePagos(alumnoId: string) {
     try {
       const res = await window.fetch('/api/registrar-pago', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: apiHeaders(),
         body: JSON.stringify(pago)
       })
       const json = await res.json()
@@ -783,7 +794,7 @@ export function useLiquidaciones(profesoraId?: string) {
   const guardar = async (liq: any) => {
     const res = await fetch('/api/liquidaciones', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: apiHeaders(),
       body: JSON.stringify(liq)
     })
     const json = await res.json()
