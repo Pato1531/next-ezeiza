@@ -225,7 +225,11 @@ export default function Reportes() {
     setTimeout(() => URL.revokeObjectURL(_ru), 10000)
   }
 
-  const totalLiq = profesoras.reduce((s,p) => s + (p.horas_semana||0) * 4 * (p.tarifa_hora||0), 0)
+  // totalLiq dinámico: usa liquidación confirmada si existe, sino cálculo base
+  const totalLiq = profesoras.reduce((s, p) => {
+    const conf = liqConfirmadas[p.id]
+    return s + (conf !== undefined ? conf : (p.horas_semana||0) * 4 * (p.tarifa_hora||0))
+  }, 0)
 
   // Calcular asistencia docente dinámicamente desde clases y asistencia_clases
   useEffect(() => {
@@ -658,7 +662,7 @@ export default function Reportes() {
       {(!esSecretaria && !esCoordinadora) && (
       <ReportSection
         titulo="Liquidación docente"
-        subtitulo={`Total estimado: $${totalLiq.toLocaleString('es-AR')}`}
+        subtitulo={`Total ${Object.keys(liqConfirmadas).length > 0 ? 'confirmado' : 'estimado'}: $${totalLiq.toLocaleString('es-AR')}`}
         onCSV={exportLiquidacionCSV}
         onPDF={exportLiquidacionPDF}
       >
@@ -688,12 +692,7 @@ export default function Reportes() {
         })}
         <div style={{display:'flex',justifyContent:'space-between',padding:'12px 0',marginTop:'4px'}}>
           <span style={{fontSize:'15px',fontWeight:700}}>Total mensual</span>
-          <span style={{fontSize:'18px',fontWeight:700,color:'var(--v)'}}>
-            ${profesoras.reduce((s,p) => {
-              const conf = liqConfirmadas[p.id]
-              return s + (conf !== undefined ? conf : (p.horas_semana||0)*4*(p.tarifa_hora||0))
-            }, 0).toLocaleString('es-AR')}
-          </span>
+          <span style={{fontSize:'18px',fontWeight:700,color:'var(--v)'}}>${totalLiq.toLocaleString('es-AR')}</span>
         </div>
       </ReportSection>
       )}
