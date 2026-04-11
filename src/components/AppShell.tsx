@@ -28,7 +28,7 @@ const ALL_NAV = [
   { id: 'permisos',      label: 'Permisos',      icon: 'M10 2a4 4 0 014 4v1h2a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V9a2 2 0 012-2h2V6a4 4 0 014-4zM10 4a2 2 0 00-2 2v1h4V6a2 2 0 00-2-2z' },
   { id: 'agenda',        label: 'Agenda',        icon: 'M3 4h16v16H3zM16 2v4M8 2v4M3 10h16' },
   { id: 'comunicados',   label: 'Comunicados',   icon: 'M18 8a6 6 0 01-6 6H8l-4 4V8a6 6 0 016-6h2a6 6 0 016 6z' },
-  { id: 'actividad',     label: 'Actividad',     icon: 'M10 3a7 7 0 100 14A7 7 0 0010 3zM10 7v3l2 2M3 3l14 14' },  // ← NUEVO
+  { id: 'actividad',     label: 'Actividad',     icon: 'M10 3a7 7 0 100 14A7 7 0 0010 3zM10 7v3l2 2M3 3l14 14' },
   { id: 'atencion',      label: 'Atención',      icon: 'M18 8a6 6 0 01-6 6H8l-4 4V8a6 6 0 016-6h2a6 6 0 016 6zM9 10h.01M12 10h.01M15 10h.01' },
 ]
 
@@ -43,7 +43,7 @@ const PAGES: Record<string, React.ComponentType> = {
   perfil: Perfil,
   agenda: Agenda,
   comunicados: Comunicados,
-  actividad: Actividad,  // ← NUEVO
+  actividad: Actividad,
   atencion: AtencionCliente,
 }
 
@@ -51,7 +51,7 @@ const PAGE_TITLES: Record<string,string> = {
   dashboard:'Inicio', alumnos:'Alumnos', cursos:'Cursos',
   horarios:'Horarios', profesoras:'Docentes', reportes:'Reportes',
   permisos:'Permisos', perfil:'Mi perfil', agenda:'Agenda', comunicados:'Comunicados',
-  actividad:'Actividad',  // ← NUEVO
+  actividad:'Actividad',
   atencion:'Atención al Cliente',
 }
 
@@ -81,11 +81,19 @@ class PanelErrorBoundary extends React.Component<{children: React.ReactNode, nam
   }
 }
 
+// ── CAMBIO 1: interfaz de props para recibir initialTab desde page.tsx ────────
+interface AppShellProps {
+  initialTab?: string
+}
 
-export default function AppShell() {
+// ── CAMBIO 2: agregar { initialTab } a la firma del componente ────────────────
+export default function AppShell({ initialTab }: AppShellProps) {
   const { usuario, puedeVer } = useAuth()
+
+  // ── CAMBIO 3: usar initialTab si viene, sino restaurar sessionStorage,
+  //             sino ir a 'dashboard' por defecto ────────────────────────────
   const [page, setPage] = useState<string>(() => {
-    // Restaurar página activa desde sessionStorage al volver del background
+    if (initialTab) return initialTab
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('nav_page')
       if (saved) return saved
@@ -94,6 +102,7 @@ export default function AppShell() {
     const perms = ['dashboard','alumnos','cursos','horarios','profesoras','reportes','permisos']
     return perms.find(p => puedeVer(p)) ?? 'alumnos'
   })
+
   const [masOpen, setMasOpen] = useState(false)
   // Tracking de paneles ya montados — "mount once, never unmount"
   // Evita renderizar todos los paneles al inicio (reduce error surface)
