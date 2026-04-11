@@ -663,23 +663,37 @@ export default function Reportes() {
         onPDF={exportLiquidacionPDF}
       >
         {[...profesoras].sort((a,b)=>(b.horas_semana||0)-(a.horas_semana||0)).map(p => {
-          const liq = (p.horas_semana||0)*4*(p.tarifa_hora||0)
+          // Usar liquidación confirmada si existe, sino cálculo base
+          const liqConfirmada = liqConfirmadas[p.id]
+          const liqBase = (p.horas_semana||0)*4*(p.tarifa_hora||0)
+          const liqMostrar = liqConfirmada !== undefined ? liqConfirmada : liqBase
+          const tieneAjuste = liqConfirmada !== undefined && liqConfirmada !== liqBase
           return (
             <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
               <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
                 <Av color={p.color} size={28}>{p.initials||`${p.nombre[0]}${p.apellido[0]}`}</Av>
                 <div>
                   <div style={{fontSize:'13.5px',fontWeight:600}}>{p.nombre} {p.apellido}</div>
-                  <div style={{fontSize:'12px',color:'var(--text2)'}}>{p.horas_semana}hs/sem · ${p.tarifa_hora?.toLocaleString('es-AR')}/h</div>
+                  <div style={{fontSize:'12px',color:'var(--text2)'}}>{p.horas_semana}hs/sem · ${p.tarifa_hora?.toLocaleString('es-AR')}/h
+                    {tieneAjuste && <span style={{marginLeft:'6px',color:'var(--amber)',fontWeight:600}}>· Con ajustes</span>}
+                  </div>
                 </div>
               </div>
-              <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${liq.toLocaleString('es-AR')}</div>
+              <div style={{textAlign:'right'}}>
+                <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${liqMostrar.toLocaleString('es-AR')}</div>
+                {tieneAjuste && <div style={{fontSize:'11px',color:'var(--text3)'}}>base ${liqBase.toLocaleString('es-AR')}</div>}
+              </div>
             </div>
           )
         })}
         <div style={{display:'flex',justifyContent:'space-between',padding:'12px 0',marginTop:'4px'}}>
           <span style={{fontSize:'15px',fontWeight:700}}>Total mensual</span>
-          <span style={{fontSize:'18px',fontWeight:700,color:'var(--v)'}}>${totalLiq.toLocaleString('es-AR')}</span>
+          <span style={{fontSize:'18px',fontWeight:700,color:'var(--v)'}}>
+            ${profesoras.reduce((s,p) => {
+              const conf = liqConfirmadas[p.id]
+              return s + (conf !== undefined ? conf : (p.horas_semana||0)*4*(p.tarifa_hora||0))
+            }, 0).toLocaleString('es-AR')}
+          </span>
         </div>
       </ReportSection>
       )}
