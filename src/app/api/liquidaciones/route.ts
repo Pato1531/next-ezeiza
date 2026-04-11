@@ -1,3 +1,4 @@
+import { rateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
@@ -10,6 +11,10 @@ function getInstitutoId(req: NextRequest): string | null {
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req)
+    const rl = rateLimit(ip + ':liquidaciones', { limit: 30, windowMs: 60000 })
+    if (!rl.ok) return rateLimitResponse(rl.resetMs)
+
     const institutoId = getInstitutoId(req)
     const liq = await req.json()
     const { data, error } = await sb()
