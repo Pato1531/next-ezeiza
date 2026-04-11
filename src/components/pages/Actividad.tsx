@@ -19,17 +19,12 @@ export default function Actividad() {
   const cargar = async () => {
     setLoading(true)
     try {
-      const sb = createClient()
-      let q = sb.from('activity_log')
-        .select('*')
-        .order('created_at', { ascending: false })
-        .limit(200)
-
-      if (fechaDesde) q = q.gte('created_at', fechaDesde + 'T00:00:00')
-      if (fechaHasta) q = q.lte('created_at', fechaHasta + 'T23:59:59')
-
-      const { data, error } = await q
-      if (!error && data) setLogs(data)
+      const params = new URLSearchParams()
+      if (fechaDesde) params.set('desde', fechaDesde)
+      if (fechaHasta) params.set('hasta', fechaHasta)
+      const res = await fetch(`/api/activity?${params.toString()}`)
+      const json = await res.json()
+      if (json.data) setLogs(json.data)
     } catch (e) {
       console.error('[Actividad]', e)
     } finally {
