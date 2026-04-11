@@ -346,25 +346,6 @@ export default function Dashboard() {
         </>
       )}
 
-      {/* TODOS LOS CURSOS */}
-      <SL style={{marginBottom:'10px'}}>Todos los cursos</SL>
-      {cursos.map(c => {
-        const prof = profesoras.find(p => p.id === c.profesora_id)
-        const col = NIVEL_COL[c.nivel] ?? NIVEL_COL['Básico']
-        return (
-          <div key={c.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'13px 14px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',marginBottom:'8px'}}>
-            <div style={{width:42,height:42,borderRadius:13,background:col.bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-              <span style={{fontSize:'10px',fontWeight:700,color:col.text}}>{c.nivel.slice(0,3).toUpperCase()}</span>
-            </div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:'14px',fontWeight:600}}>{c.nombre}</div>
-              <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'2px'}}>
-                {prof?`${prof.nombre} ${prof.apellido}`:'Sin asignar'} · {c.dias||'—'} · {c.hora_inicio?.slice(0,5)||'—'}
-              </div>
-            </div>
-          </div>
-        )
-      })}
     </div>
   )
 }
