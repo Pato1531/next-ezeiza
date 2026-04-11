@@ -90,6 +90,12 @@ export default function LoginPage() {
           style={{ width: '100%', padding: '10px', marginTop: '10px', background: 'transparent', color: limpiado ? 'var(--green)' : 'var(--text3)', border: 'none', borderRadius: '10px', fontSize: '13px', cursor: 'pointer' }}>
           {limpiado ? '✓ Listo — recargá la página para ingresar' : '¿Problemas para ingresar? Tocá acá'}
         </button>
+
+        <div style={{ textAlign: 'center', marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
+          <a href="/registro" style={{ fontSize: '13px', color: 'var(--v)', textDecoration: 'none', fontWeight: 500 }}>
+            ¿No tenés cuenta? Registrá tu instituto →
+          </a>
+        </div>
       </div>
     </div>
   )
