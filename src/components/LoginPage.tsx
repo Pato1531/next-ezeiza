@@ -1,25 +1,34 @@
 'use client'
 
 import { useState } from 'react'
-import { supabase } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase'
 
 export default function LoginPage() {
+  const supabase = createClient()
+
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [error,    setError]    = useState('')
   const [loading,  setLoading]  = useState(false)
 
   // Estado para el flujo de reset de contraseña
-  const [showReset,  setShowReset]  = useState(false)
-  const [resetEmail, setResetEmail] = useState('')
-  const [resetSent,  setResetSent]  = useState(false)
-  const [resetError, setResetError] = useState('')
+  const [showReset,    setShowReset]    = useState(false)
+  const [resetEmail,   setResetEmail]   = useState('')
+  const [resetSent,    setResetSent]    = useState(false)
+  const [resetError,   setResetError]   = useState('')
   const [resetLoading, setResetLoading] = useState(false)
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault()
     setError('')
     setLoading(true)
+
+    // Limpiar sesión previa antes de intentar login (preserva comportamiento original)
+    try {
+      await supabase.auth.signOut()
+      localStorage.removeItem('ne_session_uid')
+    } catch {}
+
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       setError(
@@ -40,8 +49,6 @@ export default function LoginPage() {
     }
     setResetLoading(true)
     const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
-      // Al hacer click en el link del email, Supabase redirige aquí
-      // El auth-context detecta el tipo 'recovery' y muestra el formulario de nueva contraseña
       redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/` : '/',
     })
     setResetLoading(false)
@@ -52,19 +59,19 @@ export default function LoginPage() {
     }
   }
 
-  // ── VISTA: Formulario de reset ────────────────────────────────────────────
+  // ── VISTA: Recuperar contraseña ───────────────────────────────────────────
   if (showReset) {
     return (
-      <div style={styles.page}>
-        <div style={styles.card}>
-          <div style={styles.logoWrap}>
-            <div style={styles.logoIcon}>NE</div>
+      <div style={s.page}>
+        <div style={s.card}>
+          <div style={s.logoWrap}>
+            <div style={s.logoIcon}>NE</div>
           </div>
-          <h1 style={styles.title}>Recuperar contraseña</h1>
+          <h1 style={s.title}>Recuperar contraseña</h1>
 
           {resetSent ? (
             <>
-              <div style={styles.successBox}>
+              <div style={s.successBox}>
                 <span style={{ fontSize: '20px' }}>✓</span>
                 <div>
                   <p style={{ fontWeight: 600, marginBottom: 4 }}>Email enviado</p>
@@ -76,36 +83,36 @@ export default function LoginPage() {
               </div>
               <button
                 onClick={() => { setShowReset(false); setResetSent(false); setResetEmail('') }}
-                style={styles.btnSecondary}
+                style={s.btnSecondary}
               >
                 Volver al inicio de sesión
               </button>
             </>
           ) : (
             <form onSubmit={handleReset}>
-              <p style={styles.resetHint}>
+              <p style={s.resetHint}>
                 Ingresá el email con el que te registraste y te enviaremos un link para crear una nueva contraseña.
               </p>
-              <div style={styles.field}>
-                <label style={styles.label}>EMAIL</label>
+              <div style={s.field}>
+                <label style={s.label}>EMAIL</label>
                 <input
                   type="email"
                   value={resetEmail}
                   onChange={e => setResetEmail(e.target.value)}
                   placeholder="tu@email.com"
                   required
-                  style={styles.input}
+                  style={s.input}
                   autoFocus
                 />
               </div>
-              {resetError && <p style={styles.errorMsg}>{resetError}</p>}
-              <button type="submit" disabled={resetLoading} style={styles.btnPrimary}>
+              {resetError && <p style={s.errorMsg}>{resetError}</p>}
+              <button type="submit" disabled={resetLoading} style={s.btnPrimary}>
                 {resetLoading ? 'Enviando...' : 'Enviar link de recuperación'}
               </button>
               <button
                 type="button"
                 onClick={() => { setShowReset(false); setResetError(''); setResetEmail('') }}
-                style={styles.linkBtn}
+                style={s.linkBtn}
               >
                 ← Volver al inicio de sesión
               </button>
@@ -118,17 +125,17 @@ export default function LoginPage() {
 
   // ── VISTA: Login normal ───────────────────────────────────────────────────
   return (
-    <div style={styles.page}>
-      <div style={styles.card}>
-        <div style={styles.logoWrap}>
-          <div style={styles.logoIcon}>NE</div>
+    <div style={s.page}>
+      <div style={s.card}>
+        <div style={s.logoWrap}>
+          <div style={s.logoIcon}>NE</div>
         </div>
-        <h1 style={styles.title}>Iniciar sesión</h1>
-        <p style={styles.subtitle}>Panel de gestión del instituto</p>
+        <h1 style={s.title}>Iniciar sesión</h1>
+        <p style={s.subtitle}>Panel de gestión del instituto</p>
 
         <form onSubmit={handleLogin}>
-          <div style={styles.field}>
-            <label style={styles.label}>EMAIL</label>
+          <div style={s.field}>
+            <label style={s.label}>EMAIL</label>
             <input
               type="email"
               value={email}
@@ -136,11 +143,11 @@ export default function LoginPage() {
               placeholder="tu@email.com"
               required
               autoComplete="email"
-              style={styles.input}
+              style={s.input}
             />
           </div>
-          <div style={styles.field}>
-            <label style={styles.label}>CONTRASEÑA</label>
+          <div style={s.field}>
+            <label style={s.label}>CONTRASEÑA</label>
             <input
               type="password"
               value={password}
@@ -148,29 +155,39 @@ export default function LoginPage() {
               placeholder="••••••••"
               required
               autoComplete="current-password"
-              style={styles.input}
+              style={s.input}
             />
           </div>
 
-          {error && <p style={styles.errorMsg}>{error}</p>}
+          {error && <p style={s.errorMsg}>{error}</p>}
 
-          <button type="submit" disabled={loading} style={styles.btnPrimary}>
+          <button type="submit" disabled={loading} style={s.btnPrimary}>
             {loading ? 'Ingresando...' : 'Ingresar'}
           </button>
         </form>
 
-        <div style={styles.resetWrap}>
-          <button onClick={() => { setShowReset(true); setResetEmail(email) }} style={styles.linkBtn}>
+        {/* ¿Olvidaste tu contraseña? */}
+        <div style={{ textAlign: 'center', marginTop: '12px' }}>
+          <button
+            onClick={() => { setShowReset(true); setResetEmail(email) }}
+            style={s.linkBtn}
+          >
             ¿Olvidaste tu contraseña?
           </button>
+        </div>
+
+        {/* Link a registro de nueva sede — igual que el original */}
+        <div style={s.registroWrap}>
+          <span style={{ fontSize: '13px', color: 'var(--text3)' }}>¿Sos director de un instituto? </span>
+          <a href="/registro" style={s.registroLink}>Registrá tu sede</a>
         </div>
       </div>
     </div>
   )
 }
 
-// ── ESTILOS ──────────────────────────────────────────────────────────────────
-const styles: Record<string, React.CSSProperties> = {
+// ── Estilos ──────────────────────────────────────────────────────────────────
+const s: Record<string, React.CSSProperties> = {
   page: {
     minHeight: '100vh',
     display: 'flex',
@@ -233,13 +250,14 @@ const styles: Record<string, React.CSSProperties> = {
   input: {
     width: '100%',
     padding: '11px 14px',
-    border: '1px solid var(--border)',
+    border: '1.5px solid var(--border)',
     borderRadius: '10px',
     fontSize: '15px',
     color: 'var(--text)',
     background: '#fff',
     outline: 'none',
-  } as React.CSSProperties,
+    fontFamily: 'inherit',
+  },
   btnPrimary: {
     display: 'block',
     width: '100%',
@@ -261,7 +279,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '13px',
     background: 'transparent',
     color: 'var(--v)',
-    border: '1px solid var(--v)',
+    border: '1.5px solid var(--v)',
     borderRadius: '10px',
     fontSize: '15px',
     fontWeight: 600,
@@ -288,10 +306,6 @@ const styles: Record<string, React.CSSProperties> = {
     marginBottom: '16px',
     fontSize: '14px',
   },
-  resetWrap: {
-    textAlign: 'center' as const,
-    marginTop: '16px',
-  },
   linkBtn: {
     background: 'none',
     border: 'none',
@@ -309,5 +323,18 @@ const styles: Record<string, React.CSSProperties> = {
     color: 'var(--text2)',
     marginBottom: '20px',
     lineHeight: 1.5,
+  },
+  registroWrap: {
+    textAlign: 'center',
+    marginTop: '20px',
+    paddingTop: '16px',
+    borderTop: '1px solid var(--border)',
+  },
+  registroLink: {
+    color: 'var(--v)',
+    fontSize: '13px',
+    fontWeight: 600,
+    textDecoration: 'none',
+    marginLeft: '4px',
   },
 }
