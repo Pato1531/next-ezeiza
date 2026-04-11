@@ -55,6 +55,9 @@ export default function Reportes() {
     })
   }
   const [alumnosConPago, setAlumnosConPago] = useState<Set<string>>(new Set())
+  // Asistencia docente dinámica: { profesoraId: porcentaje }
+  const [asistenciaProfs, setAsistenciaProfs] = useState<Record<string,number>>({})
+  const [avgAsist, setAvgAsist] = useState(0)
   // Ingresos desglosados: cuotas vs matrículas del mes actual
   const [ingresosDetalle, setIngresosDetalle] = useState<{cuotas:number, matriculas:number, totalPagos: any[]}>({cuotas:0, matriculas:0, totalPagos:[]})
   // Altas y bajas del mes
@@ -223,7 +226,56 @@ export default function Reportes() {
   }
 
   const totalLiq = profesoras.reduce((s,p) => s + (p.horas_semana||0) * 4 * (p.tarifa_hora||0), 0)
-  const avgAsist = 95
+
+  // Calcular asistencia docente dinámicamente desde clases y asistencia_clases
+  useEffect(() => {
+    if (!profesoras.length) return
+    const cargarAsistencia = async () => {
+      const sb = createClient()
+      // Traer todas las clases con su profesora
+      const { data: clases } = await sb.from('clases')
+        .select('id, curso_id, cursos(profesora_id)')
+        .limit(2000)
+      if (!clases?.length) return
+
+      // Traer asistencia de esas clases
+      const claseIds = clases.map((c:any) => c.id)
+      const { data: asist } = await sb.from('asistencia_clases')
+        .select('clase_id, estado')
+        .in('clase_id', claseIds)
+
+      // Agrupar por profesora_id → contar clases y alumnos presentes/total
+      const porProf: Record<string,{presentes:number,total:number}> = {}
+      clases.forEach((cl:any) => {
+        const profId = cl.cursos?.profesora_id
+        if (!profId) return
+        if (!porProf[profId]) porProf[profId] = { presentes:0, total:0 }
+        const asistClase = (asist||[]).filter((a:any) => a.clase_id === cl.id)
+        asistClase.forEach((a:any) => {
+          porProf[profId].total++
+          if (a.estado === 'P') porProf[profId].presentes++
+        })
+      })
+
+      // Calcular % por profesora
+      const pcts: Record<string,number> = {}
+      profesoras.forEach((p:any) => {
+        const d = porProf[p.id]
+        if (d && d.total > 0) {
+          pcts[p.id] = Math.round((d.presentes / d.total) * 100)
+        } else {
+          pcts[p.id] = 0 // sin datos
+        }
+      })
+      setAsistenciaProfs(pcts)
+
+      // Promedio general (solo profes con datos)
+      const vals = Object.values(pcts).filter(v => v > 0)
+      const avg = vals.length ? Math.round(vals.reduce((s,v) => s+v,0) / vals.length) : 0
+      setAvgAsist(avg)
+    }
+    cargarAsistencia()
+  }, [profesoras.length])
 
   // ── EXPORTADORES INDIVIDUALES ──
 
@@ -507,9 +559,11 @@ export default function Reportes() {
             <div style={{fontSize:'13px',fontWeight:600,width:'100px',flexShrink:0}}>{p.nombre}</div>
             <div style={{flex:1,display:'flex',alignItems:'center',gap:'8px'}}>
               <div style={{flex:1,height:'8px',background:'var(--border)',borderRadius:'4px',overflow:'hidden'}}>
-                <div style={{height:'100%',width:'95%',background:p.color,borderRadius:'4px'}} />
+                <div style={{height:'100%',width:`${asistenciaProfs[p.id] ?? 0}%`,background:(asistenciaProfs[p.id]??0)>=80?p.color:'var(--amber)',borderRadius:'4px',transition:'width .4s'}} />
               </div>
-              <span style={{fontSize:'13px',fontWeight:700,minWidth:'36px',textAlign:'right'}}>95%</span>
+              <span style={{fontSize:'13px',fontWeight:700,minWidth:'40px',textAlign:'right',color:(asistenciaProfs[p.id]??0)>=80?'var(--text)':'var(--amber)'}}>
+                {(asistenciaProfs[p.id]??0) > 0 ? `${asistenciaProfs[p.id]}%` : '—'}
+              </span>
             </div>
           </div>
         ))}
