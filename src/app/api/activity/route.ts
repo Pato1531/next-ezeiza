@@ -2,26 +2,21 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 
 function sb() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+}
+function getInstitutoId(req: NextRequest): string | null {
+  return req.headers.get('x-instituto-id') || null
 }
 
-// GET → leer logs con filtros
 export async function GET(req: NextRequest) {
   try {
+    const institutoId = getInstitutoId(req)
     const { searchParams } = new URL(req.url)
     const desde = searchParams.get('desde')
     const hasta = searchParams.get('hasta')
 
-    const supabase = sb()
-    let q = supabase
-      .from('activity_log')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(500)
-
+    let q = sb().from('activity_log').select('*').order('created_at', { ascending: false }).limit(500)
+    if (institutoId) q = q.eq('instituto_id', institutoId)
     if (desde) q = q.gte('created_at', desde + 'T00:00:00')
     if (hasta) q = q.lte('created_at', hasta + 'T23:59:59')
 
@@ -33,20 +28,16 @@ export async function GET(req: NextRequest) {
   }
 }
 
-// POST → insertar log
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
-    const { usuario_nombre, accion, modulo, detalle } = body
-    if (!accion || !modulo) {
-      return NextResponse.json({ error: 'Faltan campos' }, { status: 400 })
-    }
-    const supabase = sb()
-    const { error } = await supabase.from('activity_log').insert([{
+    const institutoId = getInstitutoId(req)
+    const { usuario_nombre, accion, modulo, detalle } = await req.json()
+    if (!accion || !modulo) return NextResponse.json({ error: 'Faltan campos' }, { status: 400 })
+    const { error } = await sb().from('activity_log').insert([{
       usuario_nombre: usuario_nombre || 'Sistema',
-      accion,
-      modulo,
+      accion, modulo,
       detalle: detalle || null,
+      ...(institutoId ? { instituto_id: institutoId } : {}),
     }])
     if (error) throw error
     return NextResponse.json({ ok: true })
