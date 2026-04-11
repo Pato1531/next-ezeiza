@@ -78,15 +78,29 @@ function RegistroConsultas() {
   const guardarDia = async (fecha: string, campo: string, valor: number) => {
     if (isNaN(valor) || valor < 0) return
     setGuardando(true)
-    const sb = createClient()
     const mesNombre = MESES[mes]
-    const existente = registros.find(r => r.fecha === fecha)
-    if (existente) {
-      await sb.from('consultas_diarias').update({ [campo]: valor }).eq('id', existente.id)
-      setRegistros(prev => prev.map(r => r.fecha === fecha ? { ...r, [campo]: valor } : r))
-    } else {
-      const { data } = await sb.from('consultas_diarias').insert({ fecha, mes: mesNombre, anio, ws:0, instagram:0, inscriptos:0, [campo]: valor }).select().single()
-      if (data) setRegistros(prev => [...prev, data])
+    try {
+      const res = await fetch('/api/consultas-diarias', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fecha, mes: mesNombre, anio, campo, valor })
+      })
+      const json = await res.json()
+      if (json.data) {
+        setRegistros(prev => {
+          const idx = prev.findIndex(r => r.fecha === fecha)
+          if (idx >= 0) {
+            const next = [...prev]
+            next[idx] = { ...next[idx], [campo]: valor }
+            return next
+          }
+          return [...prev, json.data]
+        })
+      } else {
+        console.error('[guardarDia]', json.error)
+      }
+    } catch (e) {
+      console.error('[guardarDia] fetch error:', e)
     }
     setGuardando(false)
   }
