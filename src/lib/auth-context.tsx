@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react'
 import { createClient, destroyClient, Usuario, Rol, puedeVer } from '@/lib/supabase'
-import { invalidateStore, setSessionReady } from '@/lib/hooks'
+import { invalidateStore, setSessionReady, setCurrentUserName } from '@/lib/hooks'
 
 const SESSION_KEY = 'ne_session_uid'
 
@@ -62,6 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         usuarioRef.current = data as Usuario
         hadSessionRef.current = true
         try { localStorage.setItem(SESSION_KEY, uid) } catch {}
+        setCurrentUserName((data as any).nombre || (data as any).email || uid)
         setSessionReady(true)
         return true
       }
