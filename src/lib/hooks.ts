@@ -21,13 +21,28 @@ export function setCurrentUserName(nombre: string) { _currentUserName = nombre }
 
 export function logActivity(accion: string, modulo: string, detalle?: string) {
   if (typeof window === 'undefined') return // no-op en SSR
-  try {
-    fetch('/api/log-activity', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ usuario_nombre: _currentUserName, accion, modulo, detalle: detalle || null })
-    }).catch(() => {})
-  } catch {}
+  const payload = { usuario_nombre: _currentUserName, accion, modulo, detalle: detalle || null }
+  // Intentar via API Route (service_role, bypasea RLS)
+  fetch('/api/log-activity', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(async res => {
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}))
+      console.warn('[logActivity] API error:', err)
+      // Fallback: insertar directo si la API falla
+      createClient().from('activity_log')
+        .insert(payload)
+        .then(({ error }) => { if (error) console.warn('[logActivity] fallback error:', error.message) })
+    }
+  }).catch(e => {
+    console.warn('[logActivity] fetch error:', e)
+    // Fallback si no hay red hacia la API Route
+    createClient().from('activity_log')
+      .insert(payload)
+      .then(({ error }) => { if (error) console.warn('[logActivity] fallback error:', error.message) })
+  })
 }
 
 // ── sessionReady — flag global para sincronizar hooks con la sesión ─────────
