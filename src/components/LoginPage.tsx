@@ -1,102 +1,313 @@
 'use client'
 
 import { useState } from 'react'
-import { useAuth } from '@/lib/auth-context'
-
-function limpiarSesion() {
-  try {
-    document.cookie.split(';').forEach(c => {
-      document.cookie = c.replace(/=.*/, '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/')
-    })
-    Object.keys(localStorage).forEach(k => {
-      if (k.startsWith('sb-')) localStorage.removeItem(k)
-    })
-  } catch {}
-}
+import { supabase } from '@/lib/supabase'
 
 export default function LoginPage() {
-  const { login } = useAuth()
-  const [email, setEmail] = useState('')
+  const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [limpiado, setLimpiado] = useState(false)
+  const [error,    setError]    = useState('')
+  const [loading,  setLoading]  = useState(false)
 
-  const handleSubmit = async () => {
-    if (!email || !password) return
-    setLoading(true)
+  // Estado para el flujo de reset de contraseña
+  const [showReset,  setShowReset]  = useState(false)
+  const [resetEmail, setResetEmail] = useState('')
+  const [resetSent,  setResetSent]  = useState(false)
+  const [resetError, setResetError] = useState('')
+  const [resetLoading, setResetLoading] = useState(false)
+
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault()
     setError('')
-    limpiarSesion()
-    const result = await login(email, password)
-    if (result.error) setError('Usuario o contraseña incorrectos.')
+    setLoading(true)
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      setError(
+        error.message === 'Invalid login credentials'
+          ? 'Email o contraseña incorrectos.'
+          : 'Error al iniciar sesión. Intentá de nuevo.'
+      )
+    }
     setLoading(false)
   }
 
-  const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') handleSubmit()
+  async function handleReset(e: React.FormEvent) {
+    e.preventDefault()
+    setResetError('')
+    if (!resetEmail.includes('@')) {
+      setResetError('Ingresá un email válido.')
+      return
+    }
+    setResetLoading(true)
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail, {
+      // Al hacer click en el link del email, Supabase redirige aquí
+      // El auth-context detecta el tipo 'recovery' y muestra el formulario de nueva contraseña
+      redirectTo: typeof window !== 'undefined' ? `${window.location.origin}/` : '/',
+    })
+    setResetLoading(false)
+    if (error) {
+      setResetError('No pudimos enviar el email. Verificá la dirección.')
+    } else {
+      setResetSent(true)
+    }
   }
 
-  const handleLimpiar = () => {
-    limpiarSesion()
-    setLimpiado(true)
-    setTimeout(() => window.location.reload(), 1500)
+  // ── VISTA: Formulario de reset ────────────────────────────────────────────
+  if (showReset) {
+    return (
+      <div style={styles.page}>
+        <div style={styles.card}>
+          <div style={styles.logoWrap}>
+            <div style={styles.logoIcon}>NE</div>
+          </div>
+          <h1 style={styles.title}>Recuperar contraseña</h1>
+
+          {resetSent ? (
+            <>
+              <div style={styles.successBox}>
+                <span style={{ fontSize: '20px' }}>✓</span>
+                <div>
+                  <p style={{ fontWeight: 600, marginBottom: 4 }}>Email enviado</p>
+                  <p style={{ fontSize: '13px', color: '#5a4d6a' }}>
+                    Revisá tu bandeja de entrada en <strong>{resetEmail}</strong>.
+                    El link es válido por 24 horas.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => { setShowReset(false); setResetSent(false); setResetEmail('') }}
+                style={styles.btnSecondary}
+              >
+                Volver al inicio de sesión
+              </button>
+            </>
+          ) : (
+            <form onSubmit={handleReset}>
+              <p style={styles.resetHint}>
+                Ingresá el email con el que te registraste y te enviaremos un link para crear una nueva contraseña.
+              </p>
+              <div style={styles.field}>
+                <label style={styles.label}>EMAIL</label>
+                <input
+                  type="email"
+                  value={resetEmail}
+                  onChange={e => setResetEmail(e.target.value)}
+                  placeholder="tu@email.com"
+                  required
+                  style={styles.input}
+                  autoFocus
+                />
+              </div>
+              {resetError && <p style={styles.errorMsg}>{resetError}</p>}
+              <button type="submit" disabled={resetLoading} style={styles.btnPrimary}>
+                {resetLoading ? 'Enviando...' : 'Enviar link de recuperación'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowReset(false); setResetError(''); setResetEmail('') }}
+                style={styles.linkBtn}
+              >
+                ← Volver al inicio de sesión
+              </button>
+            </form>
+          )}
+        </div>
+      </div>
+    )
   }
 
+  // ── VISTA: Login normal ───────────────────────────────────────────────────
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--v)', padding: '24px' }}>
-      <div style={{ background: 'var(--white)', borderRadius: '28px', padding: '36px 28px 32px', width: '100%', maxWidth: '400px' }}>
-        <div style={{ textAlign: 'center', marginBottom: '32px' }}>
-          <div style={{ width: '72px', height: '72px', borderRadius: '22px', background: 'var(--v)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
-            <svg width="36" height="36" viewBox="0 0 32 32" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M16 5L27 11v10L16 27 5 21V11L16 5z"/>
-              <path d="M16 5v22M5 11l11 10 11-10"/>
-            </svg>
-          </div>
-          <div style={{ fontSize: '24px', fontWeight: 700, color: 'var(--text)', letterSpacing: '-.3px' }}>
-            <span style={{ color: 'var(--v)' }}>Next</span> Ezeiza
-          </div>
-          <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '4px', letterSpacing: '.08em', textTransform: 'uppercase' }}>
-            Instituto de Inglés · Panel de gestión
-          </div>
+    <div style={styles.page}>
+      <div style={styles.card}>
+        <div style={styles.logoWrap}>
+          <div style={styles.logoIcon}>NE</div>
         </div>
+        <h1 style={styles.title}>Iniciar sesión</h1>
+        <p style={styles.subtitle}>Panel de gestión del instituto</p>
 
-        <div style={{ fontSize: '18px', fontWeight: 600, marginBottom: '4px' }}>Bienvenido</div>
-        <div style={{ fontSize: '14px', color: 'var(--text2)', marginBottom: '24px' }}>Ingresá con tus credenciales</div>
-
-        {error && (
-          <div style={{ background: 'var(--redl)', color: 'var(--red)', borderRadius: '10px', padding: '10px 14px', fontSize: '13px', marginBottom: '14px', border: '1px solid #f5c5c5' }}>
-            {error}
+        <form onSubmit={handleLogin}>
+          <div style={styles.field}>
+            <label style={styles.label}>EMAIL</label>
+            <input
+              type="email"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="tu@email.com"
+              required
+              autoComplete="email"
+              style={styles.input}
+            />
           </div>
-        )}
+          <div style={styles.field}>
+            <label style={styles.label}>CONTRASEÑA</label>
+            <input
+              type="password"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              autoComplete="current-password"
+              style={styles.input}
+            />
+          </div>
 
-        <div style={{ marginBottom: '16px' }}>
-          <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '.05em' }}>Usuario</label>
-          <input type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={handleKey} placeholder="usuario@nextezeiza.edu"
-            style={{ width: '100%', padding: '14px 16px', border: email ? '1.5px solid var(--v)' : '1.5px solid var(--border)', borderRadius: '12px', fontSize: '15px', outline: 'none', background: 'var(--white)', color: 'var(--text)' }} />
-        </div>
+          {error && <p style={styles.errorMsg}>{error}</p>}
 
-        <div style={{ marginBottom: '16px' }}>
-          <label style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text2)', display: 'block', marginBottom: '6px', textTransform: 'uppercase', letterSpacing: '.05em' }}>Contraseña</label>
-          <input type="password" value={password} onChange={e => setPassword(e.target.value)} onKeyDown={handleKey} placeholder="••••••••"
-            style={{ width: '100%', padding: '14px 16px', border: password ? '1.5px solid var(--v)' : '1.5px solid var(--border)', borderRadius: '12px', fontSize: '15px', outline: 'none', background: 'var(--white)', color: 'var(--text)' }} />
-        </div>
+          <button type="submit" disabled={loading} style={styles.btnPrimary}>
+            {loading ? 'Ingresando...' : 'Ingresar'}
+          </button>
+        </form>
 
-        <button onClick={handleSubmit} disabled={loading || !email || !password}
-          style={{ width: '100%', padding: '15px', background: loading ? 'var(--text3)' : 'var(--v)', color: '#fff', border: 'none', borderRadius: '12px', fontSize: '16px', fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', marginTop: '8px' }}>
-          {loading ? 'Ingresando...' : 'Ingresar'}
-        </button>
-
-        <button onClick={handleLimpiar}
-          style={{ width: '100%', padding: '10px', marginTop: '10px', background: 'transparent', color: limpiado ? 'var(--green)' : 'var(--text3)', border: 'none', borderRadius: '10px', fontSize: '13px', cursor: 'pointer' }}>
-          {limpiado ? '✓ Listo — recargá la página para ingresar' : '¿Problemas para ingresar? Tocá acá'}
-        </button>
-
-        <div style={{ textAlign: 'center', marginTop: '20px', paddingTop: '16px', borderTop: '1px solid var(--border)' }}>
-          <a href="/registro" style={{ fontSize: '13px', color: 'var(--v)', textDecoration: 'none', fontWeight: 500 }}>
-            ¿No tenés cuenta? Registrá tu instituto →
-          </a>
+        <div style={styles.resetWrap}>
+          <button onClick={() => { setShowReset(true); setResetEmail(email) }} style={styles.linkBtn}>
+            ¿Olvidaste tu contraseña?
+          </button>
         </div>
       </div>
     </div>
   )
+}
+
+// ── ESTILOS ──────────────────────────────────────────────────────────────────
+const styles: Record<string, React.CSSProperties> = {
+  page: {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    background: 'var(--vll)',
+    padding: '24px 16px',
+  },
+  card: {
+    width: '100%',
+    maxWidth: '400px',
+    background: '#fff',
+    borderRadius: '20px',
+    padding: '36px 32px 28px',
+    boxShadow: '0 8px 40px rgba(101,47,141,.14)',
+    border: '1px solid var(--border)',
+  },
+  logoWrap: {
+    display: 'flex',
+    justifyContent: 'center',
+    marginBottom: '20px',
+  },
+  logoIcon: {
+    width: '56px',
+    height: '56px',
+    background: 'var(--v)',
+    borderRadius: '14px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    color: '#fff',
+    fontSize: '18px',
+    fontWeight: 700,
+    fontFamily: 'Georgia, serif',
+  },
+  title: {
+    fontSize: '22px',
+    fontWeight: 700,
+    color: 'var(--text)',
+    textAlign: 'center',
+    marginBottom: '6px',
+  },
+  subtitle: {
+    fontSize: '13px',
+    color: 'var(--text3)',
+    textAlign: 'center',
+    marginBottom: '28px',
+  },
+  field: {
+    marginBottom: '16px',
+  },
+  label: {
+    display: 'block',
+    fontSize: '11px',
+    fontWeight: 700,
+    color: 'var(--text3)',
+    letterSpacing: '.07em',
+    marginBottom: '6px',
+  },
+  input: {
+    width: '100%',
+    padding: '11px 14px',
+    border: '1px solid var(--border)',
+    borderRadius: '10px',
+    fontSize: '15px',
+    color: 'var(--text)',
+    background: '#fff',
+    outline: 'none',
+  } as React.CSSProperties,
+  btnPrimary: {
+    display: 'block',
+    width: '100%',
+    padding: '13px',
+    background: 'var(--v)',
+    color: '#fff',
+    border: 'none',
+    borderRadius: '10px',
+    fontSize: '15px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    marginTop: '8px',
+    fontFamily: 'inherit',
+    letterSpacing: '.01em',
+  },
+  btnSecondary: {
+    display: 'block',
+    width: '100%',
+    padding: '13px',
+    background: 'transparent',
+    color: 'var(--v)',
+    border: '1px solid var(--v)',
+    borderRadius: '10px',
+    fontSize: '15px',
+    fontWeight: 600,
+    cursor: 'pointer',
+    marginTop: '8px',
+    fontFamily: 'inherit',
+  },
+  errorMsg: {
+    fontSize: '13px',
+    color: 'var(--red)',
+    marginBottom: '12px',
+    padding: '10px 14px',
+    background: 'var(--redl)',
+    borderRadius: '8px',
+  },
+  successBox: {
+    display: 'flex',
+    alignItems: 'flex-start',
+    gap: '12px',
+    background: 'var(--greenl)',
+    color: 'var(--green)',
+    borderRadius: '10px',
+    padding: '16px',
+    marginBottom: '16px',
+    fontSize: '14px',
+  },
+  resetWrap: {
+    textAlign: 'center' as const,
+    marginTop: '16px',
+  },
+  linkBtn: {
+    background: 'none',
+    border: 'none',
+    color: 'var(--v2)',
+    fontSize: '13px',
+    textDecoration: 'underline',
+    cursor: 'pointer',
+    padding: '8px 0',
+    display: 'block',
+    margin: '0 auto',
+    fontFamily: 'inherit',
+  },
+  resetHint: {
+    fontSize: '14px',
+    color: 'var(--text2)',
+    marginBottom: '20px',
+    lineHeight: 1.5,
+  },
 }
