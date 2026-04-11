@@ -79,6 +79,8 @@ export default function Alumnos() {
   const [busqueda, setBusqueda] = useState('')
   const [soloSinCurso, setSoloSinCurso] = useState(false)
   const [soloSinCuota, setSoloSinCuota] = useState(false)
+  const [soloSinTel, setSoloSinTel] = useState(false)
+  const [soloSinDni, setSoloSinDni] = useState(false)
   const [filtroPago, setFiltroPago] = useState<'todos'|'pagaron'|'no_pagaron'>('todos')
   const [mesFiltro, setMesFiltro] = useState(new Date().getMonth())
   const [alumnosSinCurso, setAlumnosSinCurso] = useState<Set<string>>(new Set())
@@ -236,10 +238,12 @@ export default function Alumnos() {
     const matchBusq = !busqueda || `${a.nombre} ${a.apellido} ${a.nivel} ${a.dni||''}`.toLowerCase().includes(busqueda.toLowerCase())
     const matchSinCurso = !soloSinCurso || alumnosSinCurso.has(a.id)
     const matchSinCuota = !soloSinCuota || !a.cuota_mensual || a.cuota_mensual === 0
+    const matchSinTel = !soloSinTel || (!a.telefono && !a.padre_telefono)
+    const matchSinDni = !soloSinDni || (!a.dni)
     const matchPago = filtroPago === 'todos' ? true
       : filtroPago === 'pagaron' ? alumnosConPagoMes.has(a.id)
       : !alumnosConPagoMes.has(a.id)
-    return matchBusq && matchSinCurso && matchSinCuota && matchPago
+    return matchBusq && matchSinCurso && matchSinCuota && matchSinTel && matchSinDni && matchPago
   })
 
   // No bloquear con loading — mostrar contenido aunque esté cargando
@@ -316,8 +320,26 @@ export default function Alumnos() {
             </span>
           )}
         </button>
-        {(soloSinCurso || soloSinCuota) && (
-          <button onClick={() => { setSoloSinCurso(false); setSoloSinCuota(false) }} style={{fontSize:'12px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}}>✕ Limpiar</button>
+        <button onClick={() => setSoloSinTel(!soloSinTel)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'7px 14px',borderRadius:'20px',fontSize:'12.5px',fontWeight:600,cursor:'pointer',border:'1.5px solid',borderColor:soloSinTel?'#1a6b8a':'var(--border)',background:soloSinTel?'#e0f0f7':'var(--white)',color:soloSinTel?'#1a6b8a':'var(--text2)',transition:'all .15s'}}>
+          <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 4a1 1 0 011-1h3l1 4-2 1a11 11 0 005 5l1-2 4 1v3a1 1 0 01-1 1C7 16 4 10 3 4z"/></svg>
+          Sin teléfono
+          {alumnos.filter((a:any) => !a.telefono && !a.padre_telefono).length > 0 && (
+            <span style={{background:soloSinTel?'#1a6b8a':'var(--border)',color:soloSinTel?'#fff':'var(--text2)',borderRadius:'20px',padding:'1px 7px',fontSize:'11px',fontWeight:700}}>
+              {alumnos.filter((a:any) => !a.telefono && !a.padre_telefono).length}
+            </span>
+          )}
+        </button>
+        <button onClick={() => setSoloSinDni(!soloSinDni)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'7px 14px',borderRadius:'20px',fontSize:'12.5px',fontWeight:600,cursor:'pointer',border:'1.5px solid',borderColor:soloSinDni?'#652f8d':'var(--border)',background:soloSinDni?'var(--vl)':'var(--white)',color:soloSinDni?'var(--v)':'var(--text2)',transition:'all .15s'}}>
+          <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="4" width="16" height="12" rx="2"/><path d="M6 9h4M6 12h7"/></svg>
+          Sin DNI
+          {alumnos.filter((a:any) => !a.dni).length > 0 && (
+            <span style={{background:soloSinDni?'var(--v)':'var(--border)',color:soloSinDni?'#fff':'var(--text2)',borderRadius:'20px',padding:'1px 7px',fontSize:'11px',fontWeight:700}}>
+              {alumnos.filter((a:any) => !a.dni).length}
+            </span>
+          )}
+        </button>
+        {(soloSinCurso || soloSinCuota || soloSinTel || soloSinDni) && (
+          <button onClick={() => { setSoloSinCurso(false); setSoloSinCuota(false); setSoloSinTel(false); setSoloSinDni(false) }} style={{fontSize:'12px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}}>✕ Limpiar</button>
         )}
       </div>
       {filtrados.map(a => {
@@ -805,7 +827,6 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
         {a.fecha_alta && <FieldRO label="Alumno activo desde" value={new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})} />}
         <FieldRO label="Teléfono" value={a.telefono||'—'} />
         <FieldRO label="Email" value={a.email||'—'} />
-        <FieldRO label="Nivel" value={a.nivel} />
         <FieldRO label="Cuota mensual" value={`$${a.cuota_mensual?.toLocaleString('es-AR')}`} />
 
         {/* CURSO */}
