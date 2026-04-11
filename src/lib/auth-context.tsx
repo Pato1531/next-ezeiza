@@ -2,12 +2,25 @@
 
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react'
 import { createClient, destroyClient, Usuario, Rol, puedeVer } from '@/lib/supabase'
-import { invalidateStore, setSessionReady, setCurrentUserName } from '@/lib/hooks'
+import { invalidateStore, setSessionReady, setCurrentUserName, setInstitutoId } from '@/lib/hooks'
 
 const SESSION_KEY = 'ne_session_uid'
+const INSTITUTO_KEY = 'ne_instituto_id'
+
+export interface Instituto {
+  id: string
+  nombre: string
+  slug: string
+  plan: 'starter' | 'growth' | 'pro'
+  logo_url?: string
+  color_primario: string
+  activo: boolean
+}
 
 interface AuthContextType {
   usuario: Usuario | null
+  instituto: Instituto | null
+  institutoId: string | null
   loading: boolean
   login: (email: string, password: string) => Promise<{ error?: string }>
   logout: () => Promise<void>
@@ -18,30 +31,24 @@ const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [usuario, setUsuario] = useState<Usuario | null>(null)
+  const [instituto, setInstituto] = useState<Instituto | null>(null)
   const [loading, setLoading] = useState(true)
   const usuarioRef = useRef<Usuario | null>(null)
   const cargandoRef = useRef(false)
-  const loadingResolvedRef = useRef(false)  // garantiza que setLoading(false) solo corre una vez
+  const loadingResolvedRef = useRef(false)
 
-  // Lee localStorage para saber si había sesión previa (sobrevive remounts)
   const prevUid = typeof window !== 'undefined' ? localStorage.getItem(SESSION_KEY) : null
   const hadSessionRef = useRef<boolean>(Boolean(prevUid))
 
-  // ── HELPER: resolver loading de forma segura ──────────────────────────────
-  // Garantiza que una vez resuelto, no vuelve a true accidentalmente
   const resolveLoading = () => {
     loadingResolvedRef.current = true
     setLoading(false)
   }
 
-  // ── SAFETY NET: timeout máximo de 4 segundos ──────────────────────────────
-  // Si algo falla y loading nunca se resuelve, después de 4s mostramos login.
-  // Mucho mejor que el timeout de 6s original — el usuario no espera tanto.
   useEffect(() => {
     const t = setTimeout(() => {
       if (!loadingResolvedRef.current) {
         console.warn('[auth] safety timeout — forzando resolución')
-        // Limpiar ne_session_uid si llegamos aquí — probablemente sesión expirada
         try { localStorage.removeItem(SESSION_KEY) } catch {}
         hadSessionRef.current = false
         resolveLoading()
@@ -56,17 +63,53 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const sb = createClient()
       const { data, error } = await sb
-        .from('usuarios').select('*').eq('id', uid).single()
+        .from('usuarios')
+        .select('*')
+        .eq('id', uid)
+        .single()
+
       if (data && !error) {
         setUsuario(data as Usuario)
         usuarioRef.current = data as Usuario
         hadSessionRef.current = true
         try { localStorage.setItem(SESSION_KEY, uid) } catch {}
         setCurrentUserName((data as any).nombre || (data as any).email || uid)
+
+        // Cargar instituto si el usuario tiene instituto_id (fase multi-tenancy)
+        const institutoId = (data as any).instituto_id
+        if (institutoId) {
+          try { localStorage.setItem(INSTITUTO_KEY, institutoId) } catch {}
+          const { data: inst } = await sb
+            .from('institutos')
+            .select('*')
+            .eq('id', institutoId)
+            .single()
+          if (inst) {
+              setInstituto(inst as Instituto)
+              setInstitutoId(inst.id)
+            }
+        } else {
+          // Pre-multi-tenancy: intentar desde localStorage si ya se migró antes
+          const cachedId = typeof window !== 'undefined'
+            ? localStorage.getItem(INSTITUTO_KEY)
+            : null
+          if (cachedId) {
+            const { data: inst } = await sb
+              .from('institutos')
+              .select('*')
+              .eq('id', cachedId)
+              .single()
+            if (inst) {
+              setInstituto(inst as Instituto)
+              setInstitutoId(inst.id)
+            }
+          }
+        }
+
         setSessionReady(true)
         return true
       }
-      // Falló cargar el usuario — limpiar sesión
+
       try { localStorage.removeItem(SESSION_KEY) } catch {}
       hadSessionRef.current = false
       return false
@@ -81,11 +124,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const doLogout = async () => {
     setUsuario(null)
+    setInstituto(null)
     usuarioRef.current = null
     hadSessionRef.current = false
     setSessionReady(false)
     invalidateStore()
     try { localStorage.removeItem(SESSION_KEY) } catch {}
+    try { localStorage.removeItem(INSTITUTO_KEY) } catch {}
     const sb = createClient()
     try { await sb.auth.signOut() } catch {}
     destroyClient()
@@ -105,9 +150,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (event, session) => {
         if (!mounted) return
 
-        // ── Logout explícito ──
         if (event === 'SIGNED_OUT') {
           setUsuario(null)
+          setInstituto(null)
           usuarioRef.current = null
           hadSessionRef.current = false
           setSessionReady(false)
@@ -117,20 +162,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return
         }
 
-        // ── Sin sesión ──
         if (!session) {
-          // Si NO había sesión previa → confirmar que no hay nada y resolver
           if (!hadSessionRef.current && !usuarioRef.current) {
             resolveLoading()
           }
-          // Si HABÍA sesión previa: esperar TOKEN_REFRESHED.
-          // El safety timeout de 4s es el backstop si TOKEN_REFRESHED nunca llega.
           return
         }
 
-        // ── Con sesión válida ──
         if (!usuarioRef.current && session.user) {
-          // Cargar usuario — si falla, el safety timeout resuelve loading
           const ok = await cargarUsuario(session.user.id)
           if (!ok && mounted) resolveLoading()
         } else if (usuarioRef.current) {
@@ -140,31 +179,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     )
 
-    // ── Verificación inicial ──────────────────────────────────────────────
-    // getSession() lee el localStorage de Supabase de forma SÍNCRONA-ish.
-    // Si devuelve null, la sesión realmente no existe — no esperar más.
     const init = async () => {
       try {
         const { data: { session } } = await sb.auth.getSession()
         if (!session) {
-          // Sesión definitivamente no existe — limpiar y resolver
           hadSessionRef.current = false
           try { localStorage.removeItem(SESSION_KEY) } catch {}
-          // Solo resolver aquí si onAuthStateChange tampoco lo hizo ya
           if (!loadingResolvedRef.current && !usuarioRef.current) {
             resolveLoading()
           }
         }
-        // Con sesión: onAuthStateChange ya va a disparar y resolver
       } catch {
-        // Error de red — el safety timeout lo manejará
         if (!loadingResolvedRef.current) resolveLoading()
       }
     }
 
     init()
 
-    // ── Visibilitychange: verificar sesión al volver al frente ────────────
     const handleVisibility = async () => {
       if (document.visibilityState !== 'visible') return
       if (!usuarioRef.current) return
@@ -173,7 +204,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (session) {
           setSessionReady(true)
         } else {
-          // Intentar refresh antes de desloguear
           const { data } = await sb.auth.refreshSession()
           if (data.session) {
             setSessionReady(true)
@@ -225,7 +255,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     usuario ? puedeVer(usuario.rol as Rol, modulo) : false
 
   return (
-    <AuthContext.Provider value={{ usuario, loading, login, logout: doLogout, puedeVer: puedeVerModulo }}>
+    <AuthContext.Provider value={{
+      usuario,
+      instituto,
+      institutoId: instituto?.id ?? null,
+      loading,
+      login,
+      logout: doLogout,
+      puedeVer: puedeVerModulo,
+    }}>
       {children}
     </AuthContext.Provider>
   )
