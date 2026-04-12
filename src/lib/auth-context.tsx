@@ -1,10 +1,10 @@
 'use client'
 
 import { createContext, useContext, useEffect, useRef, useState, ReactNode } from 'react'
-import { createClient, destroyClient, Usuario, Rol, puedeVer } from '@/lib/supabase'
+import { createClient, destroyClient, Usuario, Rol, PERMISOS, puedeVer } from '@/lib/supabase'
 import { invalidateStore, setSessionReady, setCurrentUserName, setInstitutoId } from '@/lib/hooks'
 
-const SESSION_KEY = 'ne_session_uid'
+const SESSION_KEY   = 'ne_session_uid'
 const INSTITUTO_KEY = 'ne_instituto_id'
 
 export interface Instituto {
@@ -25,16 +25,34 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<{ error?: string }>
   logout: () => Promise<void>
   puedeVer: (modulo: string) => boolean
+  // Permisos efectivos del usuario logueado (custom o por rol)
+  permisosEfectivos: string[]
+  // Solo para el director: mapa { usuario_id → permisos_custom | null }
+  permisosCustomPorUsuario: Record<string, string[] | null>
+  recargarPermisosUsuarios: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
 
+// Permisos efectivos: si el usuario tiene permisos_custom los usa,
+// si no cae al default del rol definido en supabase.ts
+function calcularEfectivos(u: any): string[] {
+  if (!u) return []
+  if (Array.isArray(u.permisos_custom) && u.permisos_custom.length > 0) {
+    return u.permisos_custom as string[]
+  }
+  return PERMISOS[u.rol as Rol] ?? []
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [usuario, setUsuario] = useState<Usuario | null>(null)
-  const [instituto, setInstituto] = useState<Instituto | null>(null)
-  const [loading, setLoading] = useState(true)
-  const usuarioRef = useRef<Usuario | null>(null)
-  const cargandoRef = useRef(false)
+  const [usuario,    setUsuario]    = useState<Usuario | null>(null)
+  const [instituto,  setInstituto]  = useState<Instituto | null>(null)
+  const [loading,    setLoading]    = useState(true)
+  const [permisosEfectivos,        setPermisosEfectivos]        = useState<string[]>([])
+  const [permisosCustomPorUsuario, setPermisosCustomPorUsuario] = useState<Record<string, string[] | null>>({})
+
+  const usuarioRef         = useRef<Usuario | null>(null)
+  const cargandoRef        = useRef(false)
   const loadingResolvedRef = useRef(false)
 
   const prevUid = typeof window !== 'undefined' ? localStorage.getItem(SESSION_KEY) : null
@@ -57,6 +75,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearTimeout(t)
   }, [])
 
+  // Carga permisos_custom de todos los usuarios activos — solo lo llama el director
+  const recargarPermisosUsuarios = async () => {
+    const sb = createClient()
+    const { data } = await sb
+      .from('usuarios')
+      .select('id, permisos_custom')
+      .eq('activo', true)
+    if (data) {
+      const mapa: Record<string, string[] | null> = {}
+      data.forEach((u: any) => { mapa[u.id] = u.permisos_custom ?? null })
+      setPermisosCustomPorUsuario(mapa)
+    }
+  }
+
   const cargarUsuario = async (uid: string): Promise<boolean> => {
     if (cargandoRef.current) return true
     cargandoRef.current = true
@@ -75,34 +107,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try { localStorage.setItem(SESSION_KEY, uid) } catch {}
         setCurrentUserName((data as any).nombre || (data as any).email || uid)
 
-        // Cargar instituto si el usuario tiene instituto_id (fase multi-tenancy)
+        // Calcular permisos efectivos del usuario logueado
+        setPermisosEfectivos(calcularEfectivos(data))
+
+        // Director: pre-carga mapa de permisos de todos los usuarios
+        if ((data as any).rol === 'director') {
+          recargarPermisosUsuarios()
+        }
+
         const institutoId = (data as any).instituto_id
         if (institutoId) {
           try { localStorage.setItem(INSTITUTO_KEY, institutoId) } catch {}
           const { data: inst } = await sb
-            .from('institutos')
-            .select('*')
-            .eq('id', institutoId)
-            .single()
-          if (inst) {
-              setInstituto(inst as Instituto)
-              setInstitutoId(inst.id)
-            }
+            .from('institutos').select('*').eq('id', institutoId).single()
+          if (inst) { setInstituto(inst as Instituto); setInstitutoId(inst.id) }
         } else {
-          // Pre-multi-tenancy: intentar desde localStorage si ya se migró antes
           const cachedId = typeof window !== 'undefined'
-            ? localStorage.getItem(INSTITUTO_KEY)
-            : null
+            ? localStorage.getItem(INSTITUTO_KEY) : null
           if (cachedId) {
             const { data: inst } = await sb
-              .from('institutos')
-              .select('*')
-              .eq('id', cachedId)
-              .single()
-            if (inst) {
-              setInstituto(inst as Instituto)
-              setInstitutoId(inst.id)
-            }
+              .from('institutos').select('*').eq('id', cachedId).single()
+            if (inst) { setInstituto(inst as Instituto); setInstitutoId(inst.id) }
           }
         }
 
@@ -125,11 +150,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const doLogout = async () => {
     setUsuario(null)
     setInstituto(null)
-    usuarioRef.current = null
+    setPermisosEfectivos([])
+    setPermisosCustomPorUsuario({})
+    usuarioRef.current  = null
     hadSessionRef.current = false
     setSessionReady(false)
     invalidateStore()
-    try { localStorage.removeItem(SESSION_KEY) } catch {}
+    try { localStorage.removeItem(SESSION_KEY)   } catch {}
     try { localStorage.removeItem(INSTITUTO_KEY) } catch {}
     const sb = createClient()
     try { await sb.auth.signOut() } catch {}
@@ -149,26 +176,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { data: { subscription } } = sb.auth.onAuthStateChange(
       async (event, session) => {
         if (!mounted) return
-
         if (event === 'SIGNED_OUT') {
-          setUsuario(null)
-          setInstituto(null)
-          usuarioRef.current = null
-          hadSessionRef.current = false
-          setSessionReady(false)
-          invalidateStore()
+          setUsuario(null); setInstituto(null)
+          setPermisosEfectivos([]); setPermisosCustomPorUsuario({})
+          usuarioRef.current = null; hadSessionRef.current = false
+          setSessionReady(false); invalidateStore()
           try { localStorage.removeItem(SESSION_KEY) } catch {}
-          resolveLoading()
-          return
+          resolveLoading(); return
         }
-
         if (!session) {
-          if (!hadSessionRef.current && !usuarioRef.current) {
-            resolveLoading()
-          }
+          if (!hadSessionRef.current && !usuarioRef.current) resolveLoading()
           return
         }
-
         if (!usuarioRef.current && session.user) {
           const ok = await cargarUsuario(session.user.id)
           if (!ok && mounted) resolveLoading()
@@ -185,31 +204,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!session) {
           hadSessionRef.current = false
           try { localStorage.removeItem(SESSION_KEY) } catch {}
-          if (!loadingResolvedRef.current && !usuarioRef.current) {
-            resolveLoading()
-          }
+          if (!loadingResolvedRef.current && !usuarioRef.current) resolveLoading()
         }
       } catch {
         if (!loadingResolvedRef.current) resolveLoading()
       }
     }
-
     init()
 
     const handleVisibility = async () => {
-      if (document.visibilityState !== 'visible') return
-      if (!usuarioRef.current) return
+      if (document.visibilityState !== 'visible' || !usuarioRef.current) return
       try {
         const { data: { session } } = await sb.auth.getSession()
-        if (session) {
-          setSessionReady(true)
-        } else {
+        if (session) { setSessionReady(true) }
+        else {
           const { data } = await sb.auth.refreshSession()
-          if (data.session) {
-            setSessionReady(true)
-          } else {
-            doLogout()
-          }
+          if (data.session) setSessionReady(true)
+          else doLogout()
         }
       } catch {}
     }
@@ -235,24 +246,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     loadingResolvedRef.current = false
     const sb = createClient()
     const { data, error } = await sb.auth.signInWithPassword({ email, password })
-    if (error) {
-      resolveLoading()
-      return { error: 'Usuario o contraseña incorrectos.' }
-    }
+    if (error) { resolveLoading(); return { error: 'Usuario o contraseña incorrectos.' } }
     if (data?.user) {
       hadSessionRef.current = true
       const ok = await cargarUsuario(data.user.id)
-      if (!ok) {
-        resolveLoading()
-        return { error: 'Usuario no encontrado en el sistema.' }
-      }
+      if (!ok) { resolveLoading(); return { error: 'Usuario no encontrado en el sistema.' } }
     }
     resolveLoading()
     return {}
   }
 
-  const puedeVerModulo = (modulo: string) =>
-    usuario ? puedeVer(usuario.rol as Rol, modulo) : false
+  // puedeVer usa permisos efectivos (custom o por rol), no solo el rol
+  const puedeVerModulo = (modulo: string): boolean => {
+    if (!usuario) return false
+    return permisosEfectivos.includes(modulo)
+  }
 
   return (
     <AuthContext.Provider value={{
@@ -263,6 +271,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout: doLogout,
       puedeVer: puedeVerModulo,
+      permisosEfectivos,
+      permisosCustomPorUsuario,
+      recargarPermisosUsuarios,
     }}>
       {children}
     </AuthContext.Provider>
