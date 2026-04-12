@@ -267,6 +267,30 @@ function RegistroConsultas() {
 }
 
 // ── LISTA DE ESPERA ──
+// ESTADOS DE SEGUIMIENTO COMERCIAL
+const ESTADOS_SEGUIMIENTO = [
+  { id: 'nuevo',      label: 'Nuevo',       bg: '#e0f0f7', color: '#1a6b8a' },
+  { id: 'contactado', label: 'Contactado',  bg: '#fef3cd', color: '#b45309' },
+  { id: 'demo',       label: 'Demo pend.',  bg: '#f4eefb', color: '#652f8d' },
+  { id: 'perdido',    label: 'No continúa', bg: '#fdeaea', color: '#c0392b' },
+]
+
+function EstadoBadge({ estado, onClick }: { estado?: string; onClick?: () => void }) {
+  const est = ESTADOS_SEGUIMIENTO.find(e => e.id === (estado || 'nuevo')) || ESTADOS_SEGUIMIENTO[0]
+  return (
+    <span onClick={onClick} style={{
+      display:'inline-block', padding:'3px 10px', borderRadius:'20px',
+      fontSize:'11px', fontWeight:600,
+      background: est.bg, color: est.color,
+      cursor: onClick ? 'pointer' : 'default',
+      border: `1px solid ${est.color}33`,
+      userSelect:'none' as const,
+    }}>
+      {est.label}
+    </span>
+  )
+}
+
 function ListaEspera() {
   const [lista, setLista] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
@@ -276,6 +300,7 @@ function ListaEspera() {
   const [modalInscribir, setModalInscribir] = useState<any>(null)
   const [inscribiendo, setInscribiendo] = useState(false)
   const [busqueda, setBusqueda] = useState('')
+  const [filtroEstado, setFiltroEstado] = useState<string>('todos')
   const formVacio = { nombre:'', apellido:'', edad:'', celular:'', dia_interes:'', franja_horaria:'', nivel_curso:'', observaciones:'' }
   const [form, setForm] = useState(formVacio)
   const [guardando, setGuardando] = useState(false)
@@ -427,19 +452,51 @@ function ListaEspera() {
     setInscribiendo(false)
   }
 
+  const cambiarEstado = async (id: string, nuevoEstado: string) => {
+    const sb = createClient()
+    await sb.from('lista_espera').update({ estado_seguimiento: nuevoEstado }).eq('id', id)
+    setLista(prev => prev.map(a => a.id === id ? { ...a, estado_seguimiento: nuevoEstado } : a))
+  }
+
   const wsLink = (cel: string, nombre: string) => {
     const num = cel.replace(/\D/g, '')
     const texto = `Hola ${nombre}, te contactamos desde Next Ezeiza. Tenemos disponibilidad para el curso que consultaste. ¿Podemos coordinar?`
     return `https://wa.me/54${num}?text=${encodeURIComponent(texto)}`
   }
 
-  const listaDia = lista.filter(a => !busqueda || `${a.nombre} ${a.apellido} ${a.celular}`.toLowerCase().includes(busqueda.toLowerCase()))
+  const listaFiltrada = lista
+    .filter(a => filtroEstado === 'todos' || (a.estado_seguimiento || 'nuevo') === filtroEstado)
+    .filter(a => !busqueda || `${a.nombre} ${a.apellido} ${a.celular}`.toLowerCase().includes(busqueda.toLowerCase()))
+
+  // KPIs de conversión por etapa
+  const kpiEstados = ESTADOS_SEGUIMIENTO.map(e => ({
+    ...e,
+    count: lista.filter(a => (a.estado_seguimiento || 'nuevo') === e.id).length
+  }))
 
   return (
     <div>
+      {/* KPIs de etapas del pipeline */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px',marginBottom:'14px'}}>
+        {kpiEstados.map(e => (
+          <button key={e.id} onClick={() => setFiltroEstado(filtroEstado === e.id ? 'todos' : e.id)}
+            style={{background: filtroEstado === e.id ? e.bg : 'var(--white)',border:`1.5px solid ${filtroEstado === e.id ? e.color : 'var(--border)'}`,borderRadius:'12px',padding:'10px 8px',textAlign:'center',cursor:'pointer',transition:'all .15s'}}>
+            <div style={{fontSize:'20px',fontWeight:800,color:e.color}}>{e.count}</div>
+            <div style={{fontSize:'10px',color:e.color,fontWeight:600,marginTop:'2px'}}>{e.label}</div>
+          </button>
+        ))}
+      </div>
+
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px',gap:'8px',flexWrap:'wrap'}}>
-        <div style={{fontSize:'13px',color:'var(--text2)',fontWeight:600}}>{lista.length} persona{lista.length!==1?'s':''} en espera</div>
-        <BtnP sm onClick={() => { setForm(formVacio); setEditandoId(null); setModal(true) }}>+ Agregar</BtnP>
+        <div style={{fontSize:'13px',color:'var(--text2)',fontWeight:600}}>
+          {filtroEstado === 'todos' ? `${lista.length} persona${lista.length!==1?'s':''} en espera` : `${listaFiltrada.length} en "${ESTADOS_SEGUIMIENTO.find(e=>e.id===filtroEstado)?.label}"`}
+        </div>
+        <div style={{display:'flex',gap:'6px'}}>
+          {filtroEstado !== 'todos' && (
+            <button onClick={() => setFiltroEstado('todos')} style={{padding:'7px 12px',background:'var(--bg)',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'12px',cursor:'pointer'}}>✕ Limpiar filtro</button>
+          )}
+          <BtnP sm onClick={() => { setForm(formVacio); setEditandoId(null); setModal(true) }}>+ Agregar</BtnP>
+        </div>
       </div>
 
       {/* Buscador */}
@@ -453,16 +510,21 @@ function ListaEspera() {
 
       {loading ? (
         <div style={{textAlign:'center',padding:'32px',color:'var(--text3)'}}>Cargando...</div>
-      ) : listaDia.length === 0 ? (
+      ) : listaFiltrada.length === 0 ? (
         <div style={{textAlign:'center',padding:'48px',color:'var(--text3)',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px'}}>
           <div style={{fontSize:'32px',marginBottom:'8px'}}>⏳</div>
-          <div style={{fontWeight:600,marginBottom:'4px'}}>Lista de espera vacía</div>
-          <div style={{fontSize:'13px'}}>{busqueda ? 'Sin resultados para esa búsqueda.' : 'Agregá personas interesadas con el botón + Agregar'}</div>
+          <div style={{fontWeight:600,marginBottom:'4px'}}>Sin resultados</div>
+          <div style={{fontSize:'13px'}}>{busqueda || filtroEstado !== 'todos' ? 'Sin resultados para el filtro aplicado.' : 'Agregá personas interesadas con el botón + Agregar'}</div>
         </div>
       ) : (
         <div>
-          {listaDia.map((a: any, idx: number) => {
+          {listaFiltrada.map((a: any, idx: number) => {
             const color = COLORES_AV[idx % COLORES_AV.length]
+            const estadoActual = a.estado_seguimiento || 'nuevo'
+            const sigEstado = (est: string) => {
+              const idx2 = ESTADOS_SEGUIMIENTO.findIndex(e => e.id === est)
+              return ESTADOS_SEGUIMIENTO[Math.min(idx2 + 1, ESTADOS_SEGUIMIENTO.length - 1)].id
+            }
             return (
               <div key={a.id} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'14px 16px',marginBottom:'10px'}}>
                 <div style={{display:'flex',alignItems:'flex-start',gap:'12px'}}>
@@ -471,7 +533,15 @@ function ListaEspera() {
                     {a.nombre[0]}{a.apellido[0]}
                   </div>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:'15px',fontWeight:700}}>{a.nombre} {a.apellido}</div>
+                    <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+                      <div style={{fontSize:'15px',fontWeight:700}}>{a.nombre} {a.apellido}</div>
+                      <EstadoBadge estado={estadoActual} onClick={() => {
+                        const estados = ESTADOS_SEGUIMIENTO.map(e => e.id)
+                        const idx3 = estados.indexOf(estadoActual)
+                        const prox = estados[(idx3 + 1) % estados.length]
+                        cambiarEstado(a.id, prox)
+                      }} />
+                    </div>
                     <div style={{fontSize:'12px',color:'var(--text3)',marginTop:'1px'}}>
                       📱 {a.celular||'—'} · Agregado {a.created_at ? new Date(a.created_at).toLocaleDateString('es-AR',{day:'numeric',month:'short'}) : '—'}
                     </div>
