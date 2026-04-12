@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
-import { useAlumnos, useProfesoras, useCursos, useLiquidaciones } from '@/lib/hooks'
+import { useAlumnos, useProfesoras, useCursos } from '@/lib/hooks'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
@@ -13,14 +13,14 @@ export default function DashboardEjecutivo() {
   const [mes,  setMes]  = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
 
-  const { alumnos }      = useAlumnos()
-  const { profesoras }   = useProfesoras()
-  const { cursos }       = useCursos()
-  const { liquidaciones} = useLiquidaciones()
+  const { alumnos }    = useAlumnos()
+  const { profesoras } = useProfesoras()
+  const { cursos }     = useCursos()
 
   // ── Datos financieros ─────────────────────────────────────────────────────
   const [pagos,         setPagos]         = useState<any[]>([])
   const [pagosMesAnt,   setPagosMesAnt]   = useState<any[]>([])
+  const [liquidaciones, setLiquidaciones] = useState<any[]>([])
   const [altasMes,      setAltasMes]      = useState<any[]>([])
   const [bajasMes,      setBajasMes]      = useState<any[]>([])
   const [loading,       setLoading]       = useState(true)
@@ -37,13 +37,18 @@ export default function DashboardEjecutivo() {
       const inicioMes = `${anio}-${String(mes + 1).padStart(2,'0')}-01`
       const finMes    = new Date(anio, mes + 1, 0).toISOString().split('T')[0]
 
-      const [pagosRes, pagosAntRes, altasRes, bajasRes] = await Promise.all([
+      const [pagosRes, pagosAntRes, liqRes, altasRes, bajasRes] = await Promise.all([
+        // metodo incluido — era el campo que faltaba
         sb.from('pagos_alumnos')
-          .select('monto, observaciones, alumno_id, alumnos(nombre, apellido, cuota_mensual)')
+          .select('monto, metodo, observaciones, alumno_id')
           .eq('mes', mesNombre).eq('anio', anio),
         sb.from('pagos_alumnos')
           .select('monto')
           .eq('mes', mesAntNombre).eq('anio', anioAnt),
+        // Liquidaciones directas — useLiquidaciones() requiere profesora_id, no aplica aquí
+        sb.from('liquidaciones')
+          .select('total, estado, profesora_id')
+          .eq('mes', mesNombre).eq('anio', anio),
         sb.from('alumnos')
           .select('id, nombre, apellido, nivel, fecha_alta')
           .gte('fecha_alta', inicioMes).lte('fecha_alta', finMes).eq('activo', true),
@@ -54,6 +59,7 @@ export default function DashboardEjecutivo() {
 
       setPagos(pagosRes.data || [])
       setPagosMesAnt(pagosAntRes.data || [])
+      setLiquidaciones(liqRes.data || [])
       setAltasMes(altasRes.data || [])
       setBajasMes(bajasRes.data || [])
       setLoading(false)
@@ -79,7 +85,7 @@ export default function DashboardEjecutivo() {
   const pctCobranza = pct(cobrados, alumnos.length)
 
   // Liquidaciones del mes
-  const liqsMes  = liquidaciones.filter(l => l.mes === mesNombre && l.anio === anio)
+  const liqsMes  = liquidaciones  // ya filtradas por mes/anio en la query
   const totalLiq = liqsMes.reduce((s, l) => s + (l.total || 0), 0)
   const liqPend  = profesoras.length - liqsMes.filter(l => l.estado === 'pagada').length
 
