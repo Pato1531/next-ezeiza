@@ -31,7 +31,7 @@ export default function Cursos() {
     : todosCursos
   const [vista, setVista] = useState<Vista>('lista')
   const [selId, setSelId] = useState<string|null>(null)
-  const [tab, setTab] = useState<'info'|'alumnos'|'planilla'|'examenes'>('info')
+  const [tab, setTab] = useState<'info'|'alumnos'|'planilla'|'examenes'|'planificacion'>('info')
   const [form, setForm] = useState<any>(null)
   const [guardando, setGuardando] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -700,6 +700,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
         <TabBtn active={tab==='alumnos'} onClick={() => setTab('alumnos')}>Alumnos ({alumnosCurso.length})</TabBtn>
         <TabBtn active={tab==='planilla'} onClick={() => setTab('planilla')}>Planilla</TabBtn>
         <TabBtn active={tab==='examenes'} onClick={() => setTab('examenes')}>Exámenes</TabBtn>
+        <TabBtn active={tab==='planificacion'} onClick={() => setTab('planificacion')}>Planificación</TabBtn>
       </div>
 
       {/* RESUMEN RÁPIDO — última clase */}
@@ -885,6 +886,8 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
       </div>}
 
       {tab === 'examenes' && <ExamenesTab cursoId={c.id} alumnosCurso={alumnosCurso} puedeEditar={puedeEditar} puedeCrearExamen={true} />}
+
+      {tab === 'planificacion' && <PlanificacionTab cursoId={c.id} puedeEditar={puedeEditar} clasesDictadas={clasesLocal.length} />}
 
       {confirmDelete && <ModalSheet title="¿Eliminar curso?" onClose={onCancelDelete}>
         <p style={{fontSize:'14px',color:'var(--text2)',marginBottom:'20px'}}>Esta acción desactiva el curso y lo elimina del horario.</p>
@@ -1456,6 +1459,262 @@ function BuscadorModal({ alumnos, onSelect }: any) {
         ))}
         {filtrados.length === 0 && <div style={{textAlign:'center',padding:'16px',color:'var(--text3)'}}>No se encontraron alumnos</div>}
       </div>
+    </div>
+  )
+}
+
+
+// ── TAB PLANIFICACIÓN ANUAL ──────────────────────────────────────────────────
+function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: string; puedeEditar: boolean; clasesDictadas: number }) {
+  const [unidades, setUnidades] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [modal, setModal] = useState(false)
+  const [editando, setEditando] = useState<any>(null)
+  const [confirmDel, setConfirmDel] = useState<string|null>(null)
+  const [guardando, setGuardando] = useState(false)
+  const formVacio = { titulo: '', descripcion: '', estado: 'pendiente' }
+  const [form, setForm] = useState(formVacio)
+
+  useEffect(() => { cargar() }, [cursoId])
+
+  const cargar = async () => {
+    setLoading(true)
+    const sb = createClient()
+    const { data } = await sb.from('planificacion_cursos')
+      .select('*').eq('curso_id', cursoId).order('orden').order('created_at')
+    setUnidades(data || [])
+    setLoading(false)
+  }
+
+  const abrirNueva = () => {
+    setForm(formVacio)
+    setEditando(null)
+    setModal(true)
+  }
+
+  const abrirEditar = (u: any) => {
+    setForm({ titulo: u.titulo, descripcion: u.descripcion || '', estado: u.estado })
+    setEditando(u)
+    setModal(true)
+  }
+
+  const guardar = async () => {
+    if (!form.titulo.trim()) return alert('El título es obligatorio')
+    setGuardando(true)
+    const sb = createClient()
+    if (editando) {
+      const { error } = await sb.from('planificacion_cursos')
+        .update({ titulo: form.titulo, descripcion: form.descripcion, estado: form.estado })
+        .eq('id', editando.id)
+      if (!error) {
+        setUnidades(prev => prev.map(u => u.id === editando.id ? { ...u, ...form } : u))
+        setModal(false)
+      }
+    } else {
+      const orden = unidades.length
+      const { data, error } = await sb.from('planificacion_cursos')
+        .insert({ curso_id: cursoId, titulo: form.titulo, descripcion: form.descripcion, estado: form.estado, orden })
+        .select().single()
+      if (!error && data) {
+        setUnidades(prev => [...prev, data])
+        setModal(false)
+      }
+    }
+    setGuardando(false)
+    setForm(formVacio)
+    setEditando(null)
+  }
+
+  const cambiarEstado = async (id: string, nuevoEstado: string) => {
+    const sb = createClient()
+    await sb.from('planificacion_cursos').update({ estado: nuevoEstado }).eq('id', id)
+    setUnidades(prev => prev.map(u => u.id === id ? { ...u, estado: nuevoEstado } : u))
+  }
+
+  const eliminar = async (id: string) => {
+    const sb = createClient()
+    await sb.from('planificacion_cursos').delete().eq('id', id)
+    setUnidades(prev => prev.filter(u => u.id !== id))
+    setConfirmDel(null)
+  }
+
+  const moverArriba = async (idx: number) => {
+    if (idx === 0) return
+    const sb = createClient()
+    const arr = [...unidades]
+    const [a, b] = [arr[idx-1], arr[idx]]
+    arr[idx-1] = { ...b, orden: idx-1 }
+    arr[idx]   = { ...a, orden: idx }
+    setUnidades(arr)
+    await Promise.all([
+      sb.from('planificacion_cursos').update({ orden: idx-1 }).eq('id', b.id),
+      sb.from('planificacion_cursos').update({ orden: idx   }).eq('id', a.id),
+    ])
+  }
+
+  const ESTADO_CFG: Record<string,{label:string,bg:string,color:string,next:string}> = {
+    pendiente:  { label:'Pendiente',  bg:'var(--bg)',    color:'var(--text3)', next:'en_curso'  },
+    en_curso:   { label:'En curso',   bg:'#f4eefb',      color:'#652f8d',      next:'dictada'   },
+    dictada:    { label:'Dictada',    bg:'var(--greenl)', color:'var(--green)', next:'pendiente' },
+  }
+
+  const dictadas  = unidades.filter(u => u.estado === 'dictada').length
+  const enCurso   = unidades.filter(u => u.estado === 'en_curso').length
+  const pendientes = unidades.filter(u => u.estado === 'pendiente').length
+  const pct = unidades.length > 0 ? Math.round((dictadas / unidades.length) * 100) : 0
+
+  const IS2 = { width:'100%', padding:'10px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'14px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
+
+  if (loading) return <div style={{textAlign:'center',padding:'32px',color:'var(--text3)'}}>Cargando...</div>
+
+  return (
+    <div>
+      {/* KPIs de avance */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px',marginBottom:'14px'}}>
+        {[
+          { label:'Unidades', val: unidades.length, color:'var(--text)' },
+          { label:'Dictadas',  val: dictadas,  color:'var(--green)' },
+          { label:'En curso',  val: enCurso,   color:'#652f8d'      },
+          { label:'Avance',    val: `${pct}%`,  color: pct >= 75 ? 'var(--green)' : pct >= 40 ? '#652f8d' : 'var(--amber)' },
+        ].map(k => (
+          <div key={k.label} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'10px',textAlign:'center'}}>
+            <div style={{fontSize:'20px',fontWeight:800,color:k.color}}>{k.val}</div>
+            <div style={{fontSize:'10px',color:'var(--text3)',fontWeight:600,marginTop:'2px'}}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Barra de progreso */}
+      {unidades.length > 0 && (
+        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'12px 16px',marginBottom:'14px'}}>
+          <div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',color:'var(--text2)',marginBottom:'7px'}}>
+            <span style={{fontWeight:600}}>Progreso del año</span>
+            <span style={{color:'#652f8d',fontWeight:700}}>{pct}% completado</span>
+          </div>
+          <div style={{height:'8px',background:'var(--border)',borderRadius:'10px',overflow:'hidden'}}>
+            <div style={{height:'100%',width:`${pct}%`,background:'#652f8d',borderRadius:'10px',transition:'width .4s ease'}} />
+          </div>
+          {clasesDictadas > 0 && (
+            <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'6px'}}>
+              {clasesDictadas} clase{clasesDictadas!==1?'s':''} registrada{clasesDictadas!==1?'s':''} en la planilla
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Lista de unidades */}
+      {unidades.length === 0 ? (
+        <div style={{textAlign:'center',padding:'48px 24px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',color:'var(--text3)'}}>
+          <div style={{fontSize:'32px',marginBottom:'8px'}}>📋</div>
+          <div style={{fontWeight:600,marginBottom:'4px'}}>Sin planificación cargada</div>
+          <div style={{fontSize:'13px',marginBottom:'16px'}}>Agregá las unidades del año para hacer el seguimiento del avance académico</div>
+          {puedeEditar && <button onClick={abrirNueva} style={{padding:'10px 20px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>+ Agregar primera unidad</button>}
+        </div>
+      ) : (
+        <div>
+          {unidades.map((u, idx) => {
+            const cfg = ESTADO_CFG[u.estado] || ESTADO_CFG.pendiente
+            return (
+              <div key={u.id} style={{background:'var(--white)',border:`1.5px solid ${u.estado==='en_curso'?'#652f8d':u.estado==='dictada'?'var(--green)':'var(--border)'}`,borderRadius:'14px',padding:'14px 16px',marginBottom:'10px'}}>
+                <div style={{display:'flex',alignItems:'flex-start',gap:'12px'}}>
+                  {/* Número de orden */}
+                  <div style={{width:28,height:28,borderRadius:'50%',background:cfg.bg,border:`1.5px solid ${cfg.color}44`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:cfg.color,flexShrink:0,marginTop:'1px'}}>
+                    {idx+1}
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'4px'}}>
+                      <div style={{fontSize:'14px',fontWeight:700,color:'var(--text)'}}>{u.titulo}</div>
+                      <span
+                        onClick={() => { if(puedeEditar) { const estados = Object.keys(ESTADO_CFG); const idx2=estados.indexOf(u.estado); cambiarEstado(u.id, estados[(idx2+1)%estados.length]) } }}
+                        style={{display:'inline-block',padding:'2px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:600,background:cfg.bg,color:cfg.color,border:`1px solid ${cfg.color}33`,cursor:puedeEditar?'pointer':'default',userSelect:'none'}}
+                      >
+                        {cfg.label}
+                      </span>
+                    </div>
+                    {u.descripcion && (
+                      <div style={{fontSize:'12px',color:'var(--text3)',lineHeight:1.5}}>{u.descripcion}</div>
+                    )}
+                  </div>
+                  {puedeEditar && (
+                    <div style={{display:'flex',gap:'4px',flexShrink:0}}>
+                      {idx > 0 && (
+                        <button onClick={() => moverArriba(idx)} title="Mover arriba" style={{padding:'5px 7px',background:'var(--bg)',border:'1.5px solid var(--border)',borderRadius:'7px',cursor:'pointer',fontSize:'12px',color:'var(--text2)'}}>↑</button>
+                      )}
+                      <button onClick={() => abrirEditar(u)} style={{padding:'5px 9px',background:'var(--bg)',border:'1.5px solid var(--border)',borderRadius:'7px',cursor:'pointer',fontSize:'12px',color:'var(--text2)'}}>Editar</button>
+                      <button onClick={() => setConfirmDel(u.id)} style={{padding:'5px 9px',background:'var(--redl)',border:'1px solid #f5c5c5',borderRadius:'7px',cursor:'pointer',fontSize:'12px',color:'var(--red)'}}>✕</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+
+          {puedeEditar && (
+            <button onClick={abrirNueva} style={{width:'100%',padding:'11px',border:'1.5px dashed var(--border)',borderRadius:'12px',background:'transparent',color:'var(--text3)',fontSize:'13px',fontWeight:600,cursor:'pointer',marginTop:'4px'}}>
+              + Agregar unidad
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* MODAL AGREGAR / EDITAR */}
+      {modal && (
+        <div style={{position:'fixed',inset:0,background:'rgba(20,0,40,.45)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:200}} onClick={e=>{if(e.target===e.currentTarget){setModal(false);setForm(formVacio)}}}>
+          <div style={{background:'var(--white)',borderRadius:'24px 24px 0 0',padding:'28px 20px 32px',width:'100%',maxWidth:'480px',maxHeight:'90vh',overflowY:'auto'}}>
+            <div style={{width:'40px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 20px'}} />
+            <div style={{fontSize:'18px',fontWeight:700,marginBottom:'20px'}}>{editando ? 'Editar unidad' : 'Nueva unidad'}</div>
+
+            <div style={{marginBottom:'11px'}}>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Título *</div>
+              <input style={IS2} value={form.titulo} onChange={e => setForm({...form, titulo: e.target.value})} placeholder="Ej: Present Perfect, Unit 4 — Travel..." autoFocus />
+            </div>
+
+            <div style={{marginBottom:'11px'}}>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Descripción (opcional)</div>
+              <textarea
+                style={{...IS2, resize:'none', lineHeight:1.5}}
+                rows={3}
+                value={form.descripcion}
+                onChange={e => setForm({...form, descripcion: e.target.value})}
+                placeholder="Temas, objetivos, contenidos de esta unidad..."
+              />
+            </div>
+
+            <div style={{marginBottom:'20px'}}>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Estado</div>
+              <div style={{display:'flex',gap:'8px'}}>
+                {Object.entries(ESTADO_CFG).map(([key, cfg]) => (
+                  <button key={key} onClick={() => setForm({...form, estado: key})} style={{flex:1,padding:'8px',borderRadius:'10px',border:`1.5px solid ${form.estado===key ? cfg.color : 'var(--border)'}`,background:form.estado===key ? cfg.bg : 'var(--white)',color:form.estado===key ? cfg.color : 'var(--text3)',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
+                    {cfg.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{display:'flex',gap:'10px'}}>
+              <button onClick={()=>{setModal(false);setForm(formVacio)}} style={{flex:1,padding:'12px',background:'transparent',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>Cancelar</button>
+              <button onClick={guardar} disabled={guardando} style={{flex:2,padding:'12px',background:guardando?'#aaa':'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:guardando?'not-allowed':'pointer'}}>
+                {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Agregar unidad'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONFIRMAR ELIMINAR */}
+      {confirmDel && (
+        <div style={{position:'fixed',inset:0,background:'rgba(20,0,40,.45)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:200}} onClick={e=>{if(e.target===e.currentTarget)setConfirmDel(null)}}>
+          <div style={{background:'var(--white)',borderRadius:'24px 24px 0 0',padding:'28px 20px 32px',width:'100%',maxWidth:'480px'}}>
+            <div style={{width:'40px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 20px'}} />
+            <div style={{fontSize:'18px',fontWeight:700,marginBottom:'8px'}}>¿Eliminar unidad?</div>
+            <div style={{fontSize:'14px',color:'var(--text2)',marginBottom:'20px'}}>Esta acción no se puede deshacer.</div>
+            <div style={{display:'flex',gap:'10px'}}>
+              <button onClick={()=>setConfirmDel(null)} style={{flex:1,padding:'12px',background:'transparent',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>Cancelar</button>
+              <button onClick={()=>eliminar(confirmDel)} style={{flex:2,padding:'12px',background:'var(--red)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>Sí, eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
