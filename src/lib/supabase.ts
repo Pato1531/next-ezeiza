@@ -112,10 +112,55 @@ export interface HorarioItem {
 }
 
 export const PERMISOS: Record<Rol, string[]> = {
-  director:     ['dashboard','profesoras','alumnos','cursos','horarios','reportes','permisos','perfil','comunicados','agenda','actividad','atencion'],
-  coordinadora: ['dashboard','profesoras','alumnos','cursos','horarios','reportes','perfil','comunicados','agenda','atencion'],
-  secretaria:   ['dashboard','alumnos','cursos','horarios','reportes','perfil','comunicados','agenda','atencion'],
-  profesora:    ['dashboard','alumnos','cursos','horarios','perfil','comunicados','agenda'],
+  director: [
+    'dashboard',
+    'profesoras',
+    'alumnos',
+    'cursos',
+    'horarios',
+    'reportes',
+    'permisos',
+    'perfil',
+    'comunicados',
+    'agenda',
+    'actividad',
+    'atencion',
+    'ejecutivo',  // Dashboard Ejecutivo — solo director
+    'cuotas',     // Cuotas por curso — director y secretaria
+  ],
+  coordinadora: [
+    'dashboard',
+    'profesoras',
+    'alumnos',
+    'cursos',
+    'horarios',
+    'reportes',
+    'perfil',
+    'comunicados',
+    'agenda',
+    'atencion',
+  ],
+  secretaria: [
+    'dashboard',
+    'alumnos',
+    'cursos',
+    'horarios',
+    'reportes',
+    'perfil',
+    'comunicados',
+    'agenda',
+    'atencion',
+    'cuotas',     // Cuotas por curso — director y secretaria
+  ],
+  profesora: [
+    'dashboard',
+    'alumnos',
+    'cursos',
+    'horarios',
+    'perfil',
+    'comunicados',
+    'agenda',
+  ],
 }
 
 export const puedeVer = (rol: Rol, modulo: string) =>
