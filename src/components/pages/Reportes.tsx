@@ -1195,53 +1195,129 @@ function BoletinSection({ alumnos }: any) {
     const al = alumnos.find((a: any) => a.id === selAlumno)
     if (!al) { setGenerando(false); return }
     const [exRes, cuRes] = await Promise.all([
-      sb.from('notas_examenes').select('*, examenes(nombre,fecha)').eq('examenes.anio', anio),
-      sb.from('cursos_alumnos').select('cursos(nombre)').eq('alumno_id', selAlumno).limit(1)
+      sb.from('notas_examenes').select('*, examenes(nombre,fecha,tipo)').eq('alumno_id', selAlumno),
+      sb.from('cursos_alumnos').select('cursos(id,nombre,nivel)').eq('alumno_id', selAlumno).limit(1)
     ])
-    const notas = (exRes.data || []).filter((n: any) => n.alumno_id === selAlumno)
-    const curso = cuRes.data?.[0]?.cursos?.nombre || '—'
+    const notas = exRes.data || []
+    const cursoData = cuRes.data?.[0]?.cursos as any
+    const curso = cursoData?.nombre || '—'
+    const nivel = nivelManual || cursoData?.nivel || al.nivel || '—'
     const promedio = notas.length ? Math.round(notas.reduce((s: number, n: any) => s + (n.nota || 0), 0) / notas.length) : null
     const aprobados = notas.filter((n: any) => (n.nota || 0) >= 60 && !n.ausente).length
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Boletín ${al.nombre} ${al.apellido}</title>
-    <style>body{font-family:Arial,sans-serif;padding:0;margin:0;background:#f5f0fa}
-    .wrap{max-width:480px;margin:20px auto;background:white;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(101,47,141,.15)}
-    .hdr{background:linear-gradient(135deg,#652f8d,#8b4fc4);padding:24px;color:white;display:flex;align-items:center;gap:16px}
-    .logo{font-size:18px;font-weight:900}.logo span{opacity:.7;font-weight:400}
-    .av{width:50px;height:50px;border-radius:14px;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;flex-shrink:0}
-    .body{padding:20px}
-    .sec-title{font-size:10px;font-weight:700;color:#9b8eaa;text-transform:uppercase;letter-spacing:.06em;margin-bottom:10px;padding-bottom:6px;border-bottom:1px solid #f0edf5}
-    .kpis{display:flex;gap:10px;background:#f9f5fd;border-radius:12px;padding:14px;margin-bottom:16px}
-    .kpi{flex:1;text-align:center}.kpi-val{font-size:22px;font-weight:800;color:#652f8d}.kpi-lab{font-size:10px;color:#9b8eaa;font-weight:600;text-transform:uppercase;margin-top:2px}
-    .examen-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0edf5}
-    .nota{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:800}
-    .ap{background:#e6f4ec;color:#2d7a4f}.de{background:#fdeaea;color:#c0392b}.aus{background:#fef3cd;color:#b45309}
-    .footer{background:#faf7fd;padding:14px;text-align:center;font-size:11px;color:#9b8eaa;border-top:1px solid #f0edf5}
-    @media print{body{background:white}.wrap{box-shadow:none;margin:0;border-radius:0}}
-    </style></head><body><div class="wrap">
-    <div class="hdr">
-      <div class="av">${al.nombre[0]}${al.apellido[0]}</div>
-      <div><div class="logo">Next <span>Ezeiza</span></div>
-      <div style="font-size:15px;font-weight:800;margin-top:4px">${al.nombre} ${al.apellido}</div>
-      <div style="font-size:12px;opacity:.8">${curso} · ${periodo} ${anio}</div>
-      ${al.dni ? `<div style="font-size:11px;opacity:.65;margin-top:2px">DNI: ${al.dni}</div>` : ''}</div>
-    </div>
-    <div class="body">
-      <div class="kpis">
-        <div class="kpi"><div class="kpi-val">${nivelManual||al.nivel||'—'}</div><div class="kpi-lab">Nivel</div></div>
-        <div class="kpi"><div class="kpi-val">${promedio ?? '—'}</div><div class="kpi-lab">Promedio</div></div>
-        <div class="kpi"><div class="kpi-val">${aprobados}/${notas.length}</div><div class="kpi-lab">Aprobados</div></div>
-      </div>
-      <div class="sec-title">Evaluaciones</div>
-      ${notas.length === 0 ? '<p style="color:#9b8eaa;font-size:13px">Sin exámenes registrados para este período.</p>' :
-        notas.map((n: any) => {
-          const cls = n.ausente ? 'aus' : (n.nota||0) >= 60 ? 'ap' : 'de'
+    const hoy = new Date().toLocaleDateString('es-AR', {day:'numeric',month:'long',year:'numeric'})
+    const initials = `${al.nombre[0]}${al.apellido[0]}`
+
+    const notaBadge = (n: any) => {
+      if (n.ausente) return { bg:'#fef3cd', color:'#b45309', label:'—' }
+      const v = n.nota ?? 0
+      if (v >= 80) return { bg:'#e6f4ec', color:'#2d7a4f', label: String(v) }
+      if (v >= 60) return { bg:'#e0f0f7', color:'#1a6b8a', label: String(v) }
+      return { bg:'#fdeaea', color:'#c0392b', label: String(v) }
+    }
+
+    const filasExamenes = notas.length === 0
+      ? `<tr><td colspan="3" style="text-align:center;padding:20px 0;color:#9b8eaa;font-size:13px">Sin exámenes registrados para este período.</td></tr>`
+      : notas.map((n: any) => {
+          const b = notaBadge(n)
           const estado = n.ausente ? 'Ausente' : (n.nota||0) >= 60 ? 'Aprobado' : 'Desaprobado'
-          return `<div class="examen-row"><div><div style="font-size:13px;font-weight:700">${n.examenes?.nombre||'Examen'}</div><div style="font-size:11px;color:#9b8eaa;margin-top:2px">${n.examenes?.fecha ? new Date(n.examenes.fecha+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long'}) : '—'} · <span style="color:${cls === 'ap' ? '#2d7a4f' : cls === 'de' ? '#c0392b' : '#b45309'};font-weight:600">${estado}</span></div></div><div class="nota ${cls}">${n.ausente ? '—' : n.nota ?? '—'}</div></div>`
-        }).join('')}
+          const estadoColor = n.ausente ? '#b45309' : (n.nota||0) >= 60 ? '#2d7a4f' : '#c0392b'
+          return `<tr>
+            <td style="padding:11px 0;border-bottom:1px solid #f5f0fa;font-size:14px;color:#1a1020;vertical-align:middle">
+              ${n.examenes?.nombre||'Examen'}
+              ${n.examenes?.tipo ? `<span style="display:inline-block;background:#f5f0fa;color:#9b8eaa;border-radius:10px;font-size:10px;padding:2px 8px;margin-left:8px;font-weight:600;text-transform:uppercase">${n.examenes.tipo}</span>` : ''}
+            </td>
+            <td style="padding:11px 0;border-bottom:1px solid #f5f0fa;font-size:12px;color:#9b8eaa;white-space:nowrap;padding-right:12px">${n.examenes?.fecha ? new Date(n.examenes.fecha+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—'}</td>
+            <td style="padding:11px 0;border-bottom:1px solid #f5f0fa;text-align:center">
+              <span style="display:inline-block;min-width:40px;height:30px;border-radius:6px;text-align:center;line-height:30px;font-weight:700;font-size:13px;padding:0 6px;background:${b.bg};color:${b.color}">${b.label}</span>
+            </td>
+          </tr>`
+        }).join('')
+
+    const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Boletín — ${al.nombre} ${al.apellido}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&family=Inter:wght@400;500;600&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',Arial,sans-serif;background:#f0eaf8;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px 48px}
+.doc{width:100%;max-width:560px;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 8px 40px rgba(101,47,141,.18)}
+.head{background:#fff;border-bottom:4px solid #652f8d;padding:28px 36px 22px}
+.head-inner{display:flex;justify-content:space-between;align-items:flex-start}
+.inst-block{display:flex;align-items:center;gap:14px}
+.inst-logo{width:50px;height:50px;background:#652f8d;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:'Lora',Georgia,serif;font-size:18px;font-weight:700;flex-shrink:0}
+.inst-nombre{font-family:'Lora',Georgia,serif;font-size:17px;color:#1a1020}
+.inst-sub{font-size:10px;color:#9b8eaa;text-transform:uppercase;letter-spacing:.1em;margin-top:3px}
+.doc-tipo{text-align:right}
+.doc-titulo{font-family:'Lora',Georgia,serif;font-size:15px;color:#652f8d}
+.doc-periodo{font-size:12px;color:#9b8eaa;margin-top:4px}
+.alumno-strip{background:#f9f5fd;border-bottom:1px solid #ede8f5;padding:16px 36px;display:flex;justify-content:space-between;align-items:center}
+.alumno-nombre{font-family:'Lora',Georgia,serif;font-size:18px;color:#1a1020}
+.alumno-dni{font-size:12px;color:#9b8eaa;margin-top:3px}
+.curso-chip{background:#ede0f7;color:#652f8d;border-radius:20px;padding:5px 14px;font-size:12px;font-weight:600;white-space:nowrap;margin-left:16px}
+.body{padding:28px 36px}
+table{width:100%;border-collapse:collapse}
+th{font-size:10px;font-weight:700;color:#9b8eaa;text-transform:uppercase;letter-spacing:.1em;text-align:left;padding:0 0 12px;border-bottom:1px solid #ede8f5}
+th:last-child{text-align:center}
+tr:last-child td{border-bottom:none}
+.obs-block{margin-top:24px;background:#faf5fd;border-left:3px solid #652f8d;border-radius:0 10px 10px 0;padding:16px 18px}
+.obs-label{font-size:10px;font-weight:700;color:#652f8d;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
+.obs-text{font-size:13px;color:#5a4d6a;line-height:1.6}
+.firma-wrap{margin-top:36px;display:flex;justify-content:flex-end}
+.firma{text-align:center;min-width:180px}
+.firma-linea{border-top:1px solid #1a1020;margin-bottom:8px}
+.firma-nombre{font-size:13px;color:#1a1020;font-weight:600}
+.firma-rol{font-size:11px;color:#9b8eaa;margin-top:3px}
+.footer{background:#652f8d;margin-top:32px;padding:16px 36px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:rgba(255,255,255,.65)}
+@media print{body{background:white;padding:0}.doc{box-shadow:none;border-radius:0;max-width:100%}}
+</style></head><body>
+<div class="doc">
+  <div class="head">
+    <div class="head-inner">
+      <div class="inst-block">
+        <div class="inst-logo">NE</div>
+        <div>
+          <div class="inst-nombre">Next Ezeiza</div>
+          <div class="inst-sub">Instituto de Inglés · Ezeiza, Buenos Aires</div>
+        </div>
+      </div>
+      <div class="doc-tipo">
+        <div class="doc-titulo">Boletín de Calificaciones</div>
+        <div class="doc-periodo">${periodo} ${anio}</div>
+      </div>
     </div>
-    <div class="footer">Next Ezeiza English Institute · Ezeiza, Buenos Aires · ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
-    <div style="padding:20px;text-align:center;border-top:1px solid #f0edf5"><img src="${getFirmaDirector()}" style="width:110px;height:55px;object-fit:contain;display:block;margin:0 auto 6px" /><div style="font-size:13px;font-weight:700;color:#1a1020">Patricio Manganella</div><div style="font-size:11px;color:#9b8eaa">Director</div></div>
-    </div><script>setTimeout(function(){window.print()},400)</script></body></html>`
+  </div>
+  <div class="alumno-strip">
+    <div>
+      <div class="alumno-nombre">${al.nombre} ${al.apellido}</div>
+      ${al.dni ? `<div class="alumno-dni">DNI ${al.dni}</div>` : ''}
+    </div>
+    <span class="curso-chip">${curso}</span>
+  </div>
+  <div class="body">
+    <table>
+      <thead><tr><th>Evaluación</th><th>Fecha</th><th>Calificación</th></tr></thead>
+      <tbody>${filasExamenes}</tbody>
+    </table>
+    <div class="obs-block">
+      <div class="obs-label">Observaciones del docente</div>
+      <div class="obs-text">Sin observaciones registradas para este período.</div>
+    </div>
+    <div class="firma-wrap">
+      <div class="firma">
+        <img src="${getFirmaDirector()}" style="width:110px;height:55px;object-fit:contain;display:block;margin:0 auto 4px"/>
+        <div class="firma-linea"></div>
+        <div class="firma-nombre">Patricio Manganella</div>
+        <div class="firma-rol">Director del Instituto</div>
+      </div>
+    </div>
+  </div>
+  <div class="footer">
+    <span>Next Ezeiza English Institute</span>
+    <span>Emitido: ${hoy}</span>
+  </div>
+</div>
+<script>setTimeout(function(){window.print()},500)</script>
+</body></html>`
     const blob = new Blob([html], {type:'text/html;charset=utf-8'})
     const url = URL.createObjectURL(blob)
     window.open(url, '_blank')
@@ -1300,49 +1376,105 @@ function CertificadoSection({ alumnos }: any) {
     const al = alumnos.find((a: any) => a.id === selAlumno)
     if (!al) { setGenerando(false); return }
     const sb = createClient()
-    const cuRes = await sb.from('cursos_alumnos').select('cursos(nombre)').eq('alumno_id', selAlumno).limit(1)
-    const curso = cuRes.data?.[0]?.cursos?.nombre || '—'
+    const cuRes = await sb.from('cursos_alumnos').select('cursos(nombre,nivel,dias,hora_inicio,hora_fin)').eq('alumno_id', selAlumno).limit(1)
+    const cursoData = cuRes.data?.[0]?.cursos as any
+    const curso = cursoData?.nombre || '—'
+    const nivel = nivelManual || cursoData?.nivel || al.nivel || '—'
     const fmtDesde = new Date(desde+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
     const fmtHasta = new Date(hasta+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
     const hoy = new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
-    const num = Math.floor(Math.random()*9000)+1000
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Certificado ${al.nombre} ${al.apellido}</title>
-    <style>body{font-family:Arial,sans-serif;padding:40px;margin:0;background:white}
-    .hdr{text-align:center;border-bottom:4px solid #652f8d;padding-bottom:20px;margin-bottom:28px}
-    .logo{font-size:24px;font-weight:900;color:#1a1020}.logo span{color:#652f8d}
-    .inst{font-size:12px;color:#9b8eaa;letter-spacing:.1em;text-transform:uppercase;margin-top:4px}
-    h1{font-size:16px;font-weight:800;text-transform:uppercase;letter-spacing:.1em;color:#652f8d;text-align:center;margin:28px 0 20px}
-    .cuerpo{font-size:14px;color:#1a1020;line-height:1.9;text-align:center;max-width:500px;margin:0 auto 28px}
-    .nombre{font-size:26px;font-weight:900;color:#1a1020;font-style:italic;display:block;margin:8px 0}
-    .datos{display:flex;justify-content:center;gap:32px;background:#f9f5fd;border-radius:14px;padding:16px;margin:20px 0 28px}
-    .dato{text-align:center}.dato-val{font-size:20px;font-weight:800;color:#652f8d}.dato-lab{font-size:10px;color:#9b8eaa;font-weight:700;text-transform:uppercase;margin-top:3px}
-    .firmas{display:flex;justify-content:center;gap:60px;margin-top:40px;padding-top:20px;border-top:1px solid #f0edf5}
-    .firma{text-align:center}.firma-linea{width:120px;border-top:1.5px solid #1a1020;margin:0 auto 8px}
-    .firma-nombre{font-size:12px;font-weight:700;color:#1a1020}.firma-cargo{font-size:11px;color:#9b8eaa}
-    .sello{width:70px;height:70px;border-radius:50%;border:3px solid #652f8d;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:10px;font-weight:700;color:#652f8d;text-align:center;line-height:1.3}
-    .num{font-size:11px;color:#9b8eaa;text-align:right;margin-bottom:4px}
-    @media print{body{padding:24px}}
-    </style></head><body>
-    <div class="num">Cert. N° ${num} · ${hoy}</div>
-    <div class="hdr"><div class="logo">Next <span>Ezeiza</span></div><div class="inst">English Institute</div></div>
-    <h1>Certificado de ${tipo}</h1>
-    <div class="cuerpo">
-      La dirección del instituto certifica que<br>
-      <span class="nombre">${al.nombre} ${al.apellido}</span>${al.dni ? ` <span style="font-size:14px;font-weight:400;font-style:normal;color:#9b8eaa">DNI: ${al.dni}</span>` : ''}
-      es alumno/a regular del curso de inglés <strong>${curso}</strong>,
-      con asistencia registrada en el período comprendido entre el <strong>${fmtDesde}</strong> y el <strong>${fmtHasta}</strong>.
-      ${destinatario ? `<br><br>El presente certificado se emite a solicitud del/la interesado/a para ser presentado ante <strong>${destinatario}</strong>.` : ''}
+    const anioActual = new Date().getFullYear()
+    const certNum = `CE-${anioActual}-${Math.floor(Math.random()*9000)+1000}`
+
+    const html = `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8">
+<title>Certificado — ${al.nombre} ${al.apellido}</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap');
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',Arial,sans-serif;background:#f0eaf8;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px 48px}
+.page{width:100%;max-width:620px;background:#fff;border:5px solid #652f8d;border-radius:4px;box-shadow:0 12px 48px rgba(101,47,141,.2)}
+.page-inner{border:1px solid rgba(101,47,141,.25);margin:10px;border-radius:2px;overflow:hidden}
+.head{background:#652f8d;color:#fff;padding:32px 48px 28px;text-align:center}
+.head-escudo{width:56px;height:56px;background:rgba(255,255,255,.15);border:2px solid rgba(255,255,255,.4);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:26px}
+.inst-nombre{font-family:'Lora',Georgia,serif;font-size:22px;font-weight:700;letter-spacing:.02em}
+.inst-sub{font-size:11px;opacity:.65;text-transform:uppercase;letter-spacing:.15em;margin-top:5px}
+.body{padding:40px 56px 32px;text-align:center}
+.cert-titulo{font-size:11px;font-weight:600;color:#9b8eaa;text-transform:uppercase;letter-spacing:.18em;margin-bottom:20px}
+.cert-certifica{font-family:'Lora',Georgia,serif;font-style:italic;font-size:16px;color:#5a4d6a;margin-bottom:14px}
+.cert-nombre-wrap{display:inline-block;padding-bottom:12px;border-bottom:2px solid #652f8d;margin-bottom:10px}
+.cert-nombre{font-family:'Lora',Georgia,serif;font-size:34px;font-weight:700;color:#1a1020;letter-spacing:-.5px}
+.cert-dni{font-size:13px;color:#9b8eaa;margin-bottom:28px}
+.cert-texto{font-family:'Lora',Georgia,serif;font-size:15px;color:#5a4d6a;line-height:1.85;max-width:440px;margin:0 auto 30px}
+.cert-datos{display:flex;justify-content:center;border:1px solid #ede8f5;border-radius:12px;overflow:hidden;margin:0 0 36px}
+.cert-dato{flex:1;padding:16px 12px;text-align:center;border-right:1px solid #ede8f5}
+.cert-dato:last-child{border-right:none}
+.cert-dato-val{font-family:'Lora',Georgia,serif;font-size:18px;font-weight:700;color:#652f8d}
+.cert-dato-label{font-size:10px;color:#9b8eaa;text-transform:uppercase;letter-spacing:.1em;margin-top:4px}
+.firmas{display:flex;justify-content:space-around;margin:8px 0 4px;padding-top:8px}
+.firma{text-align:center;min-width:160px}
+.firma-img{width:110px;height:55px;object-fit:contain;display:block;margin:0 auto 4px}
+.firma-linea{width:160px;border-top:1px solid #1a1020;margin:0 auto 8px}
+.firma-nombre{font-size:13px;color:#1a1020;font-weight:600}
+.firma-rol{font-size:11px;color:#9b8eaa;margin-top:3px}
+.footer{background:#f9f5fd;border-top:1px solid #ede8f5;padding:14px 36px;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#9b8eaa;font-family:'Courier New',monospace}
+@media print{body{background:white;padding:0}.page{box-shadow:none;max-width:100%}}
+</style></head><body>
+<div class="page">
+  <div class="page-inner">
+    <div class="head">
+      <div class="head-escudo">🎓</div>
+      <div class="inst-nombre">Next Ezeiza English Institute</div>
+      <div class="inst-sub">Ezeiza · Buenos Aires · Argentina</div>
     </div>
-    <div class="datos">
-      <div class="dato"><div class="dato-val">${nivelManual||al.nivel||'—'}</div><div class="dato-lab">Nivel</div></div>
-      <div class="dato"><div class="dato-val">${curso}</div><div class="dato-lab">Curso</div></div>
+    <div class="body">
+      <div class="cert-titulo">Certificado de ${tipo}</div>
+      <div class="cert-certifica">La dirección del instituto certifica que</div>
+      <div class="cert-nombre-wrap">
+        <div class="cert-nombre">${al.nombre} ${al.apellido}</div>
+      </div>
+      ${al.dni ? `<div class="cert-dni">DNI ${al.dni}</div>` : '<div style="margin-bottom:28px"></div>'}
+      <div class="cert-texto">
+        es alumno/a regular del curso de inglés <strong style="color:#1a1020">${curso}</strong>,
+        con asistencia registrada en el período comprendido entre el <strong style="color:#1a1020">${fmtDesde}</strong> y el <strong style="color:#1a1020">${fmtHasta}</strong>.
+        ${destinatario ? `<br><br>El presente certificado se emite a solicitud del/la interesado/a para ser presentado ante <strong style="color:#1a1020">${destinatario}</strong>.` : ''}
+      </div>
+      <div class="cert-datos">
+        <div class="cert-dato">
+          <div class="cert-dato-val">${nivel}</div>
+          <div class="cert-dato-label">Nivel</div>
+        </div>
+        <div class="cert-dato">
+          <div class="cert-dato-val">${curso}</div>
+          <div class="cert-dato-label">Curso</div>
+        </div>
+        <div class="cert-dato">
+          <div class="cert-dato-val">${anioActual}</div>
+          <div class="cert-dato-label">Año</div>
+        </div>
+      </div>
+      <div class="firmas">
+        <div class="firma">
+          <div class="firma-linea"></div>
+          <div class="firma-nombre">Docente a cargo</div>
+          <div class="firma-rol">${curso}</div>
+        </div>
+        <div class="firma">
+          <img class="firma-img" src="${getFirmaDirector()}" />
+          <div class="firma-linea"></div>
+          <div class="firma-nombre">Patricio Manganella</div>
+          <div class="firma-rol">Director del Instituto</div>
+        </div>
+      </div>
     </div>
-    <div style="font-size:12px;color:#9b8eaa;text-align:center;margin-bottom:32px">Ezeiza, Buenos Aires · ${hoy}</div>
-    <div class="firmas">
-      <div class="firma"><div class="sello">NEXT<br>EZEIZA<br>★</div></div>
-      <div class="firma"><img src="${getFirmaDirector()}" style="width:110px;height:55px;object-fit:contain;display:block;margin:0 auto 4px" /><div class="firma-nombre">Patricio Manganella</div><div class="firma-cargo">Director · Next Ezeiza</div></div>
+    <div class="footer">
+      <span>Cert. N° ${certNum}</span>
+      <span>Emitido el ${hoy}</span>
     </div>
-    <script>setTimeout(function(){window.print()},400)</script></body></html>`
+  </div>
+</div>
+<script>setTimeout(function(){window.print()},500)</script>
+</body></html>`
     const blob = new Blob([html], {type:'text/html;charset=utf-8'})
     const url = URL.createObjectURL(blob)
     window.open(url, '_blank')
