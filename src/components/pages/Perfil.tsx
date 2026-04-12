@@ -2,39 +2,55 @@
 
 import { useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
-import { supabase, PERMISOS } from '@/lib/supabase'
+import { createClient, PERMISOS } from '@/lib/supabase'
 
-// Labels legibles para cada módulo del sistema
 const LABEL_MODULOS: Record<string, string> = {
-  dashboard:           'Dashboard',
-  alumnos:             'Alumnos',
-  cursos:              'Cursos',
-  horarios:            'Horarios',
-  docentes:            'Docentes',
-  reportes:            'Reportes',
-  permisos:            'Permisos',
-  perfil:              'Perfil',
-  comunicados:         'Comunicados',
-  agenda:              'Agenda',
-  actividad:           'Actividad',
+  dashboard:             'Dashboard',
+  alumnos:               'Alumnos',
+  cursos:                'Cursos',
+  horarios:              'Horarios',
+  docentes:              'Docentes',
+  profesoras:            'Docentes',
+  reportes:              'Reportes',
+  permisos:              'Permisos',
+  perfil:                'Perfil',
+  comunicados:           'Comunicados',
+  agenda:                'Agenda',
+  actividad:             'Actividad',
   'atencion al cliente': 'Atención al cliente',
+  atencion:              'Atención al cliente',
 }
 
 export default function Perfil() {
   const { usuario } = useAuth()
+  const supabase = createClient()
 
   // ── Estado: cambio de contraseña ─────────────────────────────────────────
-  const [passData, setPassData] = useState({ nueva: '', confirmar: '' })
-  const [passMsg,  setPassMsg]  = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
+  const [passData,    setPassData]    = useState({ nueva: '', confirmar: '' })
+  const [passMsg,     setPassMsg]     = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
   const [passLoading, setPassLoading] = useState(false)
   const [mostrarPass, setMostrarPass] = useState(false)
 
+  // ── Estado: cerrar sesión ────────────────────────────────────────────────
+  const [cerrando, setCerrando] = useState(false)
+
   if (!usuario) return null
 
-  // Módulos del rol actual leídos desde PERMISOS (fuente de verdad)
+  // Módulos del rol actual leídos desde PERMISOS
   const modulosDelRol: string[] = usuario.rol
     ? ((PERMISOS as Record<string, string[]>)[usuario.rol] ?? [])
     : []
+
+  // ── Cerrar sesión ────────────────────────────────────────────────────────
+  async function cerrarSesion() {
+    setCerrando(true)
+    try {
+      localStorage.removeItem('ne_session_uid')
+      sessionStorage.removeItem('nav_page')
+    } catch {}
+    await supabase.auth.signOut()
+    // El auth-context detecta el signOut y muestra LoginPage automáticamente
+  }
 
   // ── Cambiar contraseña ───────────────────────────────────────────────────
   async function cambiarPassword(e: React.FormEvent) {
@@ -65,18 +81,18 @@ export default function Perfil() {
   return (
     <div style={s.page}>
 
-      {/* ── Cabecera de perfil ── */}
+      {/* ── Cabecera ── */}
       <div style={s.heroCard}>
         <div style={{ ...s.avatar, background: usuario.color || '#652f8d' }}>
           {usuario.initials || usuario.nombre.slice(0, 2).toUpperCase()}
         </div>
         <div>
           <h2 style={s.heroNombre}>{usuario.nombre}</h2>
-          <p  style={s.heroRol}>
-            {usuario.rol === 'director'      ? 'Director del instituto'   :
-             usuario.rol === 'coordinadora'  ? 'Coordinadora'             :
-             usuario.rol === 'secretaria'    ? 'Secretaria'               :
-             usuario.rol === 'profesora'     ? 'Docente'                  : usuario.rol}
+          <p style={s.heroRol}>
+            {usuario.rol === 'director'     ? 'Director del instituto' :
+             usuario.rol === 'coordinadora' ? 'Coordinadora'          :
+             usuario.rol === 'secretaria'   ? 'Secretaria'            :
+             usuario.rol === 'profesora'    ? 'Docente'               : usuario.rol}
           </p>
           <span style={s.rolChip}>{usuario.rol}</span>
         </div>
@@ -85,24 +101,21 @@ export default function Perfil() {
       {/* ── Mi cuenta ── */}
       <div style={s.section}>
         <p style={s.sectionLabel}>MI CUENTA</p>
-
         <div style={s.field}>
           <label style={s.fieldLabel}>NOMBRE</label>
           <div style={s.fieldValue}>{usuario.nombre}</div>
         </div>
-
         <div style={s.field}>
           <label style={s.fieldLabel}>EMAIL</label>
           <div style={s.fieldValue}>{usuario.email || '—'}</div>
         </div>
-
         <div style={s.field}>
           <label style={s.fieldLabel}>ROL</label>
           <div style={s.fieldValue}>{usuario.rol}</div>
         </div>
       </div>
 
-      {/* ── Módulos con acceso ── */}
+      {/* ── Módulos con acceso — FIX: flex-wrap ── */}
       <div style={s.section}>
         <p style={s.sectionLabel}>MÓDULOS CON ACCESO</p>
         <div style={s.modulosGrid}>
@@ -122,7 +135,10 @@ export default function Perfil() {
         <p style={s.sectionLabel}>SEGURIDAD</p>
 
         {!mostrarPass ? (
-          <button onClick={() => { setMostrarPass(true); setPassMsg(null) }} style={s.btnOutline}>
+          <button
+            onClick={() => { setMostrarPass(true); setPassMsg(null) }}
+            style={s.btnOutline}
+          >
             Cambiar contraseña
           </button>
         ) : (
@@ -148,7 +164,6 @@ export default function Perfil() {
                 style={s.input}
               />
             </div>
-
             {passMsg && (
               <div style={{
                 ...s.msgBox,
@@ -158,14 +173,17 @@ export default function Perfil() {
                 {passMsg.texto}
               </div>
             )}
-
             <div style={{ display: 'flex', gap: '10px' }}>
               <button type="submit" disabled={passLoading} style={{ ...s.btnPrimary, flex: 1 }}>
                 {passLoading ? 'Guardando...' : 'Actualizar contraseña'}
               </button>
               <button
                 type="button"
-                onClick={() => { setMostrarPass(false); setPassMsg(null); setPassData({ nueva: '', confirmar: '' }) }}
+                onClick={() => {
+                  setMostrarPass(false)
+                  setPassMsg(null)
+                  setPassData({ nueva: '', confirmar: '' })
+                }}
                 style={s.btnCancel}
               >
                 Cancelar
@@ -179,11 +197,21 @@ export default function Perfil() {
         </p>
       </div>
 
+      {/* ── Cerrar sesión ── */}
+      <div style={s.section}>
+        <button
+          onClick={cerrarSesion}
+          disabled={cerrando}
+          style={s.btnCerrarSesion}
+        >
+          {cerrando ? 'Cerrando sesión...' : 'Cerrar sesión'}
+        </button>
+      </div>
+
     </div>
   )
 }
 
-// ── Estilos ──────────────────────────────────────────────────────────────────
 const s: Record<string, React.CSSProperties> = {
   page: {
     padding: '0 0 80px',
@@ -229,7 +257,7 @@ const s: Record<string, React.CSSProperties> = {
     padding: '3px 12px',
     fontSize: '12px',
     fontWeight: 600,
-    textTransform: 'capitalize' as const,
+    textTransform: 'capitalize',
   },
   section: {
     background: '#fff',
@@ -245,9 +273,7 @@ const s: Record<string, React.CSSProperties> = {
     letterSpacing: '.07em',
     marginBottom: '14px',
   },
-  field: {
-    marginBottom: '14px',
-  },
+  field: { marginBottom: '14px' },
   fieldLabel: {
     display: 'block',
     fontSize: '11px',
@@ -264,10 +290,9 @@ const s: Record<string, React.CSSProperties> = {
     fontSize: '15px',
     color: 'var(--text)',
   },
-  // FIX PRINCIPAL: flex-wrap para que se vean todos los módulos
   modulosGrid: {
     display: 'flex',
-    flexWrap: 'wrap' as const,
+    flexWrap: 'wrap',       // ← FIX: todos los módulos visibles
     gap: '8px',
     marginBottom: '10px',
   },
@@ -279,7 +304,7 @@ const s: Record<string, React.CSSProperties> = {
     padding: '4px 14px',
     fontSize: '13px',
     fontWeight: 500,
-    whiteSpace: 'nowrap' as const,
+    whiteSpace: 'nowrap',
   },
   modulosCount: {
     fontSize: '12px',
@@ -296,7 +321,7 @@ const s: Record<string, React.CSSProperties> = {
     background: '#fff',
     outline: 'none',
     fontFamily: 'inherit',
-  } as React.CSSProperties,
+  },
   btnPrimary: {
     padding: '11px 16px',
     background: 'var(--v)',
@@ -330,6 +355,19 @@ const s: Record<string, React.CSSProperties> = {
     borderRadius: '8px',
     fontSize: '14px',
     fontWeight: 500,
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  },
+  btnCerrarSesion: {
+    display: 'block',
+    width: '100%',
+    padding: '13px',
+    background: 'transparent',
+    color: 'var(--red)',
+    border: '1.5px solid var(--red)',
+    borderRadius: '10px',
+    fontSize: '15px',
+    fontWeight: 600,
     cursor: 'pointer',
     fontFamily: 'inherit',
   },
