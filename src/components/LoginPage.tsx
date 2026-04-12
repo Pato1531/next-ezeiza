@@ -23,11 +23,9 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
 
-    // Limpiar sesión previa antes de intentar login (preserva comportamiento original)
-    try {
-      await supabase.auth.signOut()
-      localStorage.removeItem('ne_session_uid')
-    } catch {}
+    // Solo limpiar el localStorage local — NO llamar signOut()
+    // signOut() sobre el singleton puede dejar el cliente en estado inválido
+    try { localStorage.removeItem('ne_session_uid') } catch {}
 
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
@@ -36,8 +34,10 @@ export default function LoginPage() {
           ? 'Email o contraseña incorrectos.'
           : 'Error al iniciar sesión. Intentá de nuevo.'
       )
+      setLoading(false)
     }
-    setLoading(false)
+    // Si no hay error, el auth-context detecta la sesión y monta AppShell
+    // No seteamos loading(false) para evitar parpadeo — el componente se desmonta
   }
 
   async function handleReset(e: React.FormEvent) {
@@ -166,7 +166,6 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* ¿Olvidaste tu contraseña? */}
         <div style={{ textAlign: 'center', marginTop: '12px' }}>
           <button
             onClick={() => { setShowReset(true); setResetEmail(email) }}
@@ -176,7 +175,7 @@ export default function LoginPage() {
           </button>
         </div>
 
-        {/* Link a registro de nueva sede — igual que el original */}
+        {/* Link a registro — igual que el original */}
         <div style={s.registroWrap}>
           <span style={{ fontSize: '13px', color: 'var(--text3)' }}>¿Sos director de un instituto? </span>
           <a href="/registro" style={s.registroLink}>Registrá tu sede</a>
@@ -186,7 +185,6 @@ export default function LoginPage() {
   )
 }
 
-// ── Estilos ──────────────────────────────────────────────────────────────────
 const s: Record<string, React.CSSProperties> = {
   page: {
     minHeight: '100vh',
@@ -236,9 +234,7 @@ const s: Record<string, React.CSSProperties> = {
     textAlign: 'center',
     marginBottom: '28px',
   },
-  field: {
-    marginBottom: '16px',
-  },
+  field: { marginBottom: '16px' },
   label: {
     display: 'block',
     fontSize: '11px',
