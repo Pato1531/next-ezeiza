@@ -17,6 +17,8 @@ import Comunicados from './pages/Comunicados'
 // Imports lazy para módulos que pueden no existir en el proyecto
 const Actividad = lazy(() => import('./pages/Actividad').catch(() => ({ default: () => <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Módulo no disponible</div> })))
 const AtencionCliente = lazy(() => import('./pages/AtencionCliente').catch(() => ({ default: () => <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Módulo no disponible</div> })))
+const DashboardEjecutivo = lazy(() => import('./pages/DashboardEjecutivo').catch(() => ({ default: () => <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Módulo no disponible</div> })))
+const CuotasPorCurso = lazy(() => import('./pages/CuotasPorCurso').catch(() => ({ default: () => <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Módulo no disponible</div> })))
 
 const ALL_NAV = [
   { id: 'dashboard',  label: 'Inicio',    icon: 'M3 3h7v7H3zM13 3h7v7h-7zM3 13h7v7H3zM13 13h7v7h-7z' },
@@ -28,8 +30,10 @@ const ALL_NAV = [
   { id: 'permisos',      label: 'Permisos',      icon: 'M10 2a4 4 0 014 4v1h2a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V9a2 2 0 012-2h2V6a4 4 0 014-4zM10 4a2 2 0 00-2 2v1h4V6a2 2 0 00-2-2z' },
   { id: 'agenda',        label: 'Agenda',        icon: 'M3 4h16v16H3zM16 2v4M8 2v4M3 10h16' },
   { id: 'comunicados',   label: 'Comunicados',   icon: 'M18 8a6 6 0 01-6 6H8l-4 4V8a6 6 0 016-6h2a6 6 0 016 6z' },
-  { id: 'actividad',     label: 'Actividad',     icon: 'M10 3a7 7 0 100 14A7 7 0 0010 3zM10 7v3l2 2M3 3l14 14' },
+  { id: 'actividad',     label: 'Actividad',     icon: 'M10 3a7 7 0 100 14A7 7 0 0010 3zM10 7v3l2 2M3 3l14 14' },  // ← NUEVO
   { id: 'atencion',      label: 'Atención',      icon: 'M18 8a6 6 0 01-6 6H8l-4 4V8a6 6 0 016-6h2a6 6 0 016 6zM9 10h.01M12 10h.01M15 10h.01' },
+  { id: 'ejecutivo',     label: 'Cierre',        icon: 'M2 2h16v16H2zM6 10h4M6 14h8M10 2v4M6 6h2M12 6h2M4 15l4-4 3 3 5-6' },
+  { id: 'cuotas',        label: 'Cuotas',        icon: 'M9 7h6M9 11h6M9 15h4M5 3h10a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2z' },
 ]
 
 const PAGES: Record<string, React.ComponentType> = {
@@ -43,16 +47,20 @@ const PAGES: Record<string, React.ComponentType> = {
   perfil: Perfil,
   agenda: Agenda,
   comunicados: Comunicados,
-  actividad: Actividad,
+  actividad: Actividad,  // ← NUEVO
   atencion: AtencionCliente,
+  ejecutivo: DashboardEjecutivo,
+  cuotas: CuotasPorCurso,
 }
 
 const PAGE_TITLES: Record<string,string> = {
   dashboard:'Inicio', alumnos:'Alumnos', cursos:'Cursos',
   horarios:'Horarios', profesoras:'Docentes', reportes:'Reportes',
   permisos:'Permisos', perfil:'Mi perfil', agenda:'Agenda', comunicados:'Comunicados',
-  actividad:'Actividad',
+  actividad:'Actividad',  // ← NUEVO
   atencion:'Atención al Cliente',
+  ejecutivo:'Dashboard Ejecutivo',
+  cuotas:'Cuotas por Curso',
 }
 
 const ROLE_LABELS: Record<string,string> = {
@@ -81,19 +89,11 @@ class PanelErrorBoundary extends React.Component<{children: React.ReactNode, nam
   }
 }
 
-// ── CAMBIO 1: interfaz de props para recibir initialTab desde page.tsx ────────
-interface AppShellProps {
-  initialTab?: string
-}
 
-// ── CAMBIO 2: agregar { initialTab } a la firma del componente ────────────────
-export default function AppShell({ initialTab }: AppShellProps) {
+export default function AppShell() {
   const { usuario, puedeVer } = useAuth()
-
-  // ── CAMBIO 3: usar initialTab si viene, sino restaurar sessionStorage,
-  //             sino ir a 'dashboard' por defecto ────────────────────────────
   const [page, setPage] = useState<string>(() => {
-    if (initialTab) return initialTab
+    // Restaurar página activa desde sessionStorage al volver del background
     if (typeof window !== 'undefined') {
       const saved = sessionStorage.getItem('nav_page')
       if (saved) return saved
@@ -102,7 +102,6 @@ export default function AppShell({ initialTab }: AppShellProps) {
     const perms = ['dashboard','alumnos','cursos','horarios','profesoras','reportes','permisos']
     return perms.find(p => puedeVer(p)) ?? 'alumnos'
   })
-
   const [masOpen, setMasOpen] = useState(false)
   // Tracking de paneles ya montados — "mount once, never unmount"
   // Evita renderizar todos los paneles al inicio (reduce error surface)
@@ -110,6 +109,12 @@ export default function AppShell({ initialTab }: AppShellProps) {
   const [comunicadosBadge, setComunicadosBadge] = useState(0)
   const { comunicados } = useComunicados()
   const [vistosLocal, setVistosLocal] = useState<string[]>([])
+  // Badge de Atención: leads nuevos sin contactar
+  const [atencionBadge, setAtencionBadge] = useState(0)
+  // Badge de Alumnos: alertas críticas sin pago (día > 10)
+  const [alumnosBadge, setAlumnosBadge] = useState(0)
+  // Onboarding: módulos visitados por primera vez
+  const [onboardingVisto, setOnboardingVisto] = useState<Set<string>>(new Set())
 
   // Inicializar vistos desde localStorage UNA sola vez al cargar
   useEffect(() => {
@@ -118,6 +123,27 @@ export default function AppShell({ initialTab }: AppShellProps) {
       const saved = JSON.parse(localStorage.getItem(`comunicados_vistos_${usuario.id}`) || '[]')
       setVistosLocal(saved)
     } catch { setVistosLocal([]) }
+  }, [usuario?.id])
+
+  // Badge Atención: contar leads con estado 'nuevo' (no contactados)
+  useEffect(() => {
+    if (!usuario) return
+    if (!['director','coordinadora','secretaria'].includes(usuario.rol)) return
+    const sb = createClient()
+    sb.from('lista_espera')
+      .select('id', { count: 'exact', head: true })
+      .eq('estado_seguimiento', 'nuevo')
+      .then(({ count }) => setAtencionBadge(count || 0))
+      .catch(() => {})
+  }, [usuario?.id])
+
+  // Onboarding: leer qué módulos ya visitó el usuario
+  useEffect(() => {
+    if (!usuario) return
+    try {
+      const saved = JSON.parse(localStorage.getItem(`onboarding_${usuario.id}`) || '[]')
+      setOnboardingVisto(new Set(saved))
+    } catch {}
   }, [usuario?.id])
 
   // Calcular badge cuando cambian comunicados o vistos
@@ -155,10 +181,18 @@ export default function AppShell({ initialTab }: AppShellProps) {
 
   const navTo = (id: string) => {
     if (id === 'comunicados') { irAComunicados(); return }
+    // Limpiar badge de atención al entrar al módulo
+    if (id === 'atencion') setAtencionBadge(0)
     setPage(id)
     setMounted(prev => new Set([...prev, id]))
     setMasOpen(false)
     try { sessionStorage.setItem('nav_page', id) } catch {}
+    // Marcar módulo como visitado (onboarding)
+    if (!onboardingVisto.has(id)) {
+      const nuevo = new Set([...onboardingVisto, id])
+      setOnboardingVisto(nuevo)
+      try { localStorage.setItem(`onboarding_${usuario?.id}`, JSON.stringify([...nuevo])) } catch {}
+    }
   }
 
   return (
@@ -201,6 +235,8 @@ export default function AppShell({ initialTab }: AppShellProps) {
         {mounted.has('comunicados') && <div style={{padding:'16px 16px 24px',display:page==='comunicados'?'block':'none'}}><PanelErrorBoundary name="Comunicados"><Comunicados /></PanelErrorBoundary></div>}
         {mounted.has('actividad') && <div style={{padding:'16px 16px 24px',display:page==='actividad'?'block':'none'}}><Suspense fallback={<div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>}><Actividad /></Suspense></div>}
         {mounted.has('atencion') && <div style={{padding:'16px 16px 24px',display:page==='atencion'?'block':'none'}}><Suspense fallback={<div>Cargando...</div>}><AtencionCliente /></Suspense></div>}
+        {mounted.has('ejecutivo') && <div style={{padding:'16px 16px 24px',display:page==='ejecutivo'?'block':'none'}}><Suspense fallback={<div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>}><DashboardEjecutivo /></Suspense></div>}
+        {mounted.has('cuotas') && <div style={{padding:'16px 16px 24px',display:page==='cuotas'?'block':'none'}}><Suspense fallback={<div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>}><CuotasPorCurso /></Suspense></div>}
       </div>
 
       {/* DRAWER "MÁS" */}
@@ -219,7 +255,15 @@ export default function AppShell({ initialTab }: AppShellProps) {
                     {comunicadosBadge}
                   </div>
                 )}
-                {page===item.id && item.id !== 'comunicados' && <div style={{marginLeft:'auto',width:'8px',height:'8px',borderRadius:'50%',background:'var(--v)'}} />}
+                {item.id === 'atencion' && atencionBadge > 0 && (
+                  <div style={{minWidth:'20px',height:'20px',borderRadius:'10px',background:'#1a6b8a',color:'#fff',fontSize:'11px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 5px'}}>
+                    {atencionBadge}
+                  </div>
+                )}
+                {page===item.id && item.id !== 'comunicados' && item.id !== 'atencion' && <div style={{marginLeft:'auto',width:'8px',height:'8px',borderRadius:'50%',background:'var(--v)'}} />}
+                {!onboardingVisto.has(item.id) && page !== item.id && item.id !== 'comunicados' && item.id !== 'atencion' && atencionBadge === 0 && comunicadosBadge === 0 && (
+                  <div style={{marginLeft:'auto',width:'8px',height:'8px',borderRadius:'50%',background:'var(--green)'}} />
+                )}
               </button>
             ))}
             {/* Perfil siempre en el drawer si no cabe */}
@@ -236,14 +280,28 @@ export default function AppShell({ initialTab }: AppShellProps) {
 
       {/* BOTTOM NAV */}
       <nav style={{background:'var(--white)',borderTop:'1px solid var(--border)',display:'flex',alignItems:'stretch',position:'sticky',bottom:0,zIndex:50}}>
-        {navItems.map(item => (
-          <button key={item.id} onClick={() => navTo(item.id)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'10px 4px 12px',border:'none',background:'none',cursor:'pointer',color:page===item.id?'var(--v)':'var(--text3)',gap:'4px',minHeight:'60px',transition:'color .15s'}}>
-            <svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              {item.icon.split('M').filter(Boolean).map((d,i) => <path key={i} d={`M${d}`} />)}
-            </svg>
-            <span style={{fontSize:'10px',fontWeight:500,lineHeight:1}}>{item.label}</span>
-          </button>
-        ))}
+        {navItems.map(item => {
+          const badgeCount =
+            item.id === 'comunicados' ? comunicadosBadge :
+            item.id === 'atencion'    ? atencionBadge    : 0
+          return (
+            <button key={item.id} onClick={() => navTo(item.id)} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:'10px 4px 12px',border:'none',background:'none',cursor:'pointer',color:page===item.id?'var(--v)':'var(--text3)',gap:'4px',minHeight:'60px',transition:'color .15s',position:'relative'}}>
+              {badgeCount > 0 && (
+                <div style={{position:'absolute',top:'6px',right:'calc(50% - 16px)',minWidth:'16px',height:'16px',borderRadius:'10px',background:item.id==='atencion'?'#1a6b8a':'var(--red)',color:'#fff',fontSize:'10px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px',pointerEvents:'none'}}>
+                  {badgeCount}
+                </div>
+              )}
+              {/* Punto verde de onboarding — módulo nunca visitado */}
+              {!onboardingVisto.has(item.id) && badgeCount === 0 && page !== item.id && (
+                <div style={{position:'absolute',top:'8px',right:'calc(50% - 12px)',width:'7px',height:'7px',borderRadius:'50%',background:'var(--green)',pointerEvents:'none'}} />
+              )}
+              <svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                {item.icon.split('M').filter(Boolean).map((d,i) => <path key={i} d={`M${d}`} />)}
+              </svg>
+              <span style={{fontSize:'10px',fontWeight:500,lineHeight:1}}>{item.label}</span>
+            </button>
+          )
+        })}
 
         {/* BOTÓN "MÁS" */}
         {hayMas && (
@@ -254,6 +312,11 @@ export default function AppShell({ initialTab }: AppShellProps) {
             {comunicadosBadge > 0 && masItems.some(i=>i.id==='comunicados') && (
               <div style={{position:'absolute',top:'6px',right:'calc(50% - 18px)',minWidth:'16px',height:'16px',borderRadius:'10px',background:'var(--red)',color:'#fff',fontSize:'10px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>
                 {comunicadosBadge}
+              </div>
+            )}
+            {atencionBadge > 0 && masItems.some(i=>i.id==='atencion') && comunicadosBadge === 0 && (
+              <div style={{position:'absolute',top:'6px',right:'calc(50% - 18px)',minWidth:'16px',height:'16px',borderRadius:'10px',background:'#1a6b8a',color:'#fff',fontSize:'10px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',padding:'0 4px'}}>
+                {atencionBadge}
               </div>
             )}
             <svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
