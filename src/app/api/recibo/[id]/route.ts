@@ -14,9 +14,11 @@ export async function GET(
 ) {
   try {
     const sb = getSupabase()
+
+    // ── Query 1: pago + alumno (sin join a cursos para evitar fallo si no tiene curso)
     const { data: p, error } = await sb
       .from('pagos_alumnos')
-      .select('*, alumnos(nombre, apellido, dni, nivel, cuota_mensual, cursos_alumnos(cursos(nombre, nivel)))')
+      .select('*, alumnos(nombre, apellido, dni, cuota_mensual, instituto_id)')
       .eq('id', params.id)
       .single()
 
@@ -24,24 +26,41 @@ export async function GET(
       return new NextResponse('Recibo no encontrado', { status: 404 })
     }
 
-    // Datos del instituto para multi-tenant
+    const al = p.alumnos as {
+      nombre: string; apellido: string; dni?: string
+      cuota_mensual?: number; instituto_id?: string
+    } | null
+
+    // ── Query 2: curso del alumno (separada — si falla no rompe el recibo)
+    let cursoNombre: string | null = null
+    if (al && p.alumno_id) {
+      const { data: ca } = await sb
+        .from('cursos_alumnos')
+        .select('cursos(nombre)')
+        .eq('alumno_id', p.alumno_id)
+        .limit(1)
+        .single()
+      cursoNombre = (ca as any)?.cursos?.nombre ?? null
+    }
+
+    // ── Query 3: nombre del instituto (multi-tenant)
     let institutoNombre = 'Next Ezeiza English Institute'
-    let institutoSub = 'Instituto de Inglés · Ezeiza, Buenos Aires'
-    if (p.instituto_id) {
+    let institutoSub    = 'Instituto de Inglés · Ezeiza, Buenos Aires'
+    const instId = al?.instituto_id || p.instituto_id
+    if (instId) {
       const { data: inst } = await sb
         .from('institutos')
         .select('nombre')
-        .eq('id', p.instituto_id)
+        .eq('id', instId)
         .single()
       if (inst?.nombre) {
         institutoNombre = inst.nombre
-        institutoSub = `Instituto de Inglés · Buenos Aires`
+        institutoSub    = 'Instituto de Inglés · Buenos Aires'
       }
     }
 
-    const al = p.alumnos
-    const cursoNombre = (al as any)?.cursos_alumnos?.[0]?.cursos?.nombre ?? null
-    const monto = (p.monto || 0).toLocaleString('es-AR')
+    // ── Cálculos
+    const monto    = (p.monto || 0).toLocaleString('es-AR')
     const montoNum = Number(p.monto || 0)
 
     const fecha = p.fecha_pago
@@ -56,18 +75,24 @@ export async function GET(
       day: '2-digit', month: '2-digit', year: 'numeric',
     })
 
-    const num = params.id.slice(0, 6).toUpperCase()
+    const num          = params.id.slice(0, 6).toUpperCase()
     const cuotaMensual = al?.cuota_mensual || 0
-    const ok   = montoNum > 0 && montoNum >= cuotaMensual
-    const parc = montoNum > 0 && montoNum < cuotaMensual
-    const estadoLabel = ok ? 'Pago completo' : parc ? 'Pago parcial' : 'Pendiente'
-    const estadoColor = ok ? '#2d7a4f' : parc ? '#b45309' : '#c0392b'
-    const estadoBg    = ok ? '#e6f4ec' : parc ? '#fef3cd' : '#fdeaea'
-    const estadoDot   = ok ? '#2d7a4f' : parc ? '#b45309' : '#c0392b'
+    const ok           = montoNum > 0 && montoNum >= cuotaMensual
+    const parc         = montoNum > 0 && montoNum < cuotaMensual
+    const estadoLabel  = ok ? 'Pago completo' : parc ? 'Pago parcial' : 'Pendiente'
+    const estadoColor  = ok ? '#2d7a4f' : parc ? '#b45309' : '#c0392b'
+    const estadoBg     = ok ? '#e6f4ec' : parc ? '#fef3cd' : '#fdeaea'
+    const estadoDot    = ok ? '#2d7a4f' : parc ? '#b45309' : '#c0392b'
 
-    const dniRow    = al?.dni    ? `<div class="row"><span class="row-label">DNI</span><span class="row-value">${al.dni}</span></div>` : ''
-    const cursoRow  = cursoNombre ? `<div class="row"><span class="row-label">Curso</span><span class="row-value">${cursoNombre}</span></div>` : ''
-    const obsRow    = p.observaciones ? `<div class="row"><span class="row-label">Observaciones</span><span class="row-value">${p.observaciones}</span></div>` : ''
+    // ── Filas opcionales
+    const cursoRow = cursoNombre
+      ? `<div class="row"><span class="row-label">Curso</span><span class="row-value">${cursoNombre}</span></div>`
+      : ''
+
+    // observaciones viene directo de pagos_alumnos — siempre disponible
+    const obsRow = p.observaciones
+      ? `<div class="row"><span class="row-label">Observaciones</span><span class="row-value">${p.observaciones}</span></div>`
+      : ''
 
     const html = `<!DOCTYPE html>
 <html lang="es">
@@ -170,10 +195,7 @@ export async function GET(
       margin-bottom: 4px;
       letter-spacing: -.3px;
     }
-    .alumno-meta {
-      font-size: 13px;
-      color: #5a4d6a;
-    }
+    .alumno-meta { font-size: 13px; color: #5a4d6a; }
 
     .separator {
       border: none;
@@ -185,9 +207,10 @@ export async function GET(
     .row {
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
       padding: 10px 0;
       border-bottom: 1px solid #f5f0fa;
+      gap: 16px;
     }
     .row:last-child { border-bottom: none; }
     .row-label {
@@ -196,13 +219,14 @@ export async function GET(
       color: #9b8eaa;
       text-transform: uppercase;
       letter-spacing: .08em;
+      white-space: nowrap;
+      padding-top: 1px;
     }
     .row-value {
       font-size: 14px;
       color: #1a1020;
       font-weight: 500;
       text-align: right;
-      max-width: 62%;
     }
 
     /* ── CAJA DE MONTO ── */
@@ -223,11 +247,7 @@ export async function GET(
       text-transform: uppercase;
       letter-spacing: .1em;
     }
-    .monto-periodo {
-      font-size: 12px;
-      color: #9b8eaa;
-      margin-top: 4px;
-    }
+    .monto-periodo { font-size: 12px; color: #9b8eaa; margin-top: 4px; }
     .monto-valor {
       font-family: 'Lora', Georgia, serif;
       font-size: 38px;
@@ -250,14 +270,13 @@ export async function GET(
       color: ${estadoColor};
     }
     .badge-dot {
-      width: 8px;
-      height: 8px;
+      width: 8px; height: 8px;
       border-radius: 50%;
       background: ${estadoDot};
       flex-shrink: 0;
     }
 
-    /* ── BOTÓN IMPRIMIR ── */
+    /* ── BOTÓN ── */
     .btn-print {
       display: block;
       width: calc(100% - 72px);
@@ -272,7 +291,6 @@ export async function GET(
       cursor: pointer;
       font-family: 'Inter', Arial, sans-serif;
       letter-spacing: .02em;
-      transition: background .15s;
     }
     .btn-print:hover { background: #7d3aab; }
 
@@ -289,7 +307,6 @@ export async function GET(
     }
     .footer-id { font-family: 'Courier New', monospace; }
 
-    /* ── PRINT ── */
     @media print {
       body { background: white; padding: 0; }
       .doc { box-shadow: none; border-radius: 0; max-width: 100%; }
