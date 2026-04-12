@@ -1455,11 +1455,6 @@ body{font-family:'Inter',Arial,sans-serif;background:#f0eaf8;min-height:100vh;di
       </div>
       <div class="firmas">
         <div class="firma">
-          <div class="firma-linea"></div>
-          <div class="firma-nombre">Docente a cargo</div>
-          <div class="firma-rol">${curso}</div>
-        </div>
-        <div class="firma">
           <img class="firma-img" src="${getFirmaDirector()}" />
           <div class="firma-linea"></div>
           <div class="firma-nombre">Patricio Manganella</div>
