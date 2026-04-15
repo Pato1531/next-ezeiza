@@ -15,10 +15,10 @@ export async function GET(
   try {
     const sb = getSupabase()
 
-    // ── Query 1: pago + alumno (sin join a cursos para evitar fallo si no tiene curso)
+    // Cargar el pago principal
     const { data: p, error } = await sb
       .from('pagos_alumnos')
-      .select('*, alumnos(nombre, apellido, dni, cuota_mensual, instituto_id)')
+      .select('*, alumnos(nombre, apellido, dni, nivel, cuota_mensual, padre_nombre, es_menor)')
       .eq('id', params.id)
       .single()
 
@@ -26,358 +26,109 @@ export async function GET(
       return new NextResponse('Recibo no encontrado', { status: 404 })
     }
 
-    const al = p.alumnos as {
-      nombre: string; apellido: string; dni?: string
-      cuota_mensual?: number; instituto_id?: string
-    } | null
+    // Cargar TODOS los pagos del alumno en el mismo mes/año (cuota + matrícula)
+    const { data: todosPagos } = await sb
+      .from('pagos_alumnos')
+      .select('id, monto, tipo, metodo, fecha_pago')
+      .eq('alumno_id', p.alumno_id)
+      .eq('mes', p.mes)
+      .eq('anio', p.anio)
+      .order('tipo', { ascending: true })
 
-    // ── Query 2: curso del alumno (separada — si falla no rompe el recibo)
-    let cursoNombre: string | null = null
-    if (al && p.alumno_id) {
-      const { data: ca } = await sb
-        .from('cursos_alumnos')
-        .select('cursos(nombre)')
-        .eq('alumno_id', p.alumno_id)
-        .limit(1)
-        .single()
-      cursoNombre = (ca as any)?.cursos?.nombre ?? null
-    }
-
-    // ── Query 3: nombre del instituto (multi-tenant)
-    let institutoNombre = 'Next Ezeiza English Institute'
-    let institutoSub    = 'Instituto de Inglés · Ezeiza, Buenos Aires'
-    const instId = al?.instituto_id || p.instituto_id
-    if (instId) {
-      const { data: inst } = await sb
-        .from('institutos')
-        .select('nombre')
-        .eq('id', instId)
-        .single()
-      if (inst?.nombre) {
-        institutoNombre = inst.nombre
-        institutoSub    = 'Instituto de Inglés · Buenos Aires'
-      }
-    }
-
-    // ── Cálculos
-    const monto    = (p.monto || 0).toLocaleString('es-AR')
-    const montoNum = Number(p.monto || 0)
-
+    const al = p.alumnos
+    const num = params.id.slice(0, 6).toUpperCase()
     const fecha = p.fecha_pago
-      ? new Date(p.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR', {
-          day: 'numeric', month: 'long', year: 'numeric',
-        })
-      : new Date().toLocaleDateString('es-AR', {
-          day: 'numeric', month: 'long', year: 'numeric',
-        })
+      ? new Date(p.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })
+      : new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })
 
-    const fechaEmision = new Date().toLocaleDateString('es-AR', {
-      day: '2-digit', month: '2-digit', year: 'numeric',
-    })
+    // Nombre del destinatario (padre si es menor)
+    const destinatario = al?.es_menor && al?.padre_nombre
+      ? al.padre_nombre
+      : `${al?.nombre} ${al?.apellido}`
 
-    const num          = params.id.slice(0, 6).toUpperCase()
+    // Construir líneas de detalle de pago
+    const lineasPago = (todosPagos || [p]).map((pg: any) => {
+      const label = pg.tipo === 'matricula' ? 'Matrícula' : `Cuota ${p.mes} ${p.anio}`
+      return `
+        <div class="linea-pago">
+          <span class="linea-label">${label}</span>
+          <span class="linea-monto">$${(pg.monto || 0).toLocaleString('es-AR')}</span>
+        </div>`
+    }).join('')
+
+    const totalMonto = (todosPagos || [p]).reduce((acc: number, pg: any) => acc + (pg.monto || 0), 0)
     const cuotaMensual = al?.cuota_mensual || 0
-    const ok           = montoNum > 0 && montoNum >= cuotaMensual
-    const parc         = montoNum > 0 && montoNum < cuotaMensual
-    const estadoLabel  = ok ? 'Pago completo' : parc ? 'Pago parcial' : 'Pendiente'
-    const estadoColor  = ok ? '#2d7a4f' : parc ? '#b45309' : '#c0392b'
-    const estadoBg     = ok ? '#e6f4ec' : parc ? '#fef3cd' : '#fdeaea'
-    const estadoDot    = ok ? '#2d7a4f' : parc ? '#b45309' : '#c0392b'
-
-    // ── Filas opcionales
-    const cursoRow = cursoNombre
-      ? `<div class="row"><span class="row-label">Curso</span><span class="row-value">${cursoNombre}</span></div>`
-      : ''
-
-    // observaciones viene directo de pagos_alumnos — siempre disponible
-    const obsRow = p.observaciones
-      ? `<div class="row"><span class="row-label">Observaciones</span><span class="row-value">${p.observaciones}</span></div>`
-      : ''
+    const ok = totalMonto >= cuotaMensual
+    const parc = totalMonto > 0 && totalMonto < cuotaMensual
+    const estadoLabel = ok ? 'Completo' : parc ? 'Parcial' : 'Pendiente'
+    const estadoColor = ok ? '#2d7a4f' : parc ? '#b45309' : '#c0392b'
+    const estadoBg = ok ? '#e6f4ec' : parc ? '#fef3cd' : '#fdeaea'
+    const dniRow = al?.dni ? `<div class="fila"><div class="fila-lab">DNI</div><div class="fila-val">${al.dni}</div></div>` : ''
+    const tieneMatricula = (todosPagos || []).some((pg: any) => pg.tipo === 'matricula')
 
     const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta property="og:title" content="Recibo de pago — ${institutoNombre}" />
-  <meta property="og:description" content="${al?.nombre ?? ''} ${al?.apellido ?? ''} · ${p.mes} ${p.anio} · $${monto}" />
-  <meta property="og:site_name" content="${institutoNombre}" />
-  <meta property="og:type" content="website" />
-  <title>Recibo ${al?.nombre ?? ''} ${al?.apellido ?? ''} — ${institutoNombre}</title>
+  <meta property="og:title" content="Recibo Next Ezeiza — $${totalMonto.toLocaleString('es-AR')}" />
+  <meta property="og:description" content="${al?.nombre} ${al?.apellido} · ${p.mes} ${p.anio} · ${p.metodo || 'Efectivo'}" />
+  <meta property="og:site_name" content="Next Ezeiza English Institute" />
+  <title>Recibo ${al?.nombre} ${al?.apellido} — Next Ezeiza</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&family=Inter:wght@400;500;600&display=swap');
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: 'Inter', Arial, sans-serif;
-      background: #f0eaf8;
-      min-height: 100vh;
-      display: flex;
-      align-items: flex-start;
-      justify-content: center;
-      padding: 32px 16px 48px;
-    }
-
-    .doc {
-      width: 100%;
-      max-width: 480px;
-      background: #fff;
-      border-radius: 20px;
-      overflow: hidden;
-      box-shadow: 0 8px 40px rgba(101,47,141,.18);
-    }
-
-    /* ── CABECERA ── */
-    .head {
-      background: #652f8d;
-      padding: 30px 36px 26px;
-      color: #fff;
-    }
-    .head-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-    }
-    .inst-nombre {
-      font-family: 'Lora', Georgia, serif;
-      font-size: 20px;
-      font-weight: 700;
-      letter-spacing: -.2px;
-    }
-    .inst-sub {
-      font-size: 11px;
-      opacity: .65;
-      margin-top: 3px;
-      letter-spacing: .08em;
-      text-transform: uppercase;
-    }
-    .rec-num-box { text-align: right; }
-    .rec-num-label {
-      font-size: 10px;
-      opacity: .6;
-      text-transform: uppercase;
-      letter-spacing: .1em;
-      display: block;
-    }
-    .rec-num-val {
-      font-family: 'Courier New', Courier, monospace;
-      font-size: 22px;
-      font-weight: 700;
-      letter-spacing: .06em;
-    }
-    .head-divider {
-      border: none;
-      border-top: 1px solid rgba(255,255,255,.22);
-      margin: 20px 0 16px;
-    }
-    .head-meta {
-      display: flex;
-      justify-content: space-between;
-      font-size: 12px;
-      opacity: .75;
-    }
-
-    /* ── CUERPO ── */
-    .body { padding: 30px 36px; }
-
-    .section-label {
-      font-size: 10px;
-      font-weight: 600;
-      color: #9b8eaa;
-      letter-spacing: .1em;
-      text-transform: uppercase;
-      margin-bottom: 8px;
-    }
-    .alumno-nombre {
-      font-family: 'Lora', Georgia, serif;
-      font-size: 24px;
-      color: #1a1020;
-      margin-bottom: 4px;
-      letter-spacing: -.3px;
-    }
-    .alumno-meta { font-size: 13px; color: #5a4d6a; }
-
-    .separator {
-      border: none;
-      border-top: 1px solid #ede8f5;
-      margin: 24px 0;
-    }
-
-    .rows { display: flex; flex-direction: column; }
-    .row {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      padding: 10px 0;
-      border-bottom: 1px solid #f5f0fa;
-      gap: 16px;
-    }
-    .row:last-child { border-bottom: none; }
-    .row-label {
-      font-size: 11px;
-      font-weight: 600;
-      color: #9b8eaa;
-      text-transform: uppercase;
-      letter-spacing: .08em;
-      white-space: nowrap;
-      padding-top: 1px;
-    }
-    .row-value {
-      font-size: 14px;
-      color: #1a1020;
-      font-weight: 500;
-      text-align: right;
-    }
-
-    /* ── CAJA DE MONTO ── */
-    .monto-box {
-      background: #f4eefb;
-      border: 1px solid #d4a8e8;
-      border-radius: 14px;
-      padding: 22px 26px;
-      margin: 24px 0;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    .monto-label {
-      font-size: 11px;
-      font-weight: 700;
-      color: #652f8d;
-      text-transform: uppercase;
-      letter-spacing: .1em;
-    }
-    .monto-periodo { font-size: 12px; color: #9b8eaa; margin-top: 4px; }
-    .monto-valor {
-      font-family: 'Lora', Georgia, serif;
-      font-size: 38px;
-      font-weight: 700;
-      color: #652f8d;
-      letter-spacing: -1px;
-    }
-
-    /* ── ESTADO ── */
-    .estado-wrap { display: flex; justify-content: center; margin-top: 4px; }
-    .badge-estado {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      border-radius: 20px;
-      padding: 8px 20px;
-      font-size: 13px;
-      font-weight: 600;
-      background: ${estadoBg};
-      color: ${estadoColor};
-    }
-    .badge-dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: ${estadoDot};
-      flex-shrink: 0;
-    }
-
-    /* ── BOTÓN ── */
-    .btn-print {
-      display: block;
-      width: calc(100% - 72px);
-      margin: 22px 36px 24px;
-      background: #652f8d;
-      color: #fff;
-      border: none;
-      border-radius: 10px;
-      padding: 14px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      font-family: 'Inter', Arial, sans-serif;
-      letter-spacing: .02em;
-    }
-    .btn-print:hover { background: #7d3aab; }
-
-    /* ── FOOTER ── */
-    .footer {
-      background: #faf5fd;
-      border-top: 1px solid #ede8f5;
-      padding: 16px 36px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 11px;
-      color: #9b8eaa;
-    }
-    .footer-id { font-family: 'Courier New', monospace; }
-
-    @media print {
-      body { background: white; padding: 0; }
-      .doc { box-shadow: none; border-radius: 0; max-width: 100%; }
-      .btn-print { display: none !important; }
-    }
+    body { font-family: Arial, Helvetica, sans-serif; background: #f5f0fa; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 24px 16px; }
+    .wrap { width: 100%; max-width: 420px; background: white; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 32px rgba(101,47,141,.15); }
+    .hdr { background: #652f8d; padding: 24px; color: white; }
+    .logo { font-size: 20px; font-weight: 900; }
+    .logo span { opacity: .65; font-weight: 400; }
+    .rec-num { font-size: 12px; opacity: .65; margin-top: 4px; }
+    .monto-sec { background: #f2e8f9; padding: 20px 24px; border-bottom: 2px dashed #d4a8e8; }
+    .monto-lab { font-size: 11px; color: #9b8eaa; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 8px; }
+    .monto { font-size: 44px; font-weight: 900; color: #652f8d; letter-spacing: -2px; line-height: 1; }
+    .monto-mes { font-size: 13px; color: #9b8eaa; margin-top: 6px; }
+    .detalle-pagos { padding: 12px 24px 0; }
+    .linea-pago { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px dashed #e8dff2; }
+    .linea-pago:last-child { border-bottom: none; }
+    .linea-label { font-size: 13px; color: #5a4d6a; }
+    .linea-monto { font-size: 14px; font-weight: 700; color: #652f8d; }
+    .badge-matricula { font-size: 10px; background: #e0f0f7; color: #1a6b8a; padding: 2px 8px; border-radius: 10px; font-weight: 700; margin-left: 6px; }
+    .body { padding: 16px 20px 4px; }
+    .fila { display: flex; justify-content: space-between; align-items: center; padding: 11px 0; border-bottom: 1px solid #f0edf5; }
+    .fila:last-child { border-bottom: none; }
+    .fila-lab { font-size: 11px; color: #9b8eaa; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+    .fila-val { font-size: 14px; color: #1a1020; font-weight: 600; text-align: right; max-width: 60%; }
+    .badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+    .print-btn { display: block; width: calc(100% - 40px); margin: 16px 20px; padding: 14px; background: #652f8d; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: Arial; }
+    .footer { background: #faf7fd; padding: 16px 20px; text-align: center; font-size: 12px; color: #9b8eaa; border-top: 1px solid #f0edf5; }
+    @media print { body { background: white; padding: 0; } .wrap { box-shadow: none; border-radius: 0; } .print-btn { display: none; } }
   </style>
 </head>
 <body>
-  <div class="doc">
-
-    <div class="head">
-      <div class="head-top">
-        <div>
-          <div class="inst-nombre">${institutoNombre}</div>
-          <div class="inst-sub">${institutoSub}</div>
-        </div>
-        <div class="rec-num-box">
-          <span class="rec-num-label">Recibo N°</span>
-          <div class="rec-num-val">${num}</div>
-        </div>
-      </div>
-      <hr class="head-divider" />
-      <div class="head-meta">
-        <span>Comprobante de pago de cuota mensual</span>
-        <span>${fecha}</span>
-      </div>
+  <div class="wrap">
+    <div class="hdr">
+      <div class="logo">Next <span>Ezeiza</span></div>
+      <div class="rec-num">Comprobante #${num} &middot; ${fecha}</div>
     </div>
-
+    <div class="monto-sec">
+      <div class="monto-lab">Total abonado${tieneMatricula ? ' <span class="badge-matricula">Incluye matrícula</span>' : ''}</div>
+      <div class="monto">$${totalMonto.toLocaleString('es-AR')}</div>
+      <div class="monto-mes">${p.mes} ${p.anio} &middot; ${p.metodo || 'Efectivo'}</div>
+    </div>
+    ${(todosPagos && todosPagos.length > 1) ? `<div class="detalle-pagos">${lineasPago}</div>` : ''}
     <div class="body">
-      <div class="section-label">Alumno</div>
-      <div class="alumno-nombre">${al?.nombre ?? ''} ${al?.apellido ?? ''}</div>
-      ${al?.dni ? `<div class="alumno-meta">DNI ${al.dni}</div>` : ''}
-
-      <hr class="separator" />
-
-      <div class="rows">
-        <div class="row">
-          <span class="row-label">Período</span>
-          <span class="row-value">${p.mes} ${p.anio}</span>
-        </div>
-        ${cursoRow}
-        <div class="row">
-          <span class="row-label">Método de pago</span>
-          <span class="row-value">${p.metodo || 'Efectivo'}</span>
-        </div>
-        ${obsRow}
-      </div>
-
-      <div class="monto-box">
-        <div>
-          <div class="monto-label">Total abonado</div>
-          <div class="monto-periodo">${p.mes} ${p.anio}</div>
-        </div>
-        <div class="monto-valor">$${monto}</div>
-      </div>
-
-      <div class="estado-wrap">
-        <span class="badge-estado">
-          <span class="badge-dot"></span>
-          ${estadoLabel}
-        </span>
+      <div class="fila"><div class="fila-lab">Alumno</div><div class="fila-val">${al?.nombre} ${al?.apellido}</div></div>
+      ${al?.es_menor ? `<div class="fila"><div class="fila-lab">Responsable</div><div class="fila-val">${al?.padre_nombre || ''}</div></div>` : ''}
+      ${dniRow}
+      <div class="fila"><div class="fila-lab">M&eacute;todo</div><div class="fila-val">${p.metodo || 'Efectivo'}</div></div>
+      <div class="fila"><div class="fila-lab">Fecha</div><div class="fila-val">${fecha}</div></div>
+      <div class="fila">
+        <div class="fila-lab">Estado</div>
+        <div class="fila-val"><span class="badge" style="background:${estadoBg};color:${estadoColor}">&#10003; ${estadoLabel}</span></div>
       </div>
     </div>
-
-    <button class="btn-print" onclick="window.print()">Imprimir / Guardar PDF</button>
-
-    <div class="footer">
-      <span class="footer-id">ID: ${params.id}</span>
-      <span>Emitido: ${fechaEmision}</span>
-    </div>
-
+    <button class="print-btn" onclick="window.print()">Guardar / Imprimir</button>
+    <div class="footer">Next Ezeiza English Institute &middot; Ezeiza, Buenos Aires</div>
   </div>
 </body>
 </html>`
