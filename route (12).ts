@@ -12,13 +12,13 @@ function getInstitutoId(req: NextRequest): string | null {
 export async function POST(req: NextRequest) {
   try {
     const ip = getClientIp(req)
-    const rl = rateLimit(ip + ':crear-alumno', { limit: 10, windowMs: 60000 })
+    const rl = rateLimit(ip + ':guardar-licencia', { limit: 20, windowMs: 60000 })
     if (!rl.ok) return rateLimitResponse(rl.resetMs)
 
     const institutoId = getInstitutoId(req)
     const datos = await req.json()
     const { data, error } = await sb()
-      .from('alumnos')
+      .from('licencias_profesoras')
       .insert({ ...datos, ...(institutoId ? { instituto_id: institutoId } : {}) })
       .select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })

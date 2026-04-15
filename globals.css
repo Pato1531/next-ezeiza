@@ -1,0 +1,66 @@
+-- ============================================================
+-- EduGest Migration v2 — Ejecutar en Supabase SQL Editor
+-- ============================================================
+
+-- 1. permisos_custom en usuarios
+ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS permisos_custom JSONB DEFAULT NULL;
+
+-- 2. fecha_nacimiento en alumnos
+ALTER TABLE alumnos ADD COLUMN IF NOT EXISTS fecha_nacimiento DATE;
+ALTER TABLE alumnos ADD COLUMN IF NOT EXISTS matricula NUMERIC(10,2) DEFAULT 0;
+
+-- 3. tipo en pagos_alumnos
+ALTER TABLE pagos_alumnos ADD COLUMN IF NOT EXISTS tipo TEXT NOT NULL DEFAULT 'cuota';
+UPDATE pagos_alumnos SET tipo = 'cuota' WHERE tipo IS NULL OR tipo = '';
+CREATE INDEX IF NOT EXISTS idx_pagos_tipo ON pagos_alumnos(tipo, instituto_id, mes, anio);
+
+-- 4. tabla estado_resultado_mensual
+CREATE TABLE IF NOT EXISTS estado_resultado_mensual (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  mes           TEXT NOT NULL,
+  anio          INTEGER NOT NULL,
+  instituto_id  UUID REFERENCES institutos(id) ON DELETE CASCADE,
+  concepto      TEXT NOT NULL,
+  tipo          TEXT NOT NULL DEFAULT 'egreso',
+  importe       NUMERIC(12,2) NOT NULL DEFAULT 0,
+  created_at    TIMESTAMPTZ DEFAULT now(),
+  updated_at    TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(mes, anio, instituto_id, concepto)
+);
+CREATE INDEX IF NOT EXISTS idx_er_mes ON estado_resultado_mensual(mes, anio, instituto_id);
+
+-- 5. RLS policies para pagos_alumnos (SELECT)
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='pagos_alumnos' AND policyname='leer pagos propio instituto') THEN
+    CREATE POLICY "leer pagos propio instituto" ON pagos_alumnos FOR SELECT
+    USING (instituto_id = get_my_instituto_id());
+  END IF;
+END $$;
+
+-- 6. RLS para clases
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='clases' AND policyname='leer clases propio instituto') THEN
+    CREATE POLICY "leer clases propio instituto" ON clases FOR SELECT
+    USING (instituto_id = get_my_instituto_id());
+  END IF;
+END $$;
+
+-- 7. RLS para asistencia_clases
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='asistencia_clases' AND policyname='leer asistencia') THEN
+    CREATE POLICY "leer asistencia" ON asistencia_clases FOR SELECT
+    USING (EXISTS (
+      SELECT 1 FROM clases c WHERE c.id = asistencia_clases.clase_id
+      AND c.instituto_id = get_my_instituto_id()
+    ));
+  END IF;
+END $$;
+
+-- 8. RLS para estado_resultado_mensual
+ALTER TABLE estado_resultado_mensual ENABLE ROW LEVEL SECURITY;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename='estado_resultado_mensual' AND policyname='gestionar estado resultado') THEN
+    CREATE POLICY "gestionar estado resultado" ON estado_resultado_mensual FOR ALL
+    USING (instituto_id = get_my_instituto_id());
+  END IF;
+END $$;
