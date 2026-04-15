@@ -1,30 +1,38 @@
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-
-// Cliente único creado UNA SOLA VEZ al cargar el módulo.
-// NO se destruye nunca — destroyClient es no-op.
-// Esto evita el bug donde un cliente recién creado no tiene
-// la sesión cargada del localStorage todavía.
-export const supabaseClient = createSupabaseClient(url, key, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: false,
-  },
-})
+// ── Cliente singleton con lazy initialization ─────────────────────────────────
+// NO se instancia a nivel de módulo — eso causa "supabaseUrl is required"
+// durante el prerender de Next.js porque las env vars no están disponibles
+// en build time. Se crea la primera vez que se llama createClient().
+let _client: ReturnType<typeof createSupabaseClient> | null = null
 
 export function createClient() {
-  return supabaseClient
+  if (!_client) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    if (!url || !key) {
+      // En build time (SSR/prerender) las variables no existen — devolver stub seguro
+      // Los componentes 'use client' nunca llegan a ejecutar esto en el servidor
+      throw new Error('[Supabase] Variables de entorno no disponibles. Verificar NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en Vercel.')
+    }
+    _client = createSupabaseClient(url, key, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false,
+      },
+    })
+  }
+  return _client
 }
 
-// No-op — mantener por compatibilidad con auth-context
-export function destroyClient() {
-  // Intencionalmente vacío — el cliente nunca se destruye
-  // La sesión se limpia via supabase.auth.signOut()
-}
+// Alias para compatibilidad con código que importa supabaseClient directamente
+export { createClient as default }
 
+// No-op — mantener por compatibilidad
+export function destroyClient() {}
+
+// ── Tipos ─────────────────────────────────────────────────────────────────────
 export type Rol = 'director' | 'coordinadora' | 'secretaria' | 'profesora'
 
 export interface Usuario {
@@ -113,53 +121,21 @@ export interface HorarioItem {
 
 export const PERMISOS: Record<Rol, string[]> = {
   director: [
-    'dashboard',
-    'profesoras',
-    'alumnos',
-    'cursos',
-    'horarios',
-    'reportes',
-    'permisos',
-    'perfil',
-    'comunicados',
-    'agenda',
-    'actividad',
-    'atencion',
-    'ejecutivo',  // Dashboard Ejecutivo — solo director
-    'cuotas',     // Cuotas por curso — director y secretaria
+    'dashboard', 'profesoras', 'alumnos', 'cursos', 'horarios',
+    'reportes', 'permisos', 'perfil', 'comunicados', 'agenda',
+    'actividad', 'atencion', 'ejecutivo', 'cuotas',
   ],
   coordinadora: [
-    'dashboard',
-    'profesoras',
-    'alumnos',
-    'cursos',
-    'horarios',
-    'reportes',
-    'perfil',
-    'comunicados',
-    'agenda',
-    'atencion',
+    'dashboard', 'profesoras', 'alumnos', 'cursos', 'horarios',
+    'reportes', 'perfil', 'comunicados', 'agenda', 'atencion',
   ],
   secretaria: [
-    'dashboard',
-    'alumnos',
-    'cursos',
-    'horarios',
-    'reportes',
-    'perfil',
-    'comunicados',
-    'agenda',
-    'atencion',
-    'cuotas',     // Cuotas por curso — director y secretaria
+    'dashboard', 'alumnos', 'cursos', 'horarios', 'reportes',
+    'perfil', 'comunicados', 'agenda', 'atencion', 'cuotas',
   ],
   profesora: [
-    'dashboard',
-    'alumnos',
-    'cursos',
-    'horarios',
-    'perfil',
-    'comunicados',
-    'agenda',
+    'dashboard', 'alumnos', 'cursos', 'horarios',
+    'perfil', 'comunicados', 'agenda',
   ],
 }
 
