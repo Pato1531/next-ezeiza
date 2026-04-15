@@ -1,243 +1,130 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { useEffect, useRef, useState } from 'react'
+import { useAuth } from '@/lib/auth-context'
+import LoginPage from '@/components/LoginPage'
+import AppShell from '@/components/AppShell'
 
-// ── Cliente singleton ─────────────────────────────────────────────────────────
-// Se instancia UNA sola vez. No se importa desde ningún otro módulo para evitar
-// el error "Cannot read properties of undefined (reading 'auth')".
-function getSupabase() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !key) {
-    console.error('[Auth] Faltan variables de entorno: NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY')
-    return null
-  }
-  return createClient(url, key)
-}
+export default function Home() {
+  const { usuario, loading } = useAuth()
+  const [mostrarApp, setMostrarApp] = useState(false)
+  // NO usar useState lazy con localStorage — se ejecuta en SSR y rompe la hidratación.
+  // Se inicializa en false y se actualiza en useEffect (solo corre en el cliente).
+  const [hadSession, setHadSession] = useState(false)
+  const [timedOut, setTimedOut] = useState(false)
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-// Singleton a nivel de módulo
-let _client: ReturnType<typeof createClient> | null = null
-function getClient() {
-  if (!_client) _client = getSupabase()
-  return _client
-}
-
-// ── Estado global compartido con hooks.ts ─────────────────────────────────────
-let _userName = 'Sistema'
-let _institutoId: string | null = null
-let _sessionReady = false
-
-export function setCurrentUserName(n: string) { _userName = n }
-export function setInstitutoId(id: string) { _institutoId = id }
-export function setSessionReady(v: boolean) { _sessionReady = v }
-export function getCurrentUserName() { return _userName }
-export function getStoredInstitutoId() { return _institutoId }
-export function isSessionReady() { return _sessionReady }
-
-// ── Tipos ─────────────────────────────────────────────────────────────────────
-interface Usuario {
-  id: string
-  nombre: string
-  email: string
-  rol: string
-  color: string
-  initials: string
-  activo: boolean
-  instituto_id: string
-}
-
-interface Instituto {
-  id: string
-  nombre: string
-  slug: string
-  color_primario: string
-}
-
-interface AuthContextType {
-  usuario: Usuario | null
-  instituto: Instituto | null
-  loading: boolean
-  signOut: () => Promise<void>
-  recargarUsuario: () => Promise<void>
-}
-
-const AuthContext = createContext<AuthContextType>({
-  usuario: null,
-  instituto: null,
-  loading: true,
-  signOut: async () => {},
-  recargarUsuario: async () => {},
-})
-
-// ── Provider ──────────────────────────────────────────────────────────────────
-export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [usuario, setUsuario] = useState<Usuario | null>(null)
-  const [instituto, setInstituto] = useState<Instituto | null>(null)
-  const [loading, setLoading] = useState(true)
-  const mountedRef = useRef(true)
-
-  const cargarUsuario = useCallback(async (uid: string) => {
-    const sb = getClient()
-    if (!sb) {
-      setLoading(false)
-      return
-    }
-
+  // Solo en el cliente: leer si había sesión previa
+  useEffect(() => {
     try {
-      const { data: u, error } = await sb
-        .from('usuarios')
-        .select('*')
-        .eq('id', uid)
-        .eq('activo', true)
-        .single()
-
-      if (!mountedRef.current) return
-
-      if (error || !u) {
-        console.warn('[Auth] Usuario no encontrado:', error?.message)
-        if (typeof window !== 'undefined') localStorage.removeItem('ne_session_uid')
-        setLoading(false)
-        return
-      }
-
-      setCurrentUserName(u.nombre)
-      setInstitutoId(u.instituto_id)
-
-      // Cargar instituto
-      let inst: Instituto | null = null
-      try {
-        const slug = process.env.NEXT_PUBLIC_INSTITUTO_SLUG
-        if (slug) {
-          const { data } = await sb.from('institutos').select('*').eq('slug', slug).single()
-          inst = data
-        } else if (u.instituto_id) {
-          const { data } = await sb.from('institutos').select('*').eq('id', u.instituto_id).single()
-          inst = data
-        }
-      } catch (e) {
-        console.warn('[Auth] No se pudo cargar el instituto:', e)
-      }
-
-      if (!mountedRef.current) return
-
-      setUsuario(u)
-      setInstituto(inst)
-      setSessionReady(true)
-      if (typeof window !== 'undefined') localStorage.setItem('ne_session_uid', uid)
-    } catch (e) {
-      console.error('[Auth] cargarUsuario error:', e)
-      if (typeof window !== 'undefined') localStorage.removeItem('ne_session_uid')
-    } finally {
-      if (mountedRef.current) setLoading(false)
+      setHadSession(Boolean(localStorage.getItem('ne_session_uid')))
+    } catch {
+      setHadSession(false)
     }
   }, [])
 
-  const recargarUsuario = useCallback(async () => {
-    const sb = getClient()
-    if (!sb) return
-    try {
-      const { data: { session } } = await sb.auth.getSession()
-      if (session?.user?.id) await cargarUsuario(session.user.id)
-    } catch (e) {
-      console.error('[Auth] recargarUsuario:', e)
-    }
-  }, [cargarUsuario])
-
+  // Cuando llega el usuario, mostrar la app
   useEffect(() => {
-    mountedRef.current = true
-    const sb = getClient()
-
-    if (!sb) {
-      setLoading(false)
-      return
+    if (usuario) {
+      setTimedOut(false)
+      setMostrarApp(true)
+      if (timerRef.current) clearTimeout(timerRef.current)
     }
+  }, [usuario])
 
-    // Safety timeout: desbloquea la UI si Supabase no responde en 6s
-    const safetyTimer = setTimeout(() => {
-      if (mountedRef.current) {
-        console.warn('[Auth] Safety timeout — forzando loading=false')
-        if (typeof window !== 'undefined') localStorage.removeItem('ne_session_uid')
-        setSessionReady(false)
-        setLoading(false)
-      }
-    }, 6000)
-
-    // Cargar sesión inicial
-    sb.auth.getSession().then(({ data: { session } }) => {
-      if (!mountedRef.current) return
-      clearTimeout(safetyTimer)
-      if (session?.user?.id) {
-        cargarUsuario(session.user.id)
-      } else {
-        if (typeof window !== 'undefined') localStorage.removeItem('ne_session_uid')
-        setSessionReady(false)
-        setLoading(false)
-      }
-    }).catch((e) => {
-      console.error('[Auth] getSession error:', e)
-      clearTimeout(safetyTimer)
-      if (mountedRef.current) {
-        if (typeof window !== 'undefined') localStorage.removeItem('ne_session_uid')
-        setLoading(false)
-      }
-    })
-
-    // Suscripción a cambios de sesión
-    // Usamos variable para evitar llamar .unsubscribe() sobre undefined
-    let unsubscribeFn: (() => void) | null = null
-    try {
-      const { data } = sb.auth.onAuthStateChange((event, session) => {
-        if (!mountedRef.current) return
-        if (event === 'SIGNED_IN' && session?.user?.id) {
-          clearTimeout(safetyTimer)
-          cargarUsuario(session.user.id)
-        } else if (event === 'SIGNED_OUT') {
-          if (typeof window !== 'undefined') localStorage.removeItem('ne_session_uid')
-          setUsuario(null)
-          setInstituto(null)
-          setSessionReady(false)
-          setLoading(false)
-        }
-      })
-      // La API de Supabase puede devolver data.subscription o data directamente
-      if (data?.subscription?.unsubscribe) {
-        unsubscribeFn = () => data.subscription.unsubscribe()
-      } else if (typeof (data as any)?.unsubscribe === 'function') {
-        unsubscribeFn = () => (data as any).unsubscribe()
-      }
-    } catch (e) {
-      console.error('[Auth] onAuthStateChange setup error:', e)
-    }
-
+  // Timeout de seguridad: si en 7s no hay usuario, mostrar botón reintentar
+  useEffect(() => {
+    if (!loading || mostrarApp) return
+    timerRef.current = setTimeout(() => setTimedOut(true), 7000)
     return () => {
-      mountedRef.current = false
-      clearTimeout(safetyTimer)
-      if (unsubscribeFn) unsubscribeFn()
+      if (timerRef.current) clearTimeout(timerRef.current)
     }
-  }, [cargarUsuario])
+  }, [loading, mostrarApp])
 
-  const signOut = async () => {
-    if (typeof window !== 'undefined') localStorage.removeItem('ne_session_uid')
-    setUsuario(null)
-    setInstituto(null)
-    setSessionReady(false)
-    setLoading(false)
-    try {
-      const sb = getClient()
-      if (sb) await sb.auth.signOut()
-    } catch (e) {
-      console.error('[Auth] signOut error:', e)
-    }
+  // Cargando → Spinner
+  if (loading && !mostrarApp) {
+    return <Spinner timedOut={timedOut} />
+  }
+
+  // Sin usuario → LoginPage
+  if (!mostrarApp && !usuario) {
+    return <LoginPage />
   }
 
   return (
-    <AuthContext.Provider value={{ usuario, instituto, loading, signOut, recargarUsuario }}>
-      {children}
-    </AuthContext.Provider>
+    <>
+      {mostrarApp && <AppShell />}
+      {!mostrarApp && !usuario && <LoginPage />}
+    </>
   )
 }
 
-export function useAuth() {
-  return useContext(AuthContext)
+function Spinner({ timedOut }: { timedOut: boolean }) {
+  const handleRetry = () => {
+    try { localStorage.removeItem('ne_session_uid') } catch {}
+    window.location.reload()
+  }
+
+  return (
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: '#652f8d',
+      flexDirection: 'column',
+      gap: '20px',
+    }}>
+      {!timedOut ? (
+        <>
+          <div style={{
+            width: '48px',
+            height: '48px',
+            border: '3px solid rgba(255,255,255,.3)',
+            borderTopColor: '#fff',
+            borderRadius: '50%',
+            animation: 'spin 0.8s linear infinite',
+          }} />
+          <p style={{
+            color: 'rgba(255,255,255,0.7)',
+            fontSize: '14px',
+            fontFamily: 'Inter, sans-serif',
+            margin: 0,
+          }}>
+            Ingresando...
+          </p>
+        </>
+      ) : (
+        <>
+          <p style={{
+            color: '#fff',
+            fontSize: '16px',
+            fontFamily: 'Inter, sans-serif',
+            textAlign: 'center',
+            maxWidth: '260px',
+            margin: 0,
+          }}>
+            La conexión está tardando más de lo esperado.
+          </p>
+          <button
+            onClick={handleRetry}
+            style={{
+              background: 'rgba(255,255,255,0.15)',
+              border: '2px solid rgba(255,255,255,0.4)',
+              color: '#fff',
+              padding: '12px 28px',
+              borderRadius: '12px',
+              fontSize: '15px',
+              fontWeight: 700,
+              fontFamily: 'Inter, sans-serif',
+              cursor: 'pointer',
+            }}
+          >
+            Reintentar
+          </button>
+        </>
+      )}
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  )
 }
