@@ -1,9 +1,44 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
-import { supabase } from './supabase'
-import { setCurrentUserName, setInstitutoId, setSessionReady } from './hooks'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
+// ── Cliente singleton del browser (anon key) ──────────────────────────────────
+// Se crea UNA SOLA VEZ al cargar el módulo. No depende de ningún import externo.
+// Esto evita el bug "Cannot read properties of undefined (reading 'auth')" que
+// ocurre cuando se importa un singleton desde otro módulo que aún no se inicializó.
+let _supabase: SupabaseClient | null = null
+
+function getSupabase(): SupabaseClient {
+  if (!_supabase) {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    if (!url || !key) {
+      throw new Error(
+        '[Auth] Variables de entorno faltantes.\n' +
+        'Verificar en Vercel → Settings → Environment Variables:\n' +
+        '  NEXT_PUBLIC_SUPABASE_URL\n' +
+        '  NEXT_PUBLIC_SUPABASE_ANON_KEY'
+      )
+    }
+    _supabase = createClient(url, key)
+  }
+  return _supabase
+}
+
+// ── Estado global compartido (usado también por hooks.ts vía apiHeaders) ──────
+let _currentUserName = 'Sistema'
+let _institutoId: string | null = null
+let _sessionReady = false
+
+export function setCurrentUserName(nombre: string) { _currentUserName = nombre }
+export function setInstitutoId(id: string) { _institutoId = id }
+export function setSessionReady(val: boolean) { _sessionReady = val }
+export function getCurrentUserName() { return _currentUserName }
+export function getStoredInstitutoId() { return _institutoId }
+export function isSessionReady() { return _sessionReady }
+
+// ── Tipos ─────────────────────────────────────────────────────────────────────
 interface Usuario {
   id: string
   nombre: string
@@ -38,6 +73,7 @@ const AuthContext = createContext<AuthContextType>({
   recargarUsuario: async () => {},
 })
 
+// ── Provider ──────────────────────────────────────────────────────────────────
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [usuario, setUsuario] = useState<Usuario | null>(null)
   const [instituto, setInstituto] = useState<Instituto | null>(null)
@@ -45,7 +81,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const cargarUsuario = useCallback(async (uid: string) => {
     try {
-      const { data: u, error } = await supabase
+      const sb = getSupabase()
+
+      const { data: u, error } = await sb
         .from('usuarios')
         .select('*')
         .eq('id', uid)
@@ -54,6 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error || !u) {
         console.warn('[Auth] Usuario no encontrado en tabla usuarios:', error?.message)
+        localStorage.removeItem('ne_session_uid')
         setLoading(false)
         return
       }
@@ -65,42 +104,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let inst: Instituto | null = null
       const slug = process.env.NEXT_PUBLIC_INSTITUTO_SLUG
       if (slug) {
-        const { data } = await supabase.from('institutos').select('*').eq('slug', slug).single()
+        const { data } = await sb.from('institutos').select('*').eq('slug', slug).single()
         inst = data
       } else if (u.instituto_id) {
-        const { data } = await supabase.from('institutos').select('*').eq('id', u.instituto_id).single()
+        const { data } = await sb.from('institutos').select('*').eq('id', u.instituto_id).single()
         inst = data
       }
 
       setUsuario(u)
       setInstituto(inst)
       setSessionReady(true)
-
-      // Persistir para el spinner del próximo login
       localStorage.setItem('ne_session_uid', uid)
     } catch (e) {
       console.error('[Auth] cargarUsuario error:', e)
+      localStorage.removeItem('ne_session_uid')
     } finally {
       setLoading(false)
     }
   }, [])
 
   const recargarUsuario = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (session?.user?.id) {
-      await cargarUsuario(session.user.id)
+    try {
+      const sb = getSupabase()
+      const { data: { session } } = await sb.auth.getSession()
+      if (session?.user?.id) await cargarUsuario(session.user.id)
+    } catch (e) {
+      console.error('[Auth] recargarUsuario error:', e)
     }
   }, [cargarUsuario])
 
   useEffect(() => {
     let cancelled = false
 
-    // ── FIX BUG LOGIN: timeout de seguridad de 6s ──────────────────────────
-    // Si Supabase no responde (JWT hook lento, red lenta, token expirado),
-    // forzamos loading=false para que el usuario no quede pegado en el spinner.
+    // ── FIX: Safety timeout — si Supabase no responde en 6s, desbloquear UI ──
     const safetyTimeout = setTimeout(() => {
-      if (!cancelled && loading) {
-        console.warn('[Auth] Safety timeout: forzando loading=false después de 6s')
+      if (!cancelled) {
+        console.warn('[Auth] Safety timeout activado (6s) — forzando loading=false')
         localStorage.removeItem('ne_session_uid')
         setSessionReady(false)
         setLoading(false)
@@ -109,13 +148,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const init = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
+        const sb = getSupabase()
+        const { data: { session } } = await sb.auth.getSession()
         if (cancelled) return
 
         if (session?.user?.id) {
           await cargarUsuario(session.user.id)
         } else {
-          // No hay sesión activa → limpiar localStorage
           localStorage.removeItem('ne_session_uid')
           setSessionReady(false)
           setLoading(false)
@@ -134,27 +173,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     init()
 
     // Escuchar cambios de sesión (login / logout / token refresh)
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (cancelled) return
-
-      if (event === 'SIGNED_IN' && session?.user?.id) {
-        await cargarUsuario(session.user.id)
-      } else if (event === 'SIGNED_OUT') {
-        localStorage.removeItem('ne_session_uid')
-        setUsuario(null)
-        setInstituto(null)
-        setSessionReady(false)
-        setLoading(false)
-      } else if (event === 'TOKEN_REFRESHED' && session?.user?.id) {
-        // Refrescar datos del usuario silenciosamente
-        setInstitutoId(session.user.id)
-      }
-    })
+    let subscription: { unsubscribe: () => void } | null = null
+    try {
+      const sb = getSupabase()
+      const { data } = sb.auth.onAuthStateChange(async (event, session) => {
+        if (cancelled) return
+        if (event === 'SIGNED_IN' && session?.user?.id) {
+          clearTimeout(safetyTimeout)
+          await cargarUsuario(session.user.id)
+        } else if (event === 'SIGNED_OUT') {
+          localStorage.removeItem('ne_session_uid')
+          setUsuario(null)
+          setInstituto(null)
+          setSessionReady(false)
+          setLoading(false)
+        }
+      })
+      subscription = data.subscription
+    } catch (e) {
+      console.error('[Auth] onAuthStateChange setup error:', e)
+    }
 
     return () => {
       cancelled = true
       clearTimeout(safetyTimeout)
-      subscription.unsubscribe()
+      subscription?.unsubscribe()
     }
   }, [cargarUsuario])
 
@@ -164,7 +207,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setInstituto(null)
     setSessionReady(false)
     setLoading(false)
-    await supabase.auth.signOut()
+    try {
+      await getSupabase().auth.signOut()
+    } catch (e) {
+      console.error('[Auth] signOut error:', e)
+    }
   }
 
   return (
