@@ -2,14 +2,15 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
+import { PERMISOS, type Rol } from '@/lib/supabase'
 
-// Cliente singleton — se crea una sola vez, nunca se importa de otro módulo
+// ── Cliente singleton ─────────────────────────────────────────────────────────
 let _client: ReturnType<typeof createClient> | null = null
 
 function getClient() {
   if (!_client) {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    const url  = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const key  = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
     if (!url || !key) {
       console.error('[Auth] Faltan NEXT_PUBLIC_SUPABASE_URL o NEXT_PUBLIC_SUPABASE_ANON_KEY')
       return null
@@ -19,23 +20,24 @@ function getClient() {
   return _client
 }
 
-// Estado global compartido con hooks.ts
-let _userName = 'Sistema'
+// ── Estado global compartido con hooks.ts ─────────────────────────────────────
+let _userName     = 'Sistema'
 let _institutoId: string | null = null
 let _sessionReady = false
 
-export function setCurrentUserName(n: string) { _userName = n }
-export function setInstitutoId(id: string) { _institutoId = id }
-export function setSessionReady(v: boolean) { _sessionReady = v }
-export function getCurrentUserName() { return _userName }
-export function getStoredInstitutoId() { return _institutoId }
-export function isSessionReady() { return _sessionReady }
+export function setCurrentUserName(n: string)  { _userName     = n    }
+export function setInstitutoId(id: string)      { _institutoId  = id   }
+export function setSessionReady(v: boolean)     { _sessionReady = v    }
+export function getCurrentUserName()            { return _userName     }
+export function getStoredInstitutoId()          { return _institutoId  }
+export function isSessionReady()                { return _sessionReady }
 
+// ── Tipos ─────────────────────────────────────────────────────────────────────
 interface Usuario {
   id: string
   nombre: string
   email: string
-  rol: string
+  rol: Rol
   color: string
   initials: string
   activo: boolean
@@ -53,6 +55,7 @@ interface AuthContextType {
   usuario: Usuario | null
   instituto: Instituto | null
   loading: boolean
+  puedeVer: (modulo: string) => boolean
   signOut: () => Promise<void>
   recargarUsuario: () => Promise<void>
 }
@@ -61,15 +64,25 @@ const AuthContext = createContext<AuthContextType>({
   usuario: null,
   instituto: null,
   loading: true,
+  puedeVer: () => false,
   signOut: async () => {},
   recargarUsuario: async () => {},
 })
 
+// ── Provider ──────────────────────────────────────────────────────────────────
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [usuario, setUsuario] = useState<Usuario | null>(null)
+  const [usuario,   setUsuario]   = useState<Usuario | null>(null)
   const [instituto, setInstituto] = useState<Instituto | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading,   setLoading]   = useState(true)
   const mountedRef = useRef(true)
+
+  const puedeVer = useCallback(
+    (modulo: string) => {
+      if (!usuario) return false
+      return PERMISOS[usuario.rol]?.includes(modulo) ?? false
+    },
+    [usuario]
+  )
 
   const cargarUsuario = useCallback(async (uid: string) => {
     const sb = getClient()
@@ -139,7 +152,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const sb = getClient()
     if (!sb) { setLoading(false); return }
 
-    // Safety timeout: si Supabase no responde en 6s, desbloquear la UI
     const safetyTimer = setTimeout(() => {
       if (mountedRef.current) {
         console.warn('[Auth] Safety timeout — forzando loading=false')
@@ -216,7 +228,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ usuario, instituto, loading, signOut, recargarUsuario }}>
+    <AuthContext.Provider value={{ usuario, instituto, loading, puedeVer, signOut, recargarUsuario }}>
       {children}
     </AuthContext.Provider>
   )
