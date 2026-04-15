@@ -12,12 +12,15 @@ export default function Home() {
   const [timedOut, setTimedOut] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
-  // Leer localStorage solo en el cliente (evita crash SSR)
+  // Leer localStorage solo en el cliente — NUNCA en el initializer de useState
   useEffect(() => {
-    setHadSession(Boolean(localStorage.getItem('ne_session_uid')))
+    try {
+      setHadSession(Boolean(localStorage.getItem('ne_session_uid')))
+    } catch {
+      setHadSession(false)
+    }
   }, [])
 
-  // Cuando llega el usuario, montar la app
   useEffect(() => {
     if (usuario) {
       setTimedOut(false)
@@ -26,21 +29,16 @@ export default function Home() {
     }
   }, [usuario])
 
-  // Timeout de seguridad: si en 7s no hay usuario, mostrar botón reintentar
   useEffect(() => {
     if (!loading || mostrarApp) return
     timerRef.current = setTimeout(() => setTimedOut(true), 7000)
-    return () => {
-      if (timerRef.current) clearTimeout(timerRef.current)
-    }
+    return () => { if (timerRef.current) clearTimeout(timerRef.current) }
   }, [loading, mostrarApp])
 
-  // Mientras carga y había sesión previa → spinner
   if (loading && !mostrarApp) {
-    return <Spinner timedOut={timedOut} hadSession={hadSession} />
+    return <Spinner timedOut={timedOut} />
   }
 
-  // Sin usuario → Login
   if (!mostrarApp && !usuario) {
     return <LoginPage />
   }
@@ -53,12 +51,9 @@ export default function Home() {
   )
 }
 
-function Spinner({ timedOut, hadSession }: { timedOut: boolean; hadSession: boolean }) {
-  // Si no había sesión previa, ir directo al login sin spinner
-  if (!hadSession) return <LoginPageDirect />
-
+function Spinner({ timedOut }: { timedOut: boolean }) {
   const handleRetry = () => {
-    localStorage.removeItem('ne_session_uid')
+    try { localStorage.removeItem('ne_session_uid') } catch {}
     window.location.reload()
   }
 
@@ -75,48 +70,27 @@ function Spinner({ timedOut, hadSession }: { timedOut: boolean; hadSession: bool
       {!timedOut ? (
         <>
           <div style={{
-            width: '48px',
-            height: '48px',
+            width: '48px', height: '48px',
             border: '3px solid rgba(255,255,255,.3)',
-            borderTopColor: '#fff',
-            borderRadius: '50%',
+            borderTopColor: '#fff', borderRadius: '50%',
             animation: 'spin 0.8s linear infinite',
           }} />
-          <p style={{
-            color: 'rgba(255,255,255,0.7)',
-            fontSize: '14px',
-            fontFamily: 'Inter, sans-serif',
-            margin: 0,
-          }}>
+          <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: '14px', fontFamily: 'Inter, sans-serif', margin: 0 }}>
             Ingresando...
           </p>
         </>
       ) : (
         <>
-          <p style={{
-            color: '#fff',
-            fontSize: '16px',
-            fontFamily: 'Inter, sans-serif',
-            textAlign: 'center',
-            maxWidth: '260px',
-            margin: 0,
-          }}>
+          <p style={{ color: '#fff', fontSize: '16px', fontFamily: 'Inter, sans-serif', textAlign: 'center', maxWidth: '260px', margin: 0 }}>
             La conexión está tardando más de lo esperado.
           </p>
-          <button
-            onClick={handleRetry}
-            style={{
-              background: 'rgba(255,255,255,0.15)',
-              border: '2px solid rgba(255,255,255,0.4)',
-              color: '#fff',
-              padding: '12px 28px',
-              borderRadius: '12px',
-              fontSize: '15px',
-              fontWeight: 700,
-              fontFamily: 'Inter, sans-serif',
-              cursor: 'pointer',
-            }}
-          >
+          <button onClick={handleRetry} style={{
+            background: 'rgba(255,255,255,0.15)',
+            border: '2px solid rgba(255,255,255,0.4)',
+            color: '#fff', padding: '12px 28px',
+            borderRadius: '12px', fontSize: '15px',
+            fontWeight: 700, fontFamily: 'Inter, sans-serif', cursor: 'pointer',
+          }}>
             Reintentar
           </button>
         </>
@@ -124,9 +98,4 @@ function Spinner({ timedOut, hadSession }: { timedOut: boolean; hadSession: bool
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   )
-}
-
-// Renderiza LoginPage directamente (cuando no había sesión previa)
-function LoginPageDirect() {
-  return <LoginPage />
 }
