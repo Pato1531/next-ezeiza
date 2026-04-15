@@ -1,10 +1,11 @@
 import type { Metadata, Viewport } from 'next'
-import { Inter } from 'next/font/google'
 import { AuthProvider } from '@/lib/auth-context'
 import { ErrorBoundary, DebugPanel } from '@/lib/debug'
 import './globals.css'
 
-const inter = Inter({ subsets: ['latin'] })
+// Inter se carga via CSS en globals.css con @import de Google Fonts
+// Esto evita el error "Failed to fetch font" durante el build de Vercel
+// que ocurre cuando next/font/google intenta descargar la fuente en tiempo de build
 
 export const metadata: Metadata = {
   title: 'Next Ezeiza — Panel de gestión',
@@ -25,8 +26,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet" />
       </head>
-      <body className={inter.className}>
+      <body style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
         <ErrorBoundary>
           <AuthProvider>
             {children}
