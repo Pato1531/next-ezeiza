@@ -297,7 +297,7 @@ export function useProfesoras() {
       const { data, error } = await createClient()
         .from('profesoras').select('*').eq('activa', true).order('apellido')
       if (error) throw new Error(error.message)
-      return data ?? []
+      return (data as any[]) ?? []
     }
   )
 
@@ -330,7 +330,7 @@ export function useCursos() {
       const { data, error } = await createClient()
         .from('cursos').select('*').eq('activo', true).order('nombre')
       if (error) throw new Error(error.message)
-      return data ?? []
+      return (data as any[]) ?? []
     }
   )
 
@@ -375,7 +375,7 @@ export function useAlumnos() {
       const { data, error } = await createClient()
         .from('alumnos').select('*').eq('activo', true).order('apellido')
       if (error) throw new Error(error.message)
-      return data ?? []
+      return (data as any[]) ?? []
     }
   )
 
@@ -463,7 +463,7 @@ export function useClases(cursoId: string) {
       const { data, error } = await createClient().from('clases')
         .select('*').eq('curso_id', cursoId).order('fecha', { ascending: false })
       if (error) throw new Error(error.message)
-      return data ?? []
+      return (data as any[]) ?? []
     },
     { skip: !cursoId }
   )
@@ -499,7 +499,7 @@ export function usePagos(alumnoId: string) {
       const { data, error } = await createClient().from('pagos_alumnos').select('*')
         .eq('alumno_id', alumnoId).order('created_at', { ascending: false })
       if (error) throw new Error(error.message)
-      return data ?? []
+      return (data as any[]) ?? []
     },
     { skip: !alumnoId }
   )
@@ -540,7 +540,7 @@ export function useExamenes(cursoId: string) {
       const { data, error } = await createClient().from('examenes')
         .select('*').eq('curso_id', cursoId).order('fecha')
       if (error) throw new Error(error.message)
-      return data ?? []
+      return (data as any[]) ?? []
     },
     { skip: !cursoId }
   )
@@ -638,7 +638,7 @@ export function useNotasExamen(examenId: string) {
       const { data, error } = await createClient().from('notas_examenes')
         .select('*').eq('examen_id', examenId)
       if (error) throw new Error(error.message)
-      return data ?? []
+      return (data as any[]) ?? []
     },
     { skip: !examenId }
   )
@@ -668,7 +668,7 @@ export function useHorario() {
       const { data, error } = await createClient().from('horario')
         .select('*').eq('activo', true).order('hora_inicio')
       if (error) throw new Error(error.message)
-      return data ?? []
+      return (data as any[]) ?? []
     }
   )
 
@@ -701,7 +701,7 @@ export function useComunicados() {
       const { data, error } = await createClient().from('comunicados')
         .select('*').eq('activo', true).order('created_at', { ascending: false })
       if (error) throw new Error(error.message)
-      return data ?? []
+      return (data as any[]) ?? []
     }
   )
 
