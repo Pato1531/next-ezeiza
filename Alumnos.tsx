@@ -12,20 +12,15 @@ function getInstitutoId(req: NextRequest): string | null {
 export async function POST(req: NextRequest) {
   try {
     const ip = getClientIp(req)
-    const rl = rateLimit(ip + ':guardar-evento', { limit: 20, windowMs: 60000 })
+    const rl = rateLimit(ip + ':crear-alumno', { limit: 10, windowMs: 60000 })
     if (!rl.ok) return rateLimitResponse(rl.resetMs)
 
     const institutoId = getInstitutoId(req)
     const datos = await req.json()
-    const limpio = {
-      ...datos,
-      hora_inicio: datos.hora_inicio || null,
-      hora_fin:    datos.hora_fin    || null,
-      descripcion: datos.descripcion || null,
-      docente_id:  datos.docente_id  || null,
-      ...(institutoId ? { instituto_id: institutoId } : {}),
-    }
-    const { data, error } = await sb().from('agenda_eventos').insert(limpio).select().single()
+    const { data, error } = await sb()
+      .from('alumnos')
+      .insert({ ...datos, ...(institutoId ? { instituto_id: institutoId } : {}) })
+      .select().single()
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ data })
   } catch (e: any) {
