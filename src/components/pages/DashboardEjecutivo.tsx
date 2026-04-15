@@ -1,7 +1,7 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase'
-import { useAlumnos, useProfesoras, useCursos } from '@/lib/hooks'
+import { useAlumnos, useProfesoras, useCursos, apiHeaders } from '@/lib/hooks'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
@@ -24,6 +24,13 @@ export default function DashboardEjecutivo() {
   const [altasMes,      setAltasMes]      = useState<any[]>([])
   const [bajasMes,      setBajasMes]      = useState<any[]>([])
   const [loading,       setLoading]       = useState(true)
+
+  // ── Estado de resultado ───────────────────────────────────────────────────
+  const [erData,    setErData]    = useState<any[]>([])
+  const [erIngresos, setErIngresos] = useState(0)
+  const [erEditing,  setErEditing]  = useState<Record<string,number>>({})
+  const [erGuardando, setErGuardando] = useState<Record<string,boolean>>({})
+  const [erTab, setErTab] = useState<'resumen'|'estado'>('resumen')
 
   const mesNombre    = MESES[mes]
   const mesAntIdx    = mes === 0 ? 11 : mes - 1
@@ -65,6 +72,19 @@ export default function DashboardEjecutivo() {
       setLoading(false)
     }
     cargar()
+
+    // Cargar estado de resultado
+    const cargarER = async () => {
+      try {
+        const res = await fetch(`/api/estado-resultado?mes=${MESES[mes]}&anio=${anio}`, {
+          headers: apiHeaders()
+        })
+        const json = await res.json()
+        if (json.data) setErData(json.data)
+        if (json.ingresos_cuotas !== undefined) setErIngresos(json.ingresos_cuotas)
+      } catch (e) { console.warn('[DashEjecutivo] estado-resultado error:', e) }
+    }
+    cargarER()
   }, [mes, anio])
 
   // ── Cálculos financieros ──────────────────────────────────────────────────
@@ -151,6 +171,42 @@ export default function DashboardEjecutivo() {
     setTimeout(() => URL.revokeObjectURL(url), 15000)
   }
 
+  // ── Estado de resultado helpers ──────────────────────────────────────────
+  const CONCEPTOS_EGRESO = [
+    'Alquiler','Regalías','Luz','Emergencias','Seguro Integral',
+    'Agua','Municipal','Internet','Sueldos Administrativos',
+    'Sueldo Coordinadora','Gastos Limpieza','Redes Sociales',
+    'Publicidad','Bonos'
+  ]
+  const CONCEPTOS_INGRESO_EXTRA = ['Ingresos por Exámenes','Ingresos por Matrículas']
+
+  const getImporte = (concepto: string) => {
+    if (concepto in erEditing) return erEditing[concepto]
+    const row = erData.find((r: any) => r.concepto === concepto)
+    return row?.importe ?? 0
+  }
+
+  const guardarConcepto = async (concepto: string, tipo: string, valor: number) => {
+    setErGuardando(prev => ({ ...prev, [concepto]: true }))
+    try {
+      await fetch('/api/estado-resultado', {
+        method: 'POST', headers: apiHeaders(),
+        body: JSON.stringify({ mes: MESES[mes], anio, concepto, tipo, importe: valor })
+      })
+      setErData(prev => {
+        const idx = prev.findIndex((r: any) => r.concepto === concepto)
+        if (idx >= 0) { const n = [...prev]; n[idx] = { ...n[idx], importe: valor }; return n }
+        return [...prev, { concepto, tipo, importe: valor }]
+      })
+      setErEditing(prev => { const n = { ...prev }; delete n[concepto]; return n })
+    } catch (e) { console.warn('[ER] guardar error:', e) }
+    setErGuardando(prev => { const n = { ...prev }; delete n[concepto]; return n })
+  }
+
+  const totalEgresos = CONCEPTOS_EGRESO.reduce((s, c) => s + (getImporte(c) || 0), 0)
+  const totalIngresosExtra = CONCEPTOS_INGRESO_EXTRA.reduce((s, c) => s + (getImporte(c) || 0), 0)
+  const totalMes = erIngresos + totalIngresosExtra - totalEgresos
+
   // ── Render ────────────────────────────────────────────────────────────────
   const IS = { padding:'9px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
 
@@ -176,8 +232,114 @@ export default function DashboardEjecutivo() {
         </div>
       </div>
 
+      {/* Tabs */}
+      <div style={{display:'flex',gap:'8px',marginBottom:'16px'}}>
+        {(['resumen','estado'] as const).map(t => (
+          <button key={t} onClick={() => setErTab(t)} style={{
+            padding:'9px 18px', borderRadius:'20px', fontSize:'13px', fontWeight:600,
+            cursor:'pointer', border:'1.5px solid',
+            borderColor: erTab===t ? 'var(--v)' : 'var(--border)',
+            background: erTab===t ? 'var(--v)' : 'var(--white)',
+            color: erTab===t ? '#fff' : 'var(--text2)'
+          }}>
+            {t === 'resumen' ? 'Resumen' : 'Estado de Resultado'}
+          </button>
+        ))}
+      </div>
+
       {loading ? (
         <div style={{textAlign:'center',padding:'48px',color:'var(--text3)'}}>Cargando datos del mes...</div>
+      ) : erTab === 'estado' ? (
+        /* ── ESTADO DE RESULTADO ── */
+        <div>
+          <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'14px'}}>
+            {/* Ingresos mensuales (automático) */}
+            <div style={{padding:'12px 16px',background:'var(--greenl)',borderBottom:'1px solid #a8d8b4',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div>
+                <div style={{fontSize:'12px',fontWeight:700,color:'var(--green)',textTransform:'uppercase',letterSpacing:'.05em'}}>Ingresos Mensuales</div>
+                <div style={{fontSize:'11px',color:'var(--green)',marginTop:'2px'}}>Tomado automáticamente de pagos registrados</div>
+              </div>
+              <div style={{fontSize:'22px',fontWeight:800,color:'var(--green)'}}>{fmt$(erIngresos)}</div>
+            </div>
+
+            {/* Egresos */}
+            <div style={{padding:'10px 16px 4px',borderBottom:'1px solid var(--border)'}}>
+              <div style={{fontSize:'10px',fontWeight:700,color:'var(--red)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'8px'}}>Egresos</div>
+              {CONCEPTOS_EGRESO.map(concepto => {
+                const val = getImporte(concepto)
+                const editVal = erEditing[concepto]
+                const guardando = erGuardando[concepto]
+                return (
+                  <div key={concepto} style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}}>
+                    <div style={{flex:1,fontSize:'13px',color:'var(--text)',fontWeight:500}}>{concepto}</div>
+                    <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                      <span style={{fontSize:'11px',color:'var(--text3)'}}>$</span>
+                      <input
+                        type="number" min="0" step="100"
+                        value={editVal !== undefined ? editVal : val}
+                        onChange={e => setErEditing(prev => ({ ...prev, [concepto]: parseFloat(e.target.value) || 0 }))}
+                        onBlur={e => {
+                          const v = parseFloat(e.target.value) || 0
+                          if (v !== val) guardarConcepto(concepto, 'egreso', v)
+                        }}
+                        style={{width:'110px',padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',fontFamily:'inherit',outline:'none',textAlign:'right'}}
+                      />
+                      {guardando && <span style={{fontSize:'10px',color:'var(--text3)'}}>...</span>}
+                    </div>
+                  </div>
+                )
+              })}
+              <div style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderTop:'1px solid var(--border)',marginTop:'4px'}}>
+                <span style={{fontSize:'12px',fontWeight:700,color:'var(--red)'}}>Total Egresos</span>
+                <span style={{fontSize:'14px',fontWeight:800,color:'var(--red)'}}>{fmt$(totalEgresos)}</span>
+              </div>
+            </div>
+
+            {/* Ingresos extra */}
+            <div style={{padding:'10px 16px 4px',borderBottom:'1px solid var(--border)'}}>
+              <div style={{fontSize:'10px',fontWeight:700,color:'var(--green)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'8px'}}>Ingresos Adicionales</div>
+              {CONCEPTOS_INGRESO_EXTRA.map(concepto => {
+                const val = getImporte(concepto)
+                const editVal = erEditing[concepto]
+                const guardando = erGuardando[concepto]
+                return (
+                  <div key={concepto} style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}}>
+                    <div style={{flex:1,fontSize:'13px',color:'var(--text)',fontWeight:500}}>{concepto}</div>
+                    <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                      <span style={{fontSize:'11px',color:'var(--text3)'}}>$</span>
+                      <input
+                        type="number" min="0" step="100"
+                        value={editVal !== undefined ? editVal : val}
+                        onChange={e => setErEditing(prev => ({ ...prev, [concepto]: parseFloat(e.target.value) || 0 }))}
+                        onBlur={e => {
+                          const v = parseFloat(e.target.value) || 0
+                          if (v !== val) guardarConcepto(concepto, 'ingreso_extra', v)
+                        }}
+                        style={{width:'110px',padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',fontFamily:'inherit',outline:'none',textAlign:'right'}}
+                      />
+                      {guardando && <span style={{fontSize:'10px',color:'var(--text3)'}}>...</span>}
+                    </div>
+                  </div>
+                )
+              })}
+              <div style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderTop:'1px solid var(--border)',marginTop:'4px'}}>
+                <span style={{fontSize:'12px',fontWeight:700,color:'var(--green)'}}>Total Ingresos Adicionales</span>
+                <span style={{fontSize:'14px',fontWeight:800,color:'var(--green)'}}>{fmt$(totalIngresosExtra)}</span>
+              </div>
+            </div>
+
+            {/* TOTAL DEL MES */}
+            <div style={{padding:'16px',background:totalMes >= 0 ? 'var(--greenl)' : 'var(--redl)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <div>
+                <div style={{fontSize:'13px',fontWeight:700,color:totalMes >= 0 ? 'var(--green)' : 'var(--red)',textTransform:'uppercase',letterSpacing:'.05em'}}>Total del Mes</div>
+                <div style={{fontSize:'11px',color:totalMes >= 0 ? 'var(--green)' : 'var(--red)',marginTop:'2px'}}>
+                  {fmt$(erIngresos)} + {fmt$(totalIngresosExtra)} − {fmt$(totalEgresos)}
+                </div>
+              </div>
+              <div style={{fontSize:'28px',fontWeight:800,color:totalMes >= 0 ? 'var(--green)' : 'var(--red)'}}>{fmt$(totalMes)}</div>
+            </div>
+          </div>
+        </div>
       ) : (
         <>
           {/* KPIs principales */}
@@ -316,6 +478,7 @@ export default function DashboardEjecutivo() {
             </div>
           )}
         </>
+      )}
       )}
     </div>
   )
