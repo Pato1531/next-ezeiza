@@ -22,50 +22,56 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Faltan campos obligatorios: alumno_id, mes, anio' }, { status: 400 })
     }
 
-    const tipo = pago.tipo || 'cuota' // 'cuota' | 'matricula'
     const supabase = sb()
 
-    // Eliminar pago previo del mismo alumno/mes/año para hacer upsert limpio.
-    // No filtramos por 'tipo' porque la columna puede no existir aún en la BD.
-    // Si hay columna tipo, el INSERT siguiente la incluye igualmente.
-    try {
-      await supabase
-        .from('pagos_alumnos')
-        .delete()
-        .eq('alumno_id', pago.alumno_id)
-        .eq('mes', pago.mes)
-        .eq('anio', pago.anio)
-    } catch (_) {
-      // ignorar error del delete — el insert va a fallar también si hay problema grave
+    // 1. Intentar eliminar pago previo del mismo alumno/mes/año
+    //    Logueamos el error pero NO abortamos — el insert puede igualmente funcionar
+    const { error: delError } = await supabase
+      .from('pagos_alumnos')
+      .delete()
+      .eq('alumno_id', pago.alumno_id)
+      .eq('mes', pago.mes)
+      .eq('anio', pago.anio)
+
+    if (delError) {
+      console.warn('[registrar-pago] DELETE warning:', delError.message, delError.code)
     }
 
-    // Construir objeto de inserción — incluir 'tipo' solo si la columna existe
-    // Si no existe, el campo extra simplemente se ignora por Supabase
+    // 2. Construir payload del INSERT
     const insertData: any = {
       alumno_id: pago.alumno_id,
       mes: pago.mes,
       anio: pago.anio,
-      monto: pago.monto,
+      monto: pago.monto ?? 0,
       metodo: pago.metodo || 'Efectivo',
       fecha_pago: pago.fecha_pago || new Date().toISOString().split('T')[0],
       observaciones: pago.observaciones || null,
       ...(institutoId ? { instituto_id: institutoId } : {}),
     }
-    // Intentar con tipo primero, si falla sin tipo
-    let data: any = null
-    let error: any = null;
-    ({ data, error } = await supabase.from('pagos_alumnos').insert({ ...insertData, tipo }).select().single())
-    if (error?.code === '42703') {
-      // columna 'tipo' no existe — insertar sin ella
-      ;({ data, error } = await supabase.from('pagos_alumnos').insert(insertData).select().single())
+
+    // 3. Intentar INSERT con campo 'tipo' (por si la migración ya se ejecutó)
+    let result = await supabase
+      .from('pagos_alumnos')
+      .insert({ ...insertData, tipo: pago.tipo || 'cuota' })
+      .select()
+      .single()
+
+    // Si falla por columna inexistente, reintentar sin 'tipo'
+    if (result.error?.code === '42703') {
+      console.warn('[registrar-pago] columna tipo no existe, reintentando sin ella')
+      result = await supabase
+        .from('pagos_alumnos')
+        .insert(insertData)
+        .select()
+        .single()
     }
 
-    if (error) {
-      console.error('[registrar-pago] Supabase error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (result.error) {
+      console.error('[registrar-pago] INSERT error:', result.error)
+      return NextResponse.json({ error: result.error.message, code: result.error.code }, { status: 500 })
     }
 
-    return NextResponse.json({ data })
+    return NextResponse.json({ data: result.data })
   } catch (e: any) {
     console.error('[registrar-pago] catch:', e)
     return NextResponse.json({ error: e.message }, { status: 500 })
