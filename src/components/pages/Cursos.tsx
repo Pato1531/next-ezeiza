@@ -81,14 +81,12 @@ export default function Cursos() {
     const t = setTimeout(() => { setGuardando(false); if (id) irADetalle(id); else irALista() }, 6000)
     try {
       if (!id) {
-        const sb = createClient()
-        const { data: nuevo } = await sb.from('cursos').insert({...datos, activo:true}).select().single()
+        const nuevo = await agregar({...datos, activo:true})
         clearTimeout(t)
-        if (nuevo) irADetalle(nuevo.id)
+        if (nuevo) irADetalle((nuevo as any).id)
         else irALista()
       } else {
-        // Actualizar local inmediatamente, guardar en background
-        actualizar(id, datos)
+        await actualizar(id, datos)
         clearTimeout(t)
         irADetalle(id)
       }
@@ -101,12 +99,11 @@ export default function Cursos() {
     setConfirmDelete(false)
     setSelId(null)
     setVista('lista')
-    // Guardar en background
-    const sb = createClient()
-    Promise.all([
-      sb.from('cursos').update({ activo: false }).eq('id', selId),
-      sb.from('horario').update({ activo: false }).eq('curso_id', selId)
-    ]).then(() => {
+    // Eliminar via API route (service_role)
+    fetch('/api/actualizar-curso', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: selId, datos: { activo: false } })
+    }).then(() => {
       recargar()
       window.dispatchEvent(new Event('horario-actualizado'))
     }).catch(() => recargar())
