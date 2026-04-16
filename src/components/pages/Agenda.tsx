@@ -22,7 +22,7 @@ function hoy() { return new Date().toISOString().split('T')[0] }
 export default function Agenda() {
   const { usuario } = useAuth()
   const esDirector = usuario?.rol === 'director'
-  const esCoord = usuario?.rol === 'coordinadora' || esDirector
+  const esCoord = usuario?.rol === 'coordinadora' || usuario?.rol === 'secretaria' || esDirector
   const { profesoras } = useProfesoras()
 
   const [eventos, setEventos] = useState<any[]>([])
