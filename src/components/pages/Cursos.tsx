@@ -1528,6 +1528,10 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
   const [guardando, setGuardando] = useState(false)
   const formVacio = { titulo: '', descripcion: '', estado: 'pendiente', fecha_inicio: '', fecha_cierre: '' }
   const [form, setForm] = useState<any>(formVacio)
+  const [importando, setImportando] = useState(false)
+  const [importPreview, setImportPreview] = useState<any[]|null>(null)
+  const [importError, setImportError] = useState('')
+  const importRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { cargar() }, [cursoId])
 
@@ -1606,6 +1610,93 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
     ])
   }
 
+  // ── Importar desde Excel ──────────────────────────────────────────────────
+  const parsearExcel = async (file: File) => {
+    setImportError('')
+    try {
+      // Usar SheetJS (xlsx) cargado dinámicamente
+      const arrayBuffer = await file.arrayBuffer()
+      const XLSX = await import('xlsx')
+      const { read, utils } = XLSX
+      const wb = read(arrayBuffer, { type: 'array', cellDates: true })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const rows: any[] = utils.sheet_to_json(ws, { defval: '' })
+
+      if (!rows.length) { setImportError('El archivo está vacío'); return }
+
+      // Detectar columnas flexiblemente (case insensitive)
+      const normalizar = (s: string) => String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim()
+      const keys = Object.keys(rows[0])
+      const findCol = (...variants: string[]) => keys.find(k => variants.some(v => normalizar(k).includes(v))) || ''
+
+      const colTitulo = findCol('titulo','unidad','title','unit','nombre')
+      const colDesc   = findCol('descripcion','description','desc','contenido','temas')
+      const colInicio = findCol('inicio','start','desde','fecha inicio','fecha_inicio')
+      const colCierre = findCol('cierre','final','fin','end','hasta','fecha cierre','fecha_cierre')
+
+      if (!colTitulo) { setImportError('No se encontró columna de Título/Unidad'); return }
+
+      const fmtFecha = (val: any): string => {
+        if (!val) return ''
+        if (val instanceof Date) return val.toISOString().split('T')[0]
+        const s = String(val).trim()
+        if (!s || s === '0') return ''
+        // Formato d-m o d/m o dd/mm/yyyy
+        const parts = s.split(/[-\/]/)
+        if (parts.length === 2) {
+          const d = parts[0].padStart(2,'0'), m = parts[1].padStart(2,'0')
+          return `2026-${m}-${d}`
+        }
+        if (parts.length === 3) {
+          const y = parts[2].length === 4 ? parts[2] : '2026'
+          return `${y}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+        }
+        return ''
+      }
+
+      const preview = rows
+        .filter((r: any) => r[colTitulo] && String(r[colTitulo]).trim())
+        .map((r: any, i: number) => ({
+          titulo: String(r[colTitulo]).trim(),
+          descripcion: colDesc ? String(r[colDesc]).trim() : '',
+          estado: 'pendiente',
+          fecha_inicio: fmtFecha(r[colInicio]),
+          fecha_cierre: fmtFecha(r[colCierre]),
+          orden: unidades.length + i,
+        }))
+
+      if (!preview.length) { setImportError('No se encontraron filas con datos'); return }
+      setImportPreview(preview)
+    } catch (e: any) {
+      setImportError('Error al leer el archivo: ' + (e?.message || 'formato no válido'))
+    }
+  }
+
+  const confirmarImport = async () => {
+    if (!importPreview?.length) return
+    setImportando(true)
+    const sb = createClient()
+    try {
+      const inserts = importPreview.map((u, i) => ({
+        curso_id: cursoId,
+        titulo: u.titulo,
+        descripcion: u.descripcion,
+        estado: 'pendiente',
+        fecha_inicio: u.fecha_inicio || null,
+        fecha_cierre: u.fecha_cierre || null,
+        orden: unidades.length + i,
+      }))
+      const { data, error } = await sb.from('planificacion_cursos').insert(inserts).select()
+      if (error) { setImportError('Error al guardar: ' + error.message); setImportando(false); return }
+      setUnidades(prev => [...prev, ...(data || [])])
+      setImportPreview(null)
+      setImportError('')
+    } catch (e: any) {
+      setImportError('Error: ' + e?.message)
+    }
+    setImportando(false)
+  }
+
   const ESTADO_CFG: Record<string,{label:string,bg:string,color:string,next:string}> = {
     pendiente:  { label:'Atrasada',  bg:'var(--redl)',  color:'var(--red)',   next:'en_curso'  },
     en_curso:   { label:'Al día',    bg:'#f4eefb',      color:'#652f8d',      next:'dictada'   },
@@ -1662,7 +1753,13 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
           <div style={{fontSize:'32px',marginBottom:'8px'}}>📋</div>
           <div style={{fontWeight:600,marginBottom:'4px'}}>Sin planificación cargada</div>
           <div style={{fontSize:'13px',marginBottom:'16px'}}>Agregá las unidades del año para hacer el seguimiento del avance académico</div>
-          {puedeEditar && <button onClick={abrirNueva} style={{padding:'10px 20px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>+ Agregar primera unidad</button>}
+          {puedeEditar && (
+            <div style={{display:'flex',gap:'8px',justifyContent:'center',flexWrap:'wrap'}}>
+              <button onClick={abrirNueva} style={{padding:'10px 20px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>+ Agregar primera unidad</button>
+              <button onClick={() => importRef.current?.click()} style={{padding:'10px 16px',background:'transparent',color:'#652f8d',border:'1.5px solid #652f8d',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>⬆ Importar desde Excel</button>
+              <input ref={importRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={e => { if(e.target.files?.[0]) parsearExcel(e.target.files[0]); e.target.value='' }} />
+            </div>
+          )}
         </div>
       ) : (
         <div>
@@ -1710,10 +1807,65 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
           })}
 
           {puedeEditar && (
-            <button onClick={abrirNueva} style={{width:'100%',padding:'11px',border:'1.5px dashed var(--border)',borderRadius:'12px',background:'transparent',color:'var(--text3)',fontSize:'13px',fontWeight:600,cursor:'pointer',marginTop:'4px'}}>
-              + Agregar unidad
-            </button>
+            <div style={{display:'flex',gap:'8px',marginTop:'4px'}}>
+              <button onClick={abrirNueva} style={{flex:1,padding:'11px',border:'1.5px dashed var(--border)',borderRadius:'12px',background:'transparent',color:'var(--text3)',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
+                + Agregar unidad
+              </button>
+              <button onClick={() => importRef.current?.click()} style={{padding:'11px 14px',border:'1.5px dashed #9b8eaa',borderRadius:'12px',background:'transparent',color:'#652f8d',fontSize:'13px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
+                ⬆ Importar Excel
+              </button>
+              <input ref={importRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={e => { if(e.target.files?.[0]) parsearExcel(e.target.files[0]); e.target.value='' }} />
+            </div>
           )}
+        </div>
+      )}
+
+      {/* ERROR DE IMPORT */}
+      {importError && (
+        <div style={{padding:'12px 14px',background:'var(--redl)',border:'1px solid #f5c5c5',borderRadius:'12px',marginBottom:'12px',fontSize:'13px',color:'var(--red)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+          <span>⚠ {importError}</span>
+          <button onClick={() => setImportError('')} style={{background:'none',border:'none',color:'var(--red)',cursor:'pointer',fontWeight:700,fontSize:'16px'}}>×</button>
+        </div>
+      )}
+
+      {/* MODAL PREVIEW IMPORT */}
+      {importPreview && (
+        <div style={{position:'fixed',inset:0,background:'rgba(20,0,40,.45)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:200}} onClick={e=>{if(e.target===e.currentTarget)setImportPreview(null)}}>
+          <div style={{background:'var(--white)',borderRadius:'24px 24px 0 0',padding:'28px 20px 32px',width:'100%',maxWidth:'600px',maxHeight:'85vh',overflowY:'auto'}}>
+            <div style={{width:'40px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 20px'}} />
+            <div style={{fontSize:'18px',fontWeight:700,marginBottom:'4px'}}>Vista previa — {importPreview.length} unidades</div>
+            <div style={{fontSize:'13px',color:'var(--text2)',marginBottom:'16px'}}>Revisá los datos antes de confirmar la importación</div>
+
+            {/* Tabla preview */}
+            <div style={{border:'1.5px solid var(--border)',borderRadius:'12px',overflow:'hidden',marginBottom:'16px'}}>
+              <div style={{display:'grid',gridTemplateColumns:'2fr 3fr 1fr 1fr',gap:'0',background:'var(--vl)',padding:'8px 12px',borderBottom:'1px solid var(--border)'}}>
+                {['Unidad','Descripción','Inicio','Cierre'].map(h => (
+                  <div key={h} style={{fontSize:'10px',fontWeight:700,color:'var(--v)',textTransform:'uppercase',letterSpacing:'.05em'}}>{h}</div>
+                ))}
+              </div>
+              {importPreview.map((u, i) => (
+                <div key={i} style={{display:'grid',gridTemplateColumns:'2fr 3fr 1fr 1fr',gap:'0',padding:'9px 12px',borderBottom:i<importPreview.length-1?'1px solid var(--border)':'none',background:i%2===0?'var(--white)':'#faf7fd'}}>
+                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text)',paddingRight:'8px'}}>{u.titulo}</div>
+                  <div style={{fontSize:'12px',color:'var(--text2)',paddingRight:'8px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.descripcion||'—'}</div>
+                  <div style={{fontSize:'12px',color:'var(--text3)'}}>{u.fecha_inicio ? new Date(u.fecha_inicio+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'short'}) : '—'}</div>
+                  <div style={{fontSize:'12px',color:'var(--text3)'}}>{u.fecha_cierre ? new Date(u.fecha_cierre+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'short'}) : '—'}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{fontSize:'12px',color:'var(--text3)',marginBottom:'14px'}}>
+              💡 Las unidades se agregarán al final de la planificación existente. El estado inicial será "Atrasada" — podés cambiarlo después.
+            </div>
+
+            <div style={{display:'flex',gap:'10px'}}>
+              <button onClick={() => { setImportPreview(null); setImportError('') }} style={{flex:1,padding:'12px',background:'transparent',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>
+                Cancelar
+              </button>
+              <button onClick={confirmarImport} disabled={importando} style={{flex:2,padding:'12px',background:importando?'#aaa':'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:importando?'not-allowed':'pointer'}}>
+                {importando ? 'Importando...' : `✓ Confirmar ${importPreview.length} unidades`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
