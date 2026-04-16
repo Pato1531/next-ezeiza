@@ -61,7 +61,10 @@ export default function Permisos() {
   const [cambiandoPwd, setCambiandoPwd] = useState(false)
 
   useEffect(() => {
-    cargarUsuarios()
+    // Pequeño delay para que auth-context haya seteado el instituto_id
+    // antes de hacer el fetch
+    const t = setTimeout(() => cargarUsuarios(), 600)
+    return () => clearTimeout(t)
   }, [])
 
   const cargarUsuarios = async () => {
@@ -69,9 +72,14 @@ export default function Permisos() {
     try {
       const res = await fetch('/api/usuarios', { headers: apiHeaders() })
       const json = await res.json()
-      setUsuarios(json.data || [])
+      if (json.error) {
+        console.error('[Permisos] cargarUsuarios error:', json.error)
+        setUsuarios([])
+      } else {
+        setUsuarios(json.data || [])
+      }
     } catch (e) {
-      console.error('[Permisos] cargarUsuarios error:', e)
+      console.error('[Permisos] cargarUsuarios catch:', e)
       setUsuarios([])
     }
     setLoadingUsuarios(false)
