@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getInstitutoId } from '@/lib/server-utils'
 import { createClient } from '@supabase/supabase-js'
 
 function sb() {
@@ -36,18 +37,24 @@ export async function PATCH(req: NextRequest) {
 // POST — Crear nuevo curso
 export async function POST(req: NextRequest) {
   try {
-    const { datos, instituto_id } = await req.json()
-    if (!datos?.nombre || !instituto_id) {
-      return NextResponse.json({ error: 'Faltan campos: nombre, instituto_id' }, { status: 400 })
+    const body = await req.json()
+    const datos = body.datos || body
+    const institutoId = getInstitutoId(req)
+
+    if (!datos?.nombre) {
+      return NextResponse.json({ error: 'Falta el nombre del curso' }, { status: 400 })
     }
 
     const { data, error } = await sb()
       .from('cursos')
-      .insert({ ...datos, instituto_id, activo: true })
+      .insert({ ...datos, instituto_id: institutoId, activo: true })
       .select()
       .single()
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    if (error) {
+      console.error('[actualizar-curso POST]', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
     return NextResponse.json({ ok: true, data })
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 })
