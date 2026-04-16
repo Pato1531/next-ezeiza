@@ -24,6 +24,7 @@ export default function Dashboard() {
   const [alertasAusencia, setAlertasAusencia] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [proximosEventos, setProximosEventos] = useState<any[]>([])
+  const [cumpleanos, setCumpleanos] = useState<any[]>([])
 
   const TIPOS_AGENDA = [
     { value: 'reunion', label: 'Reunión', color: '#652f8d', bg: '#f2e8f9', emoji: '👥' },
@@ -85,6 +86,30 @@ export default function Dashboard() {
       setProximosEventos(data || [])
     }
     cargarEventos()
+  }, [])
+
+  useEffect(() => {
+    const cargarCumpleanos = async () => {
+      const sb = createClient()
+      const hoy = new Date()
+      const { data: als } = await sb.from('alumnos')
+        .select('id, nombre, apellido, fecha_nacimiento, color')
+        .eq('activo', true).not('fecha_nacimiento', 'is', null)
+      if (!als) return
+      const proximos: any[] = []
+      als.forEach((a: any) => {
+        if (!a.fecha_nacimiento) return
+        const [, mm, dd] = a.fecha_nacimiento.split('-')
+        const cumpleEsteAnio = new Date(hoy.getFullYear(), parseInt(mm) - 1, parseInt(dd))
+        const diffDias = Math.round((cumpleEsteAnio.getTime() - hoy.setHours(0,0,0,0)) / 86400000)
+        if (diffDias >= 0 && diffDias <= 7) {
+          proximos.push({ ...a, diasParaCumple: diffDias, fechaStr: `${dd}/${mm}` })
+        }
+      })
+      proximos.sort((a, b) => a.diasParaCumple - b.diasParaCumple)
+      setCumpleanos(proximos)
+    }
+    cargarCumpleanos()
   }, [])
 
   const cargarAlertas = async () => {
@@ -249,6 +274,11 @@ export default function Dashboard() {
                 <strong>{cuotasPendientes} alumno{cuotasPendientes!==1?'s':''}</strong> sin pago registrado en {mesActual}
               </Alerta>
             )}
+            {cumpleanos.filter((c: any) => c.diasParaCumple === 0).map((c: any) => (
+              <Alerta key={c.id} tipo="red" icono="🎂">
+                <strong>¡Hoy cumple años!</strong> {c.nombre} {c.apellido}
+              </Alerta>
+            ))}
           </div>
         </div>
       )}
@@ -311,6 +341,30 @@ export default function Dashboard() {
                   <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'1px'}}>{al.curso} · {al.ultimasFechas?.map(fmt).join(' y ')}</div>
                 </div>
                 <span style={{padding:'3px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:'var(--redl)',color:'var(--red)',flexShrink:0}}>2+ ausencias</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {/* CUMPLEAÑOS PRÓXIMOS */}
+      {cumpleanos.length > 0 && (
+        <>
+          <SL style={{marginBottom:'10px'}}>Cumpleaños próximos 🎂</SL>
+          <div style={{marginBottom:'18px'}}>
+            {cumpleanos.map((c: any) => (
+              <div key={c.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'11px 14px',background:'var(--white)',border:`1.5px solid ${c.diasParaCumple===0?'#db2777':'var(--border)'}`,borderRadius:'14px',marginBottom:'8px'}}>
+                <div style={{width:40,height:40,borderRadius:12,background:'#fce7f3',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'20px',flexShrink:0}}>🎂</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'13.5px',fontWeight:600}}>{c.nombre} {c.apellido}</div>
+                  <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'2px'}}>
+                    {c.diasParaCumple === 0
+                      ? <span style={{color:'#db2777',fontWeight:700}}>¡Hoy!</span>
+                      : c.diasParaCumple === 1 ? 'Mañana'
+                      : `En ${c.diasParaCumple} días`}
+                    <span style={{marginLeft:'6px',color:'var(--text3)'}}>· {c.fechaStr}</span>
+                  </div>
+                </div>
               </div>
             ))}
           </div>
