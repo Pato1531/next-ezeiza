@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getInstitutoId } from '@/lib/server-utils'
 import { createClient } from '@supabase/supabase-js'
 import { rateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
 
@@ -9,9 +10,7 @@ function getAdminClient() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 }
-function getInstitutoId(req: NextRequest): string | null {
-  return req.headers.get('x-instituto-id') || null
-}
+
 
 // GET — Listar todos los usuarios del instituto (para módulo Permisos)
 // Usa service_role para bypassear RLS y que el Director vea todos los usuarios.
@@ -24,7 +23,7 @@ export async function GET(req: NextRequest) {
     // Seleccionamos solo columnas base — permisos_custom se agrega opcionalmente
     let q = admin
       .from('usuarios')
-      .select('id, nombre, email, rol, color, initials, activo, instituto_id')
+      .select('id, nombre, rol, color, initials, activo, instituto_id')
       .order('nombre', { ascending: true })
     if (institutoId) q = (q as any).eq('instituto_id', institutoId)
     const { data, error } = await q
