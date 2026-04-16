@@ -80,15 +80,18 @@ export default function DashboardEjecutivo() {
           headers: apiHeaders()
         })
         const json = await res.json()
-        if (json.data) setErData(json.data)
-        // ingresos_cuotas viene del API si está disponible
+        if (json.data && json.data.length > 0) {
+          setErData(json.data)
+          // Limpiar edits locales — los datos del servidor son la verdad
+          setErEditing({})
+        }
         if (json.ingresos_cuotas !== undefined && json.ingresos_cuotas > 0) {
           setErIngresos(json.ingresos_cuotas)
         }
       } catch (e) { console.warn('[DashEjecutivo] estado-resultado error:', e) }
     }
-    // Pequeño delay para dar tiempo a que apiHeaders() tenga el instituto_id
-    setTimeout(cargarER, 800)
+    // Delay para que apiHeaders() tenga el instituto_id seteado
+    setTimeout(cargarER, 1000)
   }, [mes, anio])
 
   // Sincronizar erIngresos con pagos reales cuando estos cargan
