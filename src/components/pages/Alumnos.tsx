@@ -160,19 +160,24 @@ export default function Alumnos() {
         clearTimeout(t)
         if (nuevo) {
           logActivity('Creó alumno', 'Alumnos', `${datos.nombre} ${datos.apellido}`)
-          // Registrar matrícula como pago si tiene valor
+          // Registrar matrícula como pago via API route (service_role)
           if (datos.matricula > 0) {
-            const sb = createClient()
             const hoy = new Date()
-            sb.from('pagos_alumnos').insert({
-              alumno_id: (nuevo as any).id,
-              mes: ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][hoy.getMonth()],
-              anio: hoy.getFullYear(),
-              monto: datos.matricula,
-              metodo: 'Efectivo',
-              fecha_pago: hoy.toISOString().split('T')[0],
-              observaciones: 'Matrícula de inscripción'
-            }).catch(()=>{})
+            const MESES_M = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+            fetch('/api/registrar-pago', {
+              method: 'POST',
+              headers: apiHeaders(),
+              body: JSON.stringify({
+                alumno_id: (nuevo as any).id,
+                mes: MESES_M[hoy.getMonth()],
+                anio: hoy.getFullYear(),
+                monto: datos.matricula,
+                metodo: 'Efectivo',
+                fecha_pago: hoy.toISOString().split('T')[0],
+                tipo: 'matricula',
+                observaciones: 'Matrícula de inscripción'
+              })
+            }).catch(() => {})
           }
           irADetalle((nuevo as any).id)
         } else irALista()
