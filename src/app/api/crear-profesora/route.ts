@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getInstitutoId } from '@/lib/server-utils'
 import { createClient } from '@supabase/supabase-js'
 
 function sb() {
@@ -7,9 +8,7 @@ function sb() {
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   )
 }
-function getInstitutoId(req: NextRequest): string | null {
-  return req.headers.get('x-instituto-id') || null
-}
+
 
 // POST — Crear nueva profesora/colaborador
 export async function POST(req: NextRequest) {
