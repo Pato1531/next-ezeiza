@@ -624,6 +624,65 @@ export default function Alumnos() {
   return null
 }
 
+// Componente inline para editar fecha de nacimiento (disponible para profesoras)
+function FechaNacimientoField({ alumnoId, fechaActual, puedeEditar, onActualizar }: {
+  alumnoId: string; fechaActual: string; puedeEditar: boolean; onActualizar: (f: string) => void
+}) {
+  const [editando, setEditando] = useState(false)
+  const [valor, setValor] = useState(fechaActual)
+  const [guardando, setGuardando] = useState(false)
+
+  const guardar = async (nuevaFecha: string) => {
+    if (nuevaFecha === fechaActual) { setEditando(false); return }
+    setGuardando(true)
+    try {
+      await fetch('/api/actualizar-alumno', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: alumnoId, datos: { fecha_nacimiento: nuevaFecha || null } })
+      })
+      onActualizar(nuevaFecha)
+    } catch(e) { console.error(e) }
+    setGuardando(false)
+    setEditando(false)
+  }
+
+  const IS_DATE = { padding:'8px 11px', border:'1.5px solid var(--v)', borderRadius:'10px', fontSize:'13px', background:'var(--white)', outline:'none', fontFamily:'inherit' } as const
+
+  return (
+    <div style={{marginBottom:'11px'}}>
+      <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>
+        Fecha de nacimiento
+      </div>
+      {!editando ? (
+        <div style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 11px',border:'1.5px solid var(--border)',borderRadius:'10px',background:'var(--bg)'}}>
+          <span style={{flex:1,fontSize:'13px',color:'var(--text2)'}}>
+            {valor ? new Date(valor+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'}) : '—'}
+          </span>
+          {puedeEditar && (
+            <button onClick={() => setEditando(true)}
+              style={{padding:'3px 10px',background:'var(--vl)',color:'var(--v)',border:'1px solid #d4a8e8',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer'}}>
+              {valor ? 'Editar' : '+ Cargar'}
+            </button>
+          )}
+        </div>
+      ) : (
+        <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+          <input type="date" value={valor} onChange={e => setValor(e.target.value)} style={IS_DATE} autoFocus />
+          <button onClick={() => guardar(valor)} disabled={guardando}
+            style={{padding:'7px 12px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
+            {guardando ? '...' : '✓'}
+          </button>
+          <button onClick={() => { setValor(fechaActual); setEditando(false) }}
+            style={{padding:'7px 10px',background:'transparent',color:'var(--text3)',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'12px',cursor:'pointer'}}>
+            ✕
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVolver, onEditar, onEliminar, confirmDelete, onCancelDelete, onConfirmDelete, modalPago, setModalPago, pago, setPago }: any) {
   const { pagos: _pagos, registrar } = usePagos(a.id)
   const [pagos, setPagosLocal] = useState<any[]>([])
@@ -827,7 +886,14 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
       {tab === 'datos' && <Card>
         <FieldRO label="Nombre" value={`${a.nombre} ${a.apellido}`} />
         {a.dni && <FieldRO label="DNI" value={a.dni} />}
-        <FieldRO label="Fecha de nacimiento" value={a.fecha_nacimiento ? new Date(a.fecha_nacimiento+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'}) : '—'} />
+        <FechaNacimientoField
+          alumnoId={a.id}
+          fechaActual={a.fecha_nacimiento || ''}
+          puedeEditar={puedeEditar || usuario?.rol === 'profesora'}
+          onActualizar={(fecha: string) => {
+            // Actualizar localmente si hay función disponible
+          }}
+        />
         <FieldRO label="Edad" value={a.edad ? `${a.edad} años` : '—'} />
         {a.fecha_alta && <FieldRO label="Alumno activo desde" value={new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})} />}
         <FieldRO label="Teléfono" value={a.telefono||'—'} />
