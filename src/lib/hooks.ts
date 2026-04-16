@@ -302,21 +302,45 @@ export function useProfesoras() {
   )
 
   const actualizar = async (id: string, cambios: Partial<Profesora>) => {
-    const { error } = await createClient().from('profesoras').update(cambios).eq('id', id)
-    if (!error) {
-      setData(prev => prev.map(p => p.id === id ? { ...p, ...cambios } : p))
-      invalidateQuery('profesoras')
+    try {
+      const res = await window.fetch('/api/crear-profesora', {
+        method: 'PATCH',
+        headers: apiHeaders(),
+        body: JSON.stringify({ id, datos: cambios })
+      })
+      const json = await res.json()
+      if (json.ok || !json.error) {
+        setData(prev => prev.map(p => p.id === id ? { ...p, ...cambios } : p))
+        invalidateQuery('profesoras')
+        return true
+      }
+      console.error('[useProfesoras actualizar]', json.error)
+      return false
+    } catch (e: any) {
+      console.error('[useProfesoras actualizar] catch', e?.message)
+      return false
     }
-    return !error
   }
 
   const agregar = async (nueva: any) => {
-    const { data: row, error } = await createClient().from('profesoras').insert(nueva).select().single()
-    if (row && !error) {
-      setData(prev => [...prev, row])
-      invalidateQuery('profesoras')
+    try {
+      const res = await window.fetch('/api/crear-profesora', {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify(nueva)
+      })
+      const json = await res.json()
+      if (json.data) {
+        setData(prev => [...prev, json.data])
+        invalidateQuery('profesoras')
+        return json.data
+      }
+      if (json.error) console.error('[useProfesoras agregar]', json.error)
+      return null
+    } catch (e: any) {
+      console.error('[useProfesoras agregar] catch', e?.message)
+      return null
     }
-    return row
   }
 
   return { profesoras: data, loading: isLoading, actualizar, agregar, recargar: refetch }
