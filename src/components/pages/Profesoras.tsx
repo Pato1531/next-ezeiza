@@ -48,7 +48,7 @@ export default function Profesoras() {
   }
   const irALista = () => { setSelId(null); setVista('lista') }
   const irAFormNuevo = () => {
-    setForm({ nombre:'', apellido:'', email:'', edad:0, telefono:'', nivel:'Básico', tarifa_hora:0, horas_semana:0, color: COLORES[profesoras.length % COLORES.length] })
+    setForm({ nombre:'', apellido:'', email:'', edad:0, telefono:'', nivel:'Básico', tipo_colaborador:'docente', tarifa_hora:0, horas_semana:0, color: COLORES[profesoras.length % COLORES.length] })
     setVista('form')
   }
   const irAFormEditar = () => {
@@ -137,17 +137,17 @@ export default function Profesoras() {
   if (vista === 'lista') return (
     <div className="fade-in">
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}}>
-        <SL>{profesoras.length} docentes</SL>
+        <SL>{profesoras.length} colaboradores</SL>
         <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
           {soloLectura && <Badge cls="b-purple">Solo lectura</Badge>}
-          {puedeEditar && <BtnP sm onClick={irAFormNuevo}>+ Nueva docente</BtnP>}
+          {puedeEditar && <BtnP sm onClick={irAFormNuevo}>+ Nuevo colaborador</BtnP>}
         </div>
       </div>
       {profesoras.map(p => (
         <ListItem key={p.id} onClick={() => irADetalle(p.id)}>
           <Av color={p.color} size={44}>{p.initials||`${p.nombre[0]}${p.apellido[0]}`}</Av>
           <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:'15px',fontWeight:600}}>{p.nombre} {p.apellido}</div>
+            <div style={{fontSize:'15px',fontWeight:600}}>{p.nombre} {p.apellido} {p.tipo_colaborador && p.tipo_colaborador !== 'docente' && <span style={{fontSize:'10px',fontWeight:600,padding:'1px 6px',borderRadius:'8px',background:'var(--bluel)',color:'var(--blue)',marginLeft:'6px'}}>{p.tipo_colaborador}</span>}</div>
             <div style={{fontSize:'12.5px',color:'var(--text2)',marginTop:'2px'}}>{p.nivel} · {p.horas_semana}hs/sem</div>
           </div>
           <Badge cls="b-green">95%</Badge>
@@ -161,7 +161,7 @@ export default function Profesoras() {
   if (vista === 'form') return (
     <div className="fade-in">
       <BtnG sm onClick={() => form?.id ? irADetalle(form.id) : irALista()} style={{marginBottom:'20px'}}>← Cancelar</BtnG>
-      <div style={{fontSize:'20px',fontWeight:700,marginBottom:'20px'}}>{form?.id ? 'Editar docente' : 'Nueva docente'}</div>
+      <div style={{fontSize:'20px',fontWeight:700,marginBottom:'20px'}}>{form?.id ? 'Editar colaborador' : 'Nuevo colaborador'}</div>
       <Card>
         <Row2>
           <Field2 label="Nombre *"><Input value={form?.nombre||''} onChange={(v:string)=>setForm({...form,nombre:v})} /></Field2>
@@ -178,6 +178,15 @@ export default function Profesoras() {
               {NIVELES.map(n=><option key={n}>{n}</option>)}
             </select>
           </Field2>
+          <Field2 label="Tipo">
+            <select style={IS} value={form?.tipo_colaborador||'docente'} onChange={e=>setForm({...form,tipo_colaborador:e.target.value})}>
+              <option value="docente">Docente</option>
+              <option value="secretaria">Secretaria</option>
+              <option value="coordinadora">Coordinadora</option>
+            </select>
+          </Field2>
+        </Row2>
+        <Row2>
           <Field2 label="Tarifa/hora ($)"><Input type="number" value={form?.tarifa_hora||''} onChange={(v:string)=>setForm({...form,tarifa_hora:+v})} /></Field2>
         </Row2>
         <Field2 label="Horas por semana"><input type="number" step="0.5" min="0" value={form?.horas_semana||''} onChange={e=>setForm({...form,horas_semana:parseFloat(e.target.value)||0})} style={IS} /></Field2>
@@ -185,7 +194,7 @@ export default function Profesoras() {
       <div style={{display:'flex',gap:'10px',marginTop:'4px'}}>
         <BtnG style={{flex:1}} onClick={() => form?.id ? irADetalle(form.id) : irALista()}>Cancelar</BtnG>
         <BtnP style={{flex:2}} onClick={guardar} disabled={guardando}>
-          {guardando ? 'Guardando...' : form?.id ? 'Guardar cambios' : 'Crear docente'}
+          {guardando ? 'Guardando...' : form?.id ? 'Guardar cambios' : 'Crear colaborador'}
         </BtnP>
       </div>
     </div>
@@ -323,7 +332,7 @@ export default function Profesoras() {
             }}>
               <option value="">— Seleccionar docente —</option>
               {profesoras.filter((p:any) => p.id !== selId).map((p:any) => (
-                <option key={p.id} value={p.id}>{p.nombre} {p.apellido}</option>
+                <option key={p.id} value={p.id}>{p.nombre} {p.apellido} {p.tipo_colaborador && p.tipo_colaborador !== 'docente' && <span style={{fontSize:'10px',fontWeight:600,padding:'1px 6px',borderRadius:'8px',background:'var(--bluel)',color:'var(--blue)',marginLeft:'6px'}}>{p.tipo_colaborador}</span>}</option>
               ))}
             </select>
           </Field2>
@@ -337,8 +346,8 @@ export default function Profesoras() {
           </div>
         </ModalSheet>}
 
-        {confirmDelete && <ModalSheet title="¿Eliminar docente?" onClose={() => setConfirmDelete(false)}>
-          <p style={{fontSize:'14px',color:'var(--text2)',marginBottom:'20px'}}>Esta acción desactiva a la docente del sistema.</p>
+        {confirmDelete && <ModalSheet title="¿Eliminar colaborador?" onClose={() => setConfirmDelete(false)}>
+          <p style={{fontSize:'14px',color:'var(--text2)',marginBottom:'20px'}}>Esta acción desactiva al colaborador del sistema.</p>
           <div style={{display:'flex',gap:'10px'}}>
             <BtnG style={{flex:1}} onClick={() => setConfirmDelete(false)}>Cancelar</BtnG>
             <button onClick={eliminar} style={{flex:2,padding:'12px',background:'var(--red)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>Sí, eliminar</button>
@@ -368,7 +377,7 @@ export default function Profesoras() {
             }}>
               <option value="">— Seleccionar docente —</option>
               {profesoras.filter((p:any) => p.id !== selId).map((p:any) => (
-                <option key={p.id} value={p.id}>{p.nombre} {p.apellido}</option>
+                <option key={p.id} value={p.id}>{p.nombre} {p.apellido} {p.tipo_colaborador && p.tipo_colaborador !== 'docente' && <span style={{fontSize:'10px',fontWeight:600,padding:'1px 6px',borderRadius:'8px',background:'var(--bluel)',color:'var(--blue)',marginLeft:'6px'}}>{p.tipo_colaborador}</span>}</option>
               ))}
             </select>
           </Field2>
