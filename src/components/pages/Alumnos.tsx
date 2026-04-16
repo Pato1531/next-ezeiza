@@ -1164,7 +1164,6 @@ function PagosMasivos({ alumnos, onVolver }: any) {
   const guardar = async () => {
     if (seleccionados.size === 0) return alert('Seleccioná al menos un alumno')
     setGuardando(true)
-    const sb = createClient()
     const fecha = new Date().toISOString().split('T')[0]
     const alumnosSeleccionados = alumnos.filter((a:any) => seleccionados.has(a.id))
 
@@ -1175,27 +1174,39 @@ function PagosMasivos({ alumnos, onVolver }: any) {
       monto: usarCuotaIndividual ? (a.cuota_mensual || 0) : (parseFloat(montoFijo) || 0),
       metodo,
       fecha_pago: fecha,
-      observaciones: `Pago masivo registrado`,
+      observaciones: 'Pago masivo registrado',
     }))
 
-    // Actualizar UI inmediatamente
+    try {
+      // Guardar todos los pagos en paralelo con apiHeaders (incluye x-instituto-id)
+      const resultados = await Promise.all(inserts.map(ins =>
+        fetch('/api/registrar-pago', {
+          method: 'POST',
+          headers: apiHeaders(),
+          body: JSON.stringify(ins)
+        }).then(r => r.json())
+      ))
+
+      const errores = resultados.filter(r => r.error)
+      if (errores.length > 0) {
+        console.error('[PagosMasivos] errores:', errores)
+        alert(`${errores.length} pago(s) no se pudieron guardar. Revisá la consola.`)
+      }
+
+      // Disparar evento para refrescar filtros
+      inserts.forEach(ins => window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: ins.alumno_id } })))
+      // Actualizar badge "ya pagó" localmente
+      const pagadosOk = resultados.filter(r => !r.error).map((_, i) => inserts[i].alumno_id)
+      setAlumnosPagadosMes(prev => new Set([...prev, ...pagadosOk]))
+    } catch (e) {
+      console.error('[PagosMasivos] catch:', e)
+      alert('Error de conexión al guardar los pagos.')
+    }
+
     setGuardando(false)
     setGuardado(true)
     setSeleccionados(new Set())
     setTimeout(() => setGuardado(false), 3000)
-    // Guardar en background
-    Promise.all(inserts.map(ins =>
-      fetch('/api/registrar-pago', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ins)
-      })
-    )).then(() => {
-      // Disparar evento para refrescar filtros
-      inserts.forEach(ins => window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: ins.alumno_id } })))
-      // Actualizar badge "ya pagó" localmente
-      setAlumnosPagadosMes(prev => new Set([...prev, ...inserts.map(i => i.alumno_id)]))
-    }).catch(e => console.error('Error pagos masivos:', e))
   }
 
   const totalMonto = [...seleccionados].reduce((sum, id) => {
