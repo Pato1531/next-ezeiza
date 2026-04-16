@@ -66,12 +66,14 @@ export default function Permisos() {
 
   const cargarUsuarios = async () => {
     setLoadingUsuarios(true)
-    const sb = createClient()
-    const { data } = await sb
-      .from('usuarios')
-      .select('id, nombre, rol, color, initials, activo, email, permisos_custom')
-      .order('rol').order('nombre')
-    setUsuarios(data || [])
+    try {
+      const res = await fetch('/api/usuarios', { headers: apiHeaders() })
+      const json = await res.json()
+      setUsuarios(json.data || [])
+    } catch (e) {
+      console.error('[Permisos] cargarUsuarios error:', e)
+      setUsuarios([])
+    }
     setLoadingUsuarios(false)
   }
 
