@@ -1,13 +1,12 @@
 import { rateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
+import { getInstitutoId } from '@/lib/server-utils'
 import { createClient } from '@supabase/supabase-js'
 
 function sb() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
-function getInstitutoId(req: NextRequest): string | null {
-  return req.headers.get('x-instituto-id') || null
-}
+
 
 export async function POST(req: NextRequest) {
   try {
@@ -24,15 +23,17 @@ export async function POST(req: NextRequest) {
 
     const supabase = sb()
 
-    // 1. Intentar eliminar pago previo del mismo alumno/mes/año
-    //    Logueamos el error pero NO abortamos — el insert puede igualmente funcionar
-    const { error: delError } = await supabase
+    // 1. Eliminar pago previo del mismo alumno/mes/año
+    //    Filtrar por instituto_id cuando está disponible para evitar borrar de otros institutos
+    let delQ = supabase
       .from('pagos_alumnos')
       .delete()
       .eq('alumno_id', pago.alumno_id)
       .eq('mes', pago.mes)
       .eq('anio', pago.anio)
+    if (institutoId) delQ = (delQ as any).eq('instituto_id', institutoId)
 
+    const { error: delError } = await delQ
     if (delError) {
       console.warn('[registrar-pago] DELETE warning:', delError.message, delError.code)
     }
