@@ -469,22 +469,53 @@ export function useClases(cursoId: string) {
   )
 
   const agregar = async (clase: any) => {
-    const { data: row, error } = await createClient().from('clases').insert(clase).select().single()
-    if (row && !error) {
-      setData(prev => [row, ...prev])
-      invalidateQuery(`clases-${cursoId}`)
-      logActivity('Registró clase', 'Cursos', row.fecha || '')
+    try {
+      const res = await window.fetch('/api/guardar-clase', {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({
+          curso_id: clase.curso_id,
+          fecha: clase.fecha,
+          tema: clase.tema || '',
+          observacion_coordinadora: clase.observacion_coordinadora || '',
+          asistencia: clase.asistencia || [],
+        })
+      })
+      const json = await res.json()
+      if (json.ok) {
+        const row = { id: json.clase_id, ...clase }
+        setData(prev => [row, ...prev])
+        invalidateQuery(`clases-${cursoId}`)
+        logActivity('Registró clase', 'Cursos', clase.fecha || '')
+        return row
+      }
+      console.error('[useClases agregar]', json.error)
+      return null
+    } catch (e: any) {
+      console.error('[useClases agregar] catch', e?.message)
+      return null
     }
-    return row
   }
 
   const actualizar = async (id: string, cambios: any) => {
-    const { error } = await createClient().from('clases').update(cambios).eq('id', id)
-    if (!error) {
-      setData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
-      invalidateQuery(`clases-${cursoId}`)
+    try {
+      const res = await window.fetch('/api/guardar-clase', {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({ clase_id: id, ...cambios, asistencia: cambios.asistencia || [] })
+      })
+      const json = await res.json()
+      if (json.ok) {
+        setData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
+        invalidateQuery(`clases-${cursoId}`)
+        return true
+      }
+      console.error('[useClases actualizar]', json.error)
+      return false
+    } catch (e: any) {
+      console.error('[useClases actualizar] catch', e?.message)
+      return false
     }
-    return !error
   }
 
   return { clases: data, setData, loading: isLoading, agregar, actualizar, recargar: refetch }
