@@ -40,19 +40,21 @@ export async function GET(req: NextRequest) {
     const mes = searchParams.get('mes')
     const anio = searchParams.get('anio')
 
-    if (!mes || !anio || !institutoId) {
-      return NextResponse.json({ error: 'Faltan parámetros: mes, anio, x-instituto-id' }, { status: 400 })
+    if (!mes || !anio) {
+      return NextResponse.json({ error: 'Faltan parámetros: mes, anio' }, { status: 400 })
     }
+    // institutoId puede ser null en instancias single-tenant — las queries lo manejan opcionalmente
 
     const supabase = sb()
 
     // 1. Calcular ingresos automáticos del mes desde pagos_alumnos
-    const { data: pagos } = await supabase
+    let pagosQuery = supabase
       .from('pagos_alumnos')
       .select('monto, tipo')
       .eq('mes', mes)
       .eq('anio', parseInt(anio))
-      .eq('instituto_id', institutoId)
+    if (institutoId) pagosQuery = (pagosQuery as any).eq('instituto_id', institutoId)
+    const { data: pagos } = await pagosQuery
 
     const ingresosCuotas = (pagos || [])
       .filter((p: any) => p.tipo === 'cuota' || !p.tipo)
@@ -63,12 +65,13 @@ export async function GET(req: NextRequest) {
       .reduce((acc: number, p: any) => acc + (p.monto || 0), 0)
 
     // 2. Obtener registros guardados del estado de resultado
-    const { data: registros } = await supabase
+    let regQuery = supabase
       .from('estado_resultado_mensual')
       .select('*')
       .eq('mes', mes)
       .eq('anio', parseInt(anio))
-      .eq('instituto_id', institutoId)
+    if (institutoId) regQuery = (regQuery as any).eq('instituto_id', institutoId)
+    const { data: registros } = await regQuery
 
     // 3. Si no existen registros, inicializar con los defaults
     if (!registros || registros.length === 0) {
