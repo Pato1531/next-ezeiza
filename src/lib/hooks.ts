@@ -359,13 +359,24 @@ export function useCursos() {
   )
 
   const actualizar = async (id: string, cambios: Partial<Curso>) => {
-    const { error } = await createClient().from('cursos').update(cambios).eq('id', id)
-    if (!error) {
-      setData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
-      invalidateQuery('cursos')
-      logActivity('Editó curso', 'Cursos', `ID: ${id}`)
+    try {
+      const res = await window.fetch('/api/actualizar-curso', {
+        method: 'PATCH', headers: apiHeaders(),
+        body: JSON.stringify({ id, datos: cambios })
+      })
+      const json = await res.json()
+      if (json.ok || !json.error) {
+        setData(prev => prev.map(c => c.id === id ? { ...c, ...cambios } : c))
+        invalidateQuery('cursos')
+        logActivity('Editó curso', 'Cursos', `ID: ${id}`)
+        return true
+      }
+      console.error('[useCursos actualizar]', json.error)
+      return false
+    } catch (e: any) {
+      console.error('[useCursos actualizar] catch', e?.message)
+      return false
     }
-    return !error
   }
 
   const agregar = async (nuevo: any) => {
@@ -379,7 +390,12 @@ export function useCursos() {
   }
 
   const eliminar = async (id: string) => {
-    const { error } = await createClient().from('cursos').update({ activo: false }).eq('id', id)
+    const res = await window.fetch('/api/actualizar-curso', {
+      method: 'PATCH', headers: apiHeaders(),
+      body: JSON.stringify({ id, datos: { activo: false } })
+    })
+    const json = await res.json()
+    const error = json.error
     if (!error) {
       setData(prev => prev.filter(c => c.id !== id))
       invalidateQuery('cursos')
@@ -404,13 +420,24 @@ export function useAlumnos() {
   )
 
   const actualizar = async (id: string, cambios: Partial<Alumno>) => {
-    const { error } = await createClient().from('alumnos').update(cambios).eq('id', id)
-    if (!error) {
-      setData(prev => prev.map(a => a.id === id ? { ...a, ...cambios } : a))
-      invalidateQuery('alumnos')
-      logActivity('Editó alumno', 'Alumnos', `ID: ${id}`)
+    try {
+      const res = await window.fetch('/api/actualizar-alumno', {
+        method: 'POST', headers: apiHeaders(),
+        body: JSON.stringify({ id, datos: cambios })
+      })
+      const json = await res.json()
+      if (json.ok || !json.error) {
+        setData(prev => prev.map(a => a.id === id ? { ...a, ...cambios } : a))
+        invalidateQuery('alumnos')
+        logActivity('Editó alumno', 'Alumnos', `ID: ${id}`)
+        return true
+      }
+      console.error('[useAlumnos actualizar]', json.error)
+      return false
+    } catch (e: any) {
+      console.error('[useAlumnos actualizar] catch', e?.message)
+      return false
     }
-    return !error
   }
 
   const agregar = async (nuevo: any) => {
@@ -460,18 +487,20 @@ export function useCursoAlumnos(cursoId: string) {
   )
 
   const agregar = async (alumnoId: string) => {
-    await createClient().from('cursos_alumnos').upsert(
-      { curso_id: cursoId, alumno_id: alumnoId, fecha_ingreso: new Date().toISOString().split('T')[0] },
-      { onConflict: 'curso_id,alumno_id', ignoreDuplicates: true }
-    )
+    await window.fetch('/api/asignar-curso', {
+      method: 'POST', headers: apiHeaders(),
+      body: JSON.stringify({ curso_id: cursoId, alumno_id: alumnoId })
+    })
     refetch()
     return true
   }
 
   const quitar = async (alumnoId: string) => {
     setData(prev => prev.filter(a => a.id !== alumnoId))
-    await createClient().from('cursos_alumnos').delete()
-      .eq('curso_id', cursoId).eq('alumno_id', alumnoId)
+    await window.fetch('/api/asignar-curso', {
+      method: 'DELETE', headers: apiHeaders(),
+      body: JSON.stringify({ alumno_id: alumnoId, curso_id: cursoId })
+    })
     return true
   }
 
