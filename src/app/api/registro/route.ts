@@ -1,105 +1,103 @@
+import { rateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { rateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
 
 function sb() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!
-  )
+  return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
-
-function slugify(nombre: string): string {
-  return nombre
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 40)
+function getInstitutoId(req: NextRequest): string | null {
+  return req.headers.get('x-instituto-id') || null
 }
 
 export async function POST(req: NextRequest) {
-  const ip = getClientIp(req)
-  const rl = rateLimit(ip + ':registro', { limit: 3, windowMs: 60 * 60 * 1000 })
-  if (!rl.ok) return rateLimitResponse(rl.resetMs)
-
   try {
-    const { instituto_nombre, director_nombre, director_email, director_password } = await req.json()
+    const ip = getClientIp(req)
+    const rl = rateLimit(ip + ':registrar-pago', { limit: 20, windowMs: 60000 })
+    if (!rl.ok) return rateLimitResponse(rl.resetMs)
 
-    if (!instituto_nombre?.trim())
-      return NextResponse.json({ error: 'El nombre del instituto es obligatorio.' }, { status: 400 })
-    if (!director_nombre?.trim())
-      return NextResponse.json({ error: 'Tu nombre es obligatorio.' }, { status: 400 })
-    if (!director_email?.includes('@'))
-      return NextResponse.json({ error: 'El email no es válido.' }, { status: 400 })
-    if (!director_password || director_password.length < 8)
-      return NextResponse.json({ error: 'La contraseña debe tener al menos 8 caracteres.' }, { status: 400 })
+    const institutoId = getInstitutoId(req)
+    const pago = await req.json()
+
+    if (!pago.alumno_id || !pago.mes || !pago.anio) {
+      return NextResponse.json({ error: 'Faltan campos obligatorios: alumno_id, mes, anio' }, { status: 400 })
+    }
 
     const supabase = sb()
 
-    // Slug único
-    let slug = slugify(instituto_nombre)
-    const { data: slugExiste } = await supabase
-      .from('institutos').select('id').eq('slug', slug).single()
-    if (slugExiste) slug = slug + '-' + Math.floor(Math.random() * 9000 + 1000)
+    // 1. Eliminar pago previo del mismo alumno/mes/año
+    //    Filtrar por instituto_id cuando está disponible para evitar borrar de otros institutos
+    let delQ = supabase
+      .from('pagos_alumnos')
+      .delete()
+      .eq('alumno_id', pago.alumno_id)
+      .eq('mes', pago.mes)
+      .eq('anio', pago.anio)
+    if (institutoId) delQ = (delQ as any).eq('instituto_id', institutoId)
 
-    // 1. Crear instituto
-    const { data: instituto, error: errorInstituto } = await supabase
-      .from('institutos')
-      .insert({ nombre: instituto_nombre.trim(), slug, plan: 'starter', color_primario: '#652f8d', activo: true })
-      .select().single()
-
-    if (errorInstituto) {
-      console.error('[registro:instituto]', errorInstituto)
-      return NextResponse.json({ error: 'Error al crear el instituto: ' + errorInstituto.message }, { status: 500 })
+    const { error: delError } = await delQ
+    if (delError) {
+      console.warn('[registrar-pago] DELETE warning:', delError.message, delError.code)
     }
 
-    // 2. Crear usuario en auth
-    const { data: authData, error: errorAuth } = await supabase.auth.admin.createUser({
-      email: director_email.trim().toLowerCase(),
-      password: director_password,
-      email_confirm: true,
-    })
-
-    if (errorAuth) {
-      await supabase.from('institutos').delete().eq('id', instituto.id)
-      console.error('[registro:auth]', errorAuth)
-      if (errorAuth.message?.includes('already registered'))
-        return NextResponse.json({ error: 'Ya existe una cuenta con ese email.' }, { status: 400 })
-      return NextResponse.json({ error: 'Error al crear usuario: ' + errorAuth.message }, { status: 500 })
+    // 2. Construir payload del INSERT
+    const insertData: any = {
+      alumno_id: pago.alumno_id,
+      mes: pago.mes,
+      anio: pago.anio,
+      monto: pago.monto ?? 0,
+      metodo: pago.metodo || 'Efectivo',
+      fecha_pago: pago.fecha_pago || new Date().toISOString().split('T')[0],
+      observaciones: pago.observaciones || null,
+      ...(institutoId ? { instituto_id: institutoId } : {}),
     }
 
-    // 3. Crear registro en tabla usuarios
-    const initials = director_nombre.trim().split(' ')
-      .map((n: string) => n[0]?.toUpperCase() || '').slice(0, 2).join('')
+    // 3. Intentar INSERT con campo 'tipo' (por si la migración ya se ejecutó)
+    let result = await supabase
+      .from('pagos_alumnos')
+      .insert({ ...insertData, tipo: pago.tipo || 'cuota' })
+      .select()
+      .single()
 
-    const emailNormalizado = director_email.trim().toLowerCase()
-
-    const { error: errorUsuario } = await supabase
-      .from('usuarios')
-      .insert({
-        id: authData.user.id,
-        nombre: director_nombre.trim(),
-        email: emailNormalizado,
-        rol: 'director',
-        color: '#652f8d',
-        initials,
-        activo: true,
-        instituto_id: instituto.id,
-      })
-
-    if (errorUsuario) {
-      await supabase.auth.admin.deleteUser(authData.user.id)
-      await supabase.from('institutos').delete().eq('id', instituto.id)
-      console.error('[registro:usuario]', errorUsuario)
-      return NextResponse.json({ error: 'Error al configurar usuario: ' + errorUsuario.message }, { status: 500 })
+    // Si falla por columna inexistente, reintentar sin 'tipo'
+    if (result.error?.code === '42703') {
+      console.warn('[registrar-pago] columna tipo no existe, reintentando sin ella')
+      result = await supabase
+        .from('pagos_alumnos')
+        .insert(insertData)
+        .select()
+        .single()
     }
 
-    return NextResponse.json({ ok: true, instituto: { nombre: instituto.nombre, slug: instituto.slug } })
+    if (result.error) {
+      console.error('[registrar-pago] INSERT error:', result.error)
+      return NextResponse.json({ error: result.error.message, code: result.error.code }, { status: 500 })
+    }
 
+    return NextResponse.json({ data: result.data })
   } catch (e: any) {
-    console.error('[registro:catch]', e)
-    return NextResponse.json({ error: 'Error inesperado: ' + e.message }, { status: 500 })
+    console.error('[registrar-pago] catch:', e)
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
+}
+
+// GET — listar pagos del mes para saber quiénes ya pagaron (usa service_role, bypasea RLS)
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const mes = searchParams.get('mes')
+    const anio = searchParams.get('anio')
+    const institutoId = getInstitutoId(req)
+
+    if (!mes || !anio) {
+      return NextResponse.json({ error: 'Faltan mes y anio' }, { status: 400 })
+    }
+
+    let q = sb().from('pagos_alumnos').select('alumno_id, monto, tipo').eq('mes', mes).eq('anio', parseInt(anio))
+    if (institutoId) q = (q as any).eq('instituto_id', institutoId)
+    const { data, error } = await q
+    if (error) return NextResponse.json({ error: error.message, data: [] }, { status: 500 })
+    return NextResponse.json({ data: data || [] })
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message, data: [] }, { status: 500 })
   }
 }
