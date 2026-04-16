@@ -1114,17 +1114,23 @@ function PagosMasivos({ alumnos, onVolver }: any) {
   const [mes, setMes] = useState(mesActual)
   const [anio] = useState(anioActual)
 
-  // Cargar quiénes ya pagaron cuando cambia el mes seleccionado en "registrar pagos"
+  // Cargar quiénes ya pagaron — usa GET /api/registrar-pago con service_role
+  // Esto bypasea RLS y evita el bug donde el cliente anon devuelve array vacío
+  // haciendo que TODOS aparezcan como "sin pagar" (o viceversa)
   useEffect(() => {
     const cargarPagadosMes = async () => {
       try {
-        const sb = createClient()
-        const { data } = await sb.from('pagos_alumnos')
-          .select('alumno_id')
-          .eq('mes', mes)
-          .eq('anio', anio)
-        setAlumnosPagadosMes(new Set((data || []).map((r: any) => r.alumno_id)))
-      } catch {}
+        const params = new URLSearchParams({ mes, anio: String(anio) })
+        const res = await fetch(`/api/registrar-pago?${params}`, { headers: apiHeaders() })
+        const json = await res.json()
+        if (json.data) {
+          setAlumnosPagadosMes(new Set(json.data.map((r: any) => r.alumno_id)))
+        } else {
+          setAlumnosPagadosMes(new Set())
+        }
+      } catch {
+        setAlumnosPagadosMes(new Set())
+      }
     }
     cargarPagadosMes()
   }, [mes, anio])
