@@ -173,11 +173,6 @@ export default function Profesoras() {
           <Field2 label="Teléfono"><Input value={form?.telefono||''} onChange={(v:string)=>setForm({...form,telefono:v})} /></Field2>
         </Row2>
         <Row2>
-          <Field2 label="Nivel">
-            <select style={IS} value={form?.nivel||'Básico'} onChange={e=>setForm({...form,nivel:e.target.value})}>
-              {NIVELES.map(n=><option key={n}>{n}</option>)}
-            </select>
-          </Field2>
           <Field2 label="Tipo">
             <select style={IS} value={form?.tipo_colaborador||'docente'} onChange={e=>setForm({...form,tipo_colaborador:e.target.value})}>
               <option value="docente">Docente</option>
@@ -185,8 +180,6 @@ export default function Profesoras() {
               <option value="coordinadora">Coordinadora</option>
             </select>
           </Field2>
-        </Row2>
-        <Row2>
           <Field2 label="Tarifa/hora ($)"><Input type="number" value={form?.tarifa_hora||''} onChange={(v:string)=>setForm({...form,tarifa_hora:+v})} /></Field2>
         </Row2>
         <Field2 label="Horas por semana"><input type="number" step="0.5" min="0" value={form?.horas_semana||''} onChange={e=>setForm({...form,horas_semana:parseFloat(e.target.value)||0})} style={IS} /></Field2>
