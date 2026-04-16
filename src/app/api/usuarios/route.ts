@@ -20,9 +20,11 @@ export async function GET(req: NextRequest) {
     const institutoId = getInstitutoId(req)
     const admin = getAdminClient()
 
+    // Nota: permisos_custom puede no existir si no se ejecutó la migración SQL
+    // Seleccionamos solo columnas base — permisos_custom se agrega opcionalmente
     let q = admin
       .from('usuarios')
-      .select('id, nombre, email, rol, color, initials, activo, permisos_custom, instituto_id')
+      .select('id, nombre, email, rol, color, initials, activo, instituto_id')
       .order('nombre', { ascending: true })
     if (institutoId) q = (q as any).eq('instituto_id', institutoId)
     const { data, error } = await q
