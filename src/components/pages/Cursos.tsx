@@ -1569,9 +1569,9 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
   }
 
   const ESTADO_CFG: Record<string,{label:string,bg:string,color:string,next:string}> = {
-    pendiente:  { label:'Pendiente',  bg:'var(--bg)',    color:'var(--text3)', next:'en_curso'  },
-    en_curso:   { label:'En curso',   bg:'#f4eefb',      color:'#652f8d',      next:'dictada'   },
-    dictada:    { label:'Dictada',    bg:'var(--greenl)', color:'var(--green)', next:'pendiente' },
+    pendiente:  { label:'Atrasada',  bg:'var(--redl)',  color:'var(--red)',   next:'en_curso'  },
+    en_curso:   { label:'Al día',    bg:'#f4eefb',      color:'#652f8d',      next:'dictada'   },
+    dictada:    { label:'Dictada',   bg:'var(--greenl)', color:'var(--green)', next:'pendiente' },
   }
 
   const dictadas  = unidades.filter(u => u.estado === 'dictada').length
@@ -1590,7 +1590,7 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
         {[
           { label:'Unidades', val: unidades.length, color:'var(--text)' },
           { label:'Dictadas',  val: dictadas,  color:'var(--green)' },
-          { label:'En curso',  val: enCurso,   color:'#652f8d'      },
+          { label:'Al día',    val: enCurso,   color:'#652f8d'      },
           { label:'Avance',    val: `${pct}%`,  color: pct >= 75 ? 'var(--green)' : pct >= 40 ? '#652f8d' : 'var(--amber)' },
         ].map(k => (
           <div key={k.label} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'10px',textAlign:'center'}}>
