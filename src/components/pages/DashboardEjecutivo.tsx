@@ -203,17 +203,22 @@ export default function DashboardEjecutivo() {
   const guardarConcepto = async (concepto: string, tipo: string, valor: number) => {
     setErGuardando(prev => ({ ...prev, [concepto]: true }))
     try {
-      await fetch('/api/estado-resultado', {
+      const res = await fetch('/api/estado-resultado', {
         method: 'POST', headers: apiHeaders(),
         body: JSON.stringify({ mes: MESES[mes], anio, concepto, tipo, importe: valor })
       })
-      setErData(prev => {
-        const idx = prev.findIndex((r: any) => r.concepto === concepto)
-        if (idx >= 0) { const n = [...prev]; n[idx] = { ...n[idx], importe: valor }; return n }
-        return [...prev, { concepto, tipo, importe: valor }]
-      })
-      setErEditing(prev => { const n = { ...prev }; delete n[concepto]; return n })
-    } catch (e) { console.warn('[ER] guardar error:', e) }
+      const json = await res.json()
+      if (json.error) {
+        console.error('[ER] guardar error:', json.error)
+      } else {
+        setErData(prev => {
+          const idx = prev.findIndex((r: any) => r.concepto === concepto)
+          if (idx >= 0) { const n = [...prev]; n[idx] = { ...n[idx], importe: valor }; return n }
+          return [...prev, { concepto, tipo, importe: valor }]
+        })
+        setErEditing(prev => { const n = { ...prev }; delete n[concepto]; return n })
+      }
+    } catch (e) { console.warn('[ER] guardar catch:', e) }
     setErGuardando(prev => { const n = { ...prev }; delete n[concepto]; return n })
   }
 
