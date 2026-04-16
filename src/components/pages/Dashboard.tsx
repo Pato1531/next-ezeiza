@@ -102,7 +102,7 @@ export default function Dashboard() {
         const [, mm, dd] = a.fecha_nacimiento.split('-')
         const cumpleEsteAnio = new Date(hoy.getFullYear(), parseInt(mm) - 1, parseInt(dd))
         const diffDias = Math.round((cumpleEsteAnio.getTime() - hoy.setHours(0,0,0,0)) / 86400000)
-        if (diffDias >= 0 && diffDias <= 7) {
+        if (diffDias >= 0 && diffDias <= 30) {
           proximos.push({ ...a, diasParaCumple: diffDias, fechaStr: `${dd}/${mm}` })
         }
       })
@@ -347,28 +347,48 @@ export default function Dashboard() {
         </>
       )}
 
-      {/* CUMPLEAÑOS PRÓXIMOS */}
+      {/* CUMPLEAÑOS PRÓXIMOS — sección separada */}
       {cumpleanos.length > 0 && (
-        <>
-          <SL style={{marginBottom:'10px'}}>Cumpleaños próximos 🎂</SL>
-          <div style={{marginBottom:'18px'}}>
-            {cumpleanos.map((c: any) => (
-              <div key={c.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'11px 14px',background:'var(--white)',border:`1.5px solid ${c.diasParaCumple===0?'#db2777':'var(--border)'}`,borderRadius:'14px',marginBottom:'8px'}}>
-                <div style={{width:40,height:40,borderRadius:12,background:'#fce7f3',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'20px',flexShrink:0}}>🎂</div>
+        <div style={{marginBottom:'18px'}}>
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
+            <SL>Cumpleaños próximos</SL>
+            <span style={{fontSize:'11px',color:'var(--text3)',fontWeight:500}}>Próximos 30 días</span>
+          </div>
+          <div style={{background:'var(--white)',border:'1.5px solid #fce7f3',borderRadius:'16px',overflow:'hidden'}}>
+            {/* Header del card */}
+            <div style={{background:'linear-gradient(135deg,#fce7f3,#fff0f8)',padding:'12px 16px',borderBottom:'1px solid #fce7f3',display:'flex',alignItems:'center',gap:'8px'}}>
+              <span style={{fontSize:'20px'}}>🎂</span>
+              <span style={{fontSize:'13px',fontWeight:700,color:'#db2777'}}>{cumpleanos.length} cumpleaños este mes</span>
+            </div>
+            {cumpleanos.map((cu: any, idx: number) => (
+              <div key={cu.id} style={{
+                display:'flex',alignItems:'center',gap:'12px',
+                padding:'11px 16px',
+                borderBottom: idx < cumpleanos.length-1 ? '1px solid #fce7f3' : 'none',
+                background: cu.diasParaCumple === 0 ? '#fff0f8' : 'transparent',
+              }}>
+                {/* Avatar */}
+                <div style={{width:38,height:38,borderRadius:12,background:cu.color||'#db2777',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'13px',fontWeight:700,color:'#fff',flexShrink:0}}>
+                  {cu.nombre?.[0]}{cu.apellido?.[0]}
+                </div>
                 <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:'13.5px',fontWeight:600}}>{c.nombre} {c.apellido}</div>
+                  <div style={{fontSize:'13.5px',fontWeight:600,color:'var(--text)'}}>{cu.nombre} {cu.apellido}</div>
                   <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'2px'}}>
-                    {c.diasParaCumple === 0
-                      ? <span style={{color:'#db2777',fontWeight:700}}>¡Hoy!</span>
-                      : c.diasParaCumple === 1 ? 'Mañana'
-                      : `En ${c.diasParaCumple} días`}
-                    <span style={{marginLeft:'6px',color:'var(--text3)'}}>· {c.fechaStr}</span>
+                    {cu.diasParaCumple === 0
+                      ? <span style={{color:'#db2777',fontWeight:700}}>🎉 ¡Hoy cumple años!</span>
+                      : cu.diasParaCumple === 1
+                      ? <span style={{color:'#db2777',fontWeight:600}}>Mañana</span>
+                      : `En ${cu.diasParaCumple} días`}
                   </div>
+                </div>
+                {/* Fecha badge */}
+                <div style={{background:'#fce7f3',color:'#db2777',padding:'4px 10px',borderRadius:'20px',fontSize:'12px',fontWeight:700,flexShrink:0}}>
+                  {cu.fechaStr}
                 </div>
               </div>
             ))}
           </div>
-        </>
+        </div>
       )}
 
       {/* PRÓXIMOS EVENTOS */}
