@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getInstitutoId } from '@/lib/server-utils'
 import { createClient } from '@supabase/supabase-js'
 
 function sb() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
-function getInstitutoId(req: NextRequest): string | null {
-  const val = req.headers.get('x-instituto-id')
-  return val && val.trim().length > 0 ? val.trim() : null
-}
+
 
 export async function POST(req: NextRequest) {
   try {
