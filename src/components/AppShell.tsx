@@ -25,7 +25,7 @@ const ALL_NAV = [
   { id: 'alumnos',     label: 'Alumnos',      icon: 'M10 3L18 7l-8 4-8-4 8-4zM6 11v4a6 3 0 008 0v-4' },
   { id: 'cursos',      label: 'Cursos',       icon: 'M3 3h14v14H3zM7 7h6M7 10h6M7 13h4' },
   { id: 'horarios',    label: 'Horarios',     icon: 'M2 3h16v14H2zM6 1v3M14 1v3M2 8h16' },
-  { id: 'profesoras',  label: 'Docentes',     icon: 'M7 7a3 3 0 100-6 3 3 0 000 6zM1 18c0-3.3 2.7-6 6-6M15 8a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM12 18c0-2.5 2-4.5 5-4.5' },
+  { id: 'profesoras',  label: 'Colaboradores',     icon: 'M7 7a3 3 0 100-6 3 3 0 000 6zM1 18c0-3.3 2.7-6 6-6M15 8a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM12 18c0-2.5 2-4.5 5-4.5' },
   { id: 'reportes',    label: 'Reportes',     icon: 'M4 15l4-4 3 3 5-6M2 2h16v16H2z' },
   { id: 'permisos',    label: 'Permisos',     icon: 'M10 2a4 4 0 014 4v1h2a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V9a2 2 0 012-2h2V6a4 4 0 014-4zM10 4a2 2 0 00-2 2v1h4V6a2 2 0 00-2-2z' },
   { id: 'agenda',      label: 'Agenda',       icon: 'M3 4h16v16H3zM16 2v4M8 2v4M3 10h16' },
@@ -55,7 +55,7 @@ const PAGES: Record<string, React.ComponentType> = {
 
 const PAGE_TITLES: Record<string, string> = {
   dashboard: 'Inicio', alumnos: 'Alumnos', cursos: 'Cursos',
-  horarios: 'Horarios', profesoras: 'Docentes', reportes: 'Reportes',
+  horarios: 'Horarios', profesoras: 'Colaboradores', reportes: 'Reportes',
   permisos: 'Permisos', perfil: 'Mi perfil', agenda: 'Agenda',
   comunicados: 'Comunicados', actividad: 'Actividad',
   atencion: 'Atención al Cliente', ejecutivo: 'Dashboard Ejecutivo', cuotas: 'Cuotas por Curso',
@@ -241,7 +241,7 @@ export default function AppShell() {
         {mounted.has('alumnos')     && <div style={{ padding: '16px 16px 24px', display: page === 'alumnos'     ? 'block' : 'none' }}><PanelErrorBoundary name="Alumnos">    <Alumnos />           </PanelErrorBoundary></div>}
         {mounted.has('cursos')      && <div style={{ padding: '16px 16px 24px', display: page === 'cursos'      ? 'block' : 'none' }}><PanelErrorBoundary name="Cursos">     <Cursos />            </PanelErrorBoundary></div>}
         {mounted.has('horarios')    && <div style={{ padding: '16px 16px 24px', display: page === 'horarios'    ? 'block' : 'none' }}><PanelErrorBoundary name="Horarios">   <Horarios />          </PanelErrorBoundary></div>}
-        {mounted.has('profesoras')  && <div style={{ padding: '16px 16px 24px', display: page === 'profesoras'  ? 'block' : 'none' }}><PanelErrorBoundary name="Profesoras"> <Profesoras />        </PanelErrorBoundary></div>}
+        {mounted.has('profesoras')  && <div style={{ padding: '16px 16px 24px', display: page === 'profesoras'  ? 'block' : 'none' }}><PanelErrorBoundary name="Colaboradores"> <Profesoras />        </PanelErrorBoundary></div>}
         {mounted.has('reportes')    && <div style={{ padding: '16px 16px 24px', display: page === 'reportes'    ? 'block' : 'none' }}><PanelErrorBoundary name="Reportes">   <Reportes />          </PanelErrorBoundary></div>}
         {mounted.has('permisos')    && <div style={{ padding: '16px 16px 24px', display: page === 'permisos'    ? 'block' : 'none' }}><PanelErrorBoundary name="Permisos">   <Permisos />          </PanelErrorBoundary></div>}
         {mounted.has('perfil')      && <div style={{ padding: '16px 16px 24px', display: page === 'perfil'      ? 'block' : 'none' }}><PanelErrorBoundary name="Perfil">     <Perfil />            </PanelErrorBoundary></div>}
