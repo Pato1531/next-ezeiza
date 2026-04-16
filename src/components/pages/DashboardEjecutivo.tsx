@@ -91,7 +91,9 @@ export default function DashboardEjecutivo() {
       } catch (e) { console.warn('[DashEjecutivo] estado-resultado error:', e) }
     }
     // Delay para que apiHeaders() tenga el instituto_id seteado
-    setTimeout(cargarER, 1000)
+    // Intentar a los 800ms y de nuevo a los 2500ms como fallback
+    setTimeout(cargarER, 800)
+    setTimeout(cargarER, 2500)
   }, [mes, anio])
 
   // Sincronizar erIngresos con pagos reales cuando estos cargan
