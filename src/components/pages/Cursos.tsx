@@ -1338,17 +1338,36 @@ function AsistenciaRapida({ curso: c, profesoras, alumnos, onVolver }: any) {
 
   const guardar = async () => {
     setGuardando(true)
-    const sb = createClient()
-    // Crear clase
-    const { data: clase } = await sb.from('clases').insert({
-      curso_id: c.id, fecha, tema, observacion_coordinadora: ''
-    }).select().single()
-    if (clase) {
-      // Guardar asistencias
-      const inserts = alumnosCurso.map((a:any) => ({
-        clase_id: clase.id, alumno_id: a.id, estado: estados[a.id] || 'P'
+    try {
+      // Importar apiHeaders dinámicamente para no romper dependencias
+      const { apiHeaders } = await import('@/lib/hooks')
+      const asistencia = alumnosCurso.map((a: any) => ({
+        alumno_id: a.id,
+        estado: estados[a.id] || 'P'
       }))
-      await sb.from('asistencia_clases').insert(inserts)
+      const res = await fetch('/api/guardar-clase', {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({
+          curso_id: c.id,
+          fecha,
+          tema,
+          observacion_coordinadora: '',
+          asistencia,
+        })
+      })
+      const json = await res.json()
+      if (!json.ok) {
+        console.error('[Cursos guardar]', json.error)
+        alert('Error al guardar la clase. Intentá de nuevo.')
+        setGuardando(false)
+        return
+      }
+    } catch (e) {
+      console.error('[Cursos guardar] catch', e)
+      alert('Error de conexión al guardar la clase.')
+      setGuardando(false)
+      return
     }
     setGuardando(false)
     setGuardado(true)
