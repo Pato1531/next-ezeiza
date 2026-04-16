@@ -56,6 +56,8 @@ interface AuthContextType {
   instituto: Instituto | null
   loading: boolean
   puedeVer: (modulo: string) => boolean
+  permisosCustomPorUsuario: Record<string, string[]>
+  recargarPermisosUsuarios: () => Promise<void>
   signOut: () => Promise<void>
   recargarUsuario: () => Promise<void>
 }
@@ -65,6 +67,8 @@ const AuthContext = createContext<AuthContextType>({
   instituto: null,
   loading: true,
   puedeVer: () => false,
+  permisosCustomPorUsuario: {},
+  recargarPermisosUsuarios: async () => {},
   signOut: async () => {},
   recargarUsuario: async () => {},
 })
@@ -76,12 +80,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading,   setLoading]   = useState(true)
   const mountedRef = useRef(true)
 
+  const [permisosCustomPorUsuario, setPermisosCustomPorUsuario] = useState<Record<string, string[]>>({})
+
+  const recargarPermisosUsuarios = useCallback(async () => {
+    try {
+      const sb = getClient()
+      if (!sb) return
+      const { data } = await sb.from('usuarios').select('id, permisos_custom')
+      if (!data) return
+      const mapa: Record<string, string[]> = {}
+      data.forEach((u: any) => {
+        if (Array.isArray(u.permisos_custom) && u.permisos_custom.length > 0) {
+          mapa[u.id] = u.permisos_custom
+        }
+      })
+      setPermisosCustomPorUsuario(mapa)
+    } catch (e) {
+      console.warn('[Auth] recargarPermisosUsuarios:', e)
+    }
+  }, [])
+
   const puedeVer = useCallback(
     (modulo: string) => {
       if (!usuario) return false
+      const custom = permisosCustomPorUsuario[usuario.id]
+      if (Array.isArray(custom) && custom.length > 0) return custom.includes(modulo)
       return PERMISOS[usuario.rol]?.includes(modulo) ?? false
     },
-    [usuario]
+    [usuario, permisosCustomPorUsuario]
   )
 
   const cargarUsuario = useCallback(async (uid: string) => {
@@ -228,7 +254,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ usuario, instituto, loading, puedeVer, signOut, recargarUsuario }}>
+    <AuthContext.Provider value={{ usuario, instituto, loading, puedeVer, permisosCustomPorUsuario, recargarPermisosUsuarios, signOut, recargarUsuario }}>
       {children}
     </AuthContext.Provider>
   )
