@@ -73,7 +73,7 @@ export default function DashboardEjecutivo() {
     }
     cargar()
 
-    // Cargar estado de resultado
+    // Cargar estado de resultado (conceptos editables)
     const cargarER = async () => {
       try {
         const res = await fetch(`/api/estado-resultado?mes=${MESES[mes]}&anio=${anio}`, {
@@ -81,11 +81,25 @@ export default function DashboardEjecutivo() {
         })
         const json = await res.json()
         if (json.data) setErData(json.data)
-        if (json.ingresos_cuotas !== undefined) setErIngresos(json.ingresos_cuotas)
+        // ingresos_cuotas viene del API si está disponible
+        if (json.ingresos_cuotas !== undefined && json.ingresos_cuotas > 0) {
+          setErIngresos(json.ingresos_cuotas)
+        }
       } catch (e) { console.warn('[DashEjecutivo] estado-resultado error:', e) }
     }
-    cargarER()
+    // Pequeño delay para dar tiempo a que apiHeaders() tenga el instituto_id
+    setTimeout(cargarER, 800)
   }, [mes, anio])
+
+  // Sincronizar erIngresos con pagos reales cuando estos cargan
+  // Esto garantiza que el EERR siempre muestre el total correcto
+  // independientemente del timing del API route
+  useEffect(() => {
+    if (pagos.length > 0) {
+      const total = pagos.reduce((s: number, p: any) => s + (p.monto || 0), 0)
+      setErIngresos(total)
+    }
+  }, [pagos])
 
   // ── Cálculos financieros ──────────────────────────────────────────────────
   const totalCobrado    = pagos.reduce((s, p) => s + (p.monto || 0), 0)
