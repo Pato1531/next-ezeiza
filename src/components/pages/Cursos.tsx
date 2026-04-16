@@ -537,8 +537,12 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
   }
 
 
-  const generarReporte = () => {
-    const sorted = [...clasesLocal].sort((a,b) => a.fecha.localeCompare(b.fecha))
+  const [modalReportes, setModalReportes] = useState(false)
+
+  const generarReporteClases = (filtro?: {desde?:string, hasta?:string}) => {
+    let sorted = [...clasesLocal].sort((a,b) => a.fecha.localeCompare(b.fecha))
+    if (filtro?.desde) sorted = sorted.filter((cl:any) => cl.fecha >= filtro.desde!)
+    if (filtro?.hasta) sorted = sorted.filter((cl:any) => cl.fecha <= filtro.hasta!)
     const prof = profesoras.find((p:any) => p.id === c.profesora_id)
     const _html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
     <title>Reporte — ${c.nombre}</title>
@@ -601,6 +605,40 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
     const _url = URL.createObjectURL(_blob)
     const _win = window.open(_url, '_blank')
     if (!_win) { const a = document.createElement('a'); a.href=_url; a.download=`reporte-${c.nombre}.html`; a.click() }
+    setTimeout(() => URL.revokeObjectURL(_url), 10000)
+  }
+
+  const generarReporte = () => generarReporteClases()
+
+  const generarReportePlanificacion = () => {
+    const prof = profesoras.find((p:any) => p.id === c.profesora_id)
+    const ECFG: Record<string,string> = { pendiente:'Atrasada', en_curso:'Al día', dictada:'Dictada' }
+    const ECOLOR: Record<string,string> = {
+      pendiente:'background:#fdeaea;color:#c0392b',
+      en_curso:'background:#f4eefb;color:#652f8d',
+      dictada:'background:#e6f4ec;color:#2d7a4f'
+    }
+    const fmtF = (f: string) => f ? new Date(f+'T12:00:00').toLocaleDateString('es-AR') : '—'
+    const filas = (planUnidades||[]).map((u:any, i:number) =>
+      '<tr><td style="font-weight:700;color:#652f8d">'+(i+1)+'</td>'
+      +'<td style="font-weight:600">'+u.titulo+'</td>'
+      +'<td style="color:#666">'+(u.descripcion||'—')+'</td>'
+      +'<td>'+fmtF(u.fecha_inicio)+'</td>'
+      +'<td>'+fmtF(u.fecha_cierre)+'</td>'
+      +'<td><span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;'+(ECOLOR[u.estado]||'')+'">'+(ECFG[u.estado]||u.estado)+'</span></td></tr>'
+    ).join('')
+    const css = 'body{font-family:sans-serif;padding:24px;font-size:13px}table{width:100%;border-collapse:collapse}th{background:#652f8d;color:#fff;padding:9px;text-align:left;font-size:11px}td{padding:9px;border-bottom:1px solid #ede8f5}h1{color:#652f8d}.hd{display:flex;justify-content:space-between;border-bottom:2px solid #652f8d;padding-bottom:14px;margin-bottom:20px}'
+    const fecha = new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
+    const profNombre = prof ? prof.nombre+' '+prof.apellido+' · ' : ''
+    const _html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Planificacion</title><style>'+css+'</style></head><body>'
+      +'<div class="hd"><strong style="font-size:18px"><span style="color:#652f8d">Next</span> Ezeiza</strong><span style="color:#9b8eaa;font-size:12px">'+fecha+'</span></div>'
+      +'<h1>'+c.nombre+'</h1><p style="color:#9b8eaa">'+profNombre+c.nivel+'</p>'
+      +'<table><tr><th>#</th><th>Unidad</th><th>Descripcion</th><th>Inicio</th><th>Cierre</th><th>Estado</th></tr>'+filas+'</table>'
+      +'<script>window.onload=function(){window.print()}<\/script></body></html>'
+    const _blob = new Blob([_html], {type:'text/html;charset=utf-8'})
+    const _url = URL.createObjectURL(_blob)
+    const _win = window.open(_url, '_blank')
+    if (!_win) { const a = document.createElement('a'); a.href=_url; a.download='planificacion-'+c.nombre+'.html'; a.click() }
     setTimeout(() => URL.revokeObjectURL(_url), 10000)
   }
 
@@ -1488,8 +1526,8 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
   const [editando, setEditando] = useState<any>(null)
   const [confirmDel, setConfirmDel] = useState<string|null>(null)
   const [guardando, setGuardando] = useState(false)
-  const formVacio = { titulo: '', descripcion: '', estado: 'pendiente' }
-  const [form, setForm] = useState(formVacio)
+  const formVacio = { titulo: '', descripcion: '', estado: 'pendiente', fecha_inicio: '', fecha_cierre: '' }
+  const [form, setForm] = useState<any>(formVacio)
 
   useEffect(() => { cargar() }, [cursoId])
 
@@ -1509,7 +1547,7 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
   }
 
   const abrirEditar = (u: any) => {
-    setForm({ titulo: u.titulo, descripcion: u.descripcion || '', estado: u.estado })
+    setForm({ titulo: u.titulo, descripcion: u.descripcion || '', estado: u.estado, fecha_inicio: u.fecha_inicio || '', fecha_cierre: u.fecha_cierre || '' })
     setEditando(u)
     setModal(true)
   }
@@ -1529,7 +1567,7 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
     } else {
       const orden = unidades.length
       const { data, error } = await sb.from('planificacion_cursos')
-        .insert({ curso_id: cursoId, titulo: form.titulo, descripcion: form.descripcion, estado: form.estado, orden })
+        .insert({ curso_id: cursoId, titulo: form.titulo, descripcion: form.descripcion, estado: form.estado, orden, fecha_inicio: form.fecha_inicio || null, fecha_cierre: form.fecha_cierre || null })
         .select().single()
       if (!error && data) {
         setUnidades(prev => [...prev, data])
@@ -1650,6 +1688,12 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
                     {u.descripcion && (
                       <div style={{fontSize:'12px',color:'var(--text3)',lineHeight:1.5}}>{u.descripcion}</div>
                     )}
+                    {(u.fecha_inicio || u.fecha_cierre) && (
+                      <div style={{display:'flex',gap:'12px',marginTop:'5px',flexWrap:'wrap'}}>
+                        {u.fecha_inicio && <span style={{fontSize:'11px',color:'var(--text3)'}}>📅 Inicio: <strong>{new Date(u.fecha_inicio+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'short'})}</strong></span>}
+                        {u.fecha_cierre && <span style={{fontSize:'11px',color:'var(--text3)'}}>🏁 Cierre: <strong>{new Date(u.fecha_cierre+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'short'})}</strong></span>}
+                      </div>
+                    )}
                   </div>
                   {puedeEditar && (
                     <div style={{display:'flex',gap:'4px',flexShrink:0}}>
@@ -1694,6 +1738,17 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
                 onChange={e => setForm({...form, descripcion: e.target.value})}
                 placeholder="Temas, objetivos, contenidos de esta unidad..."
               />
+            </div>
+
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'11px'}}>
+              <div>
+                <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Fecha inicio</div>
+                <input type="date" style={IS2} value={form.fecha_inicio} onChange={e => setForm({...form, fecha_inicio: e.target.value})} />
+              </div>
+              <div>
+                <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Fecha cierre</div>
+                <input type="date" style={IS2} value={form.fecha_cierre} onChange={e => setForm({...form, fecha_cierre: e.target.value})} />
+              </div>
             </div>
 
             <div style={{marginBottom:'20px'}}>
