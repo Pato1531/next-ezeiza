@@ -380,13 +380,24 @@ export function useCursos() {
   }
 
   const agregar = async (nuevo: any) => {
-    const { data: row, error } = await createClient().from('cursos').insert(nuevo).select().single()
-    if (row && !error) {
-      setData(prev => [...prev, row])
-      invalidateQuery('cursos')
-      logActivity('Creó curso', 'Cursos', row.nombre || '')
+    try {
+      const res = await window.fetch('/api/actualizar-curso', {
+        method: 'POST', headers: apiHeaders(),
+        body: JSON.stringify({ datos: nuevo })
+      })
+      const json = await res.json()
+      if (json.data) {
+        setData(prev => [...prev, json.data])
+        invalidateQuery('cursos')
+        logActivity('Creó curso', 'Cursos', json.data.nombre || '')
+        return json.data
+      }
+      console.error('[useCursos agregar]', json.error)
+      return null
+    } catch (e: any) {
+      console.error('[useCursos agregar] catch', e?.message)
+      return null
     }
-    return row
   }
 
   const eliminar = async (id: string) => {
