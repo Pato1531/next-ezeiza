@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAlumnos, useProfesoras, useCursos, apiHeaders } from '@/lib/hooks'
 
@@ -31,6 +31,7 @@ export default function DashboardEjecutivo() {
   const [erEditing,  setErEditing]  = useState<Record<string,number>>({})
   const [erGuardando, setErGuardando] = useState<Record<string,boolean>>({})
   const [erTab, setErTab] = useState<'resumen'|'estado'>('resumen')
+  const erDebounceRef = useRef<Record<string,ReturnType<typeof setTimeout>>>({})
 
   const mesNombre    = MESES[mes]
   const mesAntIdx    = mes === 0 ? 11 : mes - 1
@@ -301,10 +302,17 @@ export default function DashboardEjecutivo() {
                       <input
                         type="number" min="0" step="100"
                         value={editVal !== undefined ? editVal : val}
-                        onChange={e => setErEditing(prev => ({ ...prev, [concepto]: parseFloat(e.target.value) || 0 }))}
+                        onChange={e => {
+                          const v = parseFloat(e.target.value) || 0
+                          setErEditing(prev => ({ ...prev, [concepto]: v }))
+                          // Guardar automáticamente 800ms después de dejar de tipear
+                          if (erDebounceRef.current[concepto]) clearTimeout(erDebounceRef.current[concepto])
+                          erDebounceRef.current[concepto] = setTimeout(() => guardarConcepto(concepto, 'egreso', v), 800)
+                        }}
                         onBlur={e => {
                           const v = parseFloat(e.target.value) || 0
-                          if (v !== val) guardarConcepto(concepto, 'egreso', v)
+                          if (erDebounceRef.current[concepto]) clearTimeout(erDebounceRef.current[concepto])
+                          guardarConcepto(concepto, 'egreso', v)
                         }}
                         style={{width:'110px',padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',fontFamily:'inherit',outline:'none',textAlign:'right'}}
                       />
@@ -334,10 +342,16 @@ export default function DashboardEjecutivo() {
                       <input
                         type="number" min="0" step="100"
                         value={editVal !== undefined ? editVal : val}
-                        onChange={e => setErEditing(prev => ({ ...prev, [concepto]: parseFloat(e.target.value) || 0 }))}
+                        onChange={e => {
+                          const v = parseFloat(e.target.value) || 0
+                          setErEditing(prev => ({ ...prev, [concepto]: v }))
+                          if (erDebounceRef.current[concepto]) clearTimeout(erDebounceRef.current[concepto])
+                          erDebounceRef.current[concepto] = setTimeout(() => guardarConcepto(concepto, 'ingreso_extra', v), 800)
+                        }}
                         onBlur={e => {
                           const v = parseFloat(e.target.value) || 0
-                          if (v !== val) guardarConcepto(concepto, 'ingreso_extra', v)
+                          if (erDebounceRef.current[concepto]) clearTimeout(erDebounceRef.current[concepto])
+                          guardarConcepto(concepto, 'ingreso_extra', v)
                         }}
                         style={{width:'110px',padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',fontFamily:'inherit',outline:'none',textAlign:'right'}}
                       />
