@@ -833,8 +833,8 @@ export default function Reportes() {
       {/* SECCIÓN: REPORTE POR PROFESORA */}
       {(!esSecretaria && !esCoordinadora) && (
       <ReportSection
-        titulo="Reporte por docente"
-        subtitulo={`${profesoras.length} docentes activas`}
+        titulo="Reporte por colaborador"
+        subtitulo={`${profesoras.length} colaboradores activos`}
         onCSV={() => {
           const rows = [
             ['NEXT EZEIZA — REPORTE POR DOCENTE'],
