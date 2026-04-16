@@ -18,16 +18,14 @@ function getInstitutoId(req: NextRequest): string | null {
 export async function GET(req: NextRequest) {
   try {
     const institutoId = getInstitutoId(req)
-    if (!institutoId) {
-      return NextResponse.json({ error: 'instituto_id requerido en header x-instituto-id' }, { status: 400 })
-    }
-
     const admin = getAdminClient()
-    const { data, error } = await admin
+
+    let q = admin
       .from('usuarios')
-      .select('id, nombre, email, rol, color, initials, activo, instituto_id')
-      .eq('instituto_id', institutoId)
+      .select('id, nombre, email, rol, color, initials, activo, permisos_custom, instituto_id')
       .order('nombre', { ascending: true })
+    if (institutoId) q = (q as any).eq('instituto_id', institutoId)
+    const { data, error } = await q
 
     if (error) {
       console.error('[usuarios GET] Supabase error:', error)
