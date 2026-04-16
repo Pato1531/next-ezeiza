@@ -553,11 +553,11 @@ export default function Reportes() {
       {(!esSecretaria && !esCoordinadora) && (
       <ReportSection
         titulo="Asistencia docente"
-        subtitulo={`${profesoras.length} docentes — últimos 6 meses`}
+        subtitulo={`${profesoras.filter((p:any) => !p.tipo_colaborador || p.tipo_colaborador === 'docente').length} docentes — últimos 6 meses`}
         onCSV={exportAsistenciaCSV}
         onPDF={exportAsistenciaPDF}
       >
-        {profesoras.map(p => (
+        {profesoras.filter((p:any) => !p.tipo_colaborador || p.tipo_colaborador === 'docente').map(p => (
           <div key={p.id} style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'12px'}}>
             <Av color={p.color} size={36}>{p.initials||`${p.nombre[0]}${p.apellido[0]}`}</Av>
             <div style={{fontSize:'13px',fontWeight:600,width:'100px',flexShrink:0}}>{p.nombre}</div>
@@ -833,7 +833,7 @@ export default function Reportes() {
       {/* SECCIÓN: REPORTE POR PROFESORA */}
       {(!esSecretaria && !esCoordinadora) && (
       <ReportSection
-        titulo="Reporte por colaborador"
+        titulo="Liquidación colaboradores"
         subtitulo={`${profesoras.length} colaboradores activos`}
         onCSV={() => {
           const rows = [
