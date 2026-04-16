@@ -6,7 +6,8 @@ function sb() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 function getInstitutoId(req: NextRequest): string | null {
-  return req.headers.get('x-instituto-id') || null
+  const val = req.headers.get('x-instituto-id')
+  return val && val.trim().length > 0 ? val.trim() : null
 }
 
 // Conceptos predefinidos del estado de resultado
@@ -127,8 +128,8 @@ export async function POST(req: NextRequest) {
     const institutoId = getInstitutoId(req)
     const { mes, anio, concepto, tipo, importe } = await req.json()
 
-    if (!mes || !anio || !concepto || !institutoId) {
-      return NextResponse.json({ error: 'Faltan campos' }, { status: 400 })
+    if (!mes || !anio || !concepto) {
+      return NextResponse.json({ error: 'Faltan campos: mes, anio, concepto' }, { status: 400 })
     }
 
     const supabase = sb()
@@ -137,7 +138,7 @@ export async function POST(req: NextRequest) {
       .upsert({
         mes,
         anio: parseInt(anio),
-        instituto_id: institutoId,
+        ...(institutoId ? { instituto_id: institutoId } : {}),
         concepto,
         tipo: tipo || 'egreso',
         importe: importe || 0,
