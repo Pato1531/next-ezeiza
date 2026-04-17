@@ -71,7 +71,6 @@ export async function POST(req: NextRequest) {
     const { error: errUser } = await supabase.from('usuarios').insert({
       id: authData.user.id,
       nombre: director_nombre.trim(),
-      email: director_email.trim().toLowerCase(),
       rol: 'director',
       color: '#652f8d',
       initials,
