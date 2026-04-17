@@ -116,6 +116,10 @@ export default function AppShell() {
   const [onboardingVisto, setOnboardingVisto] = useState<Set<string>>(new Set())
   const [navCustom, setNavCustom] = useState<string[] | null>(null)
   const [navEditOpen, setNavEditOpen] = useState(false)
+  const [busqGlobalOpen, setBusqGlobalOpen] = useState(false)
+  const [busqGlobalQ, setBusqGlobalQ] = useState('')
+  const [busqResultados, setBusqResultados] = useState<{tipo:string;id:string;titulo:string;sub:string;color?:string;nav:string}[]>([])
+  const [busqLoading, setBusqLoading] = useState(false)
 
   // Toast global: escuchar pago-registrado
   useEffect(() => {
@@ -127,6 +131,42 @@ export default function AppShell() {
     window.addEventListener('pago-registrado', handler)
     return () => window.removeEventListener('pago-registrado', handler)
   }, [])
+
+  // Búsqueda global con debounce
+  useEffect(() => {
+    if (!busqGlobalQ.trim() || busqGlobalQ.length < 2) { setBusqResultados([]); return }
+    const t = setTimeout(async () => {
+      setBusqLoading(true)
+      try {
+        const sb = createClient()
+        const q = busqGlobalQ.toLowerCase()
+        const [alRes, curRes, profRes] = await Promise.all([
+          sb.from('alumnos').select('id,nombre,apellido,nivel,color').eq('activo',true).ilike('apellido', `%${q}%`).limit(5),
+          sb.from('cursos').select('id,nombre,nivel').limit(5),
+          sb.from('profesoras').select('id,nombre,apellido,color').eq('activo',true).limit(3),
+        ])
+        const resultados: any[] = []
+        // Alumnos — filtrar client-side para combinar nombre+apellido
+        ;(alRes.data||[]).filter((a:any) => `${a.nombre} ${a.apellido}`.toLowerCase().includes(q)).forEach((a:any) =>
+          resultados.push({ tipo:'alumno', id:a.id, titulo:`${a.nombre} ${a.apellido}`, sub:a.nivel||'Alumno', color:a.color, nav:'alumnos' })
+        )
+        // También buscar por nombre
+        const alRes2 = await sb.from('alumnos').select('id,nombre,apellido,nivel,color').eq('activo',true).ilike('nombre', `%${q}%`).limit(5)
+        ;(alRes2.data||[]).filter((a:any) => !resultados.some(r=>r.id===a.id)).forEach((a:any) =>
+          resultados.push({ tipo:'alumno', id:a.id, titulo:`${a.nombre} ${a.apellido}`, sub:a.nivel||'Alumno', color:a.color, nav:'alumnos' })
+        )
+        ;(curRes.data||[]).filter((c:any) => c.nombre.toLowerCase().includes(q)).forEach((c:any) =>
+          resultados.push({ tipo:'curso', id:c.id, titulo:c.nombre, sub:c.nivel||'Curso', nav:'cursos' })
+        )
+        ;(profRes.data||[]).filter((p:any) => `${p.nombre} ${p.apellido}`.toLowerCase().includes(q)).forEach((p:any) =>
+          resultados.push({ tipo:'colaborador', id:p.id, titulo:`${p.nombre} ${p.apellido}`, sub:'Colaborador', color:p.color, nav:'profesoras' })
+        )
+        setBusqResultados(resultados.slice(0,8))
+      } catch {}
+      setBusqLoading(false)
+    }, 280)
+    return () => clearTimeout(t)
+  }, [busqGlobalQ])
 
   // Ajustar página inicial según permisos del usuario (solo en cliente)
   useEffect(() => {
@@ -259,6 +299,10 @@ export default function AppShell() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <button onClick={() => { setBusqGlobalOpen(true); setBusqGlobalQ(''); setBusqResultados([]) }}
+            style={{ width:'32px', height:'32px', borderRadius:'10px', background:'var(--bg)', border:'1px solid var(--border)', color:'var(--text2)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="9" cy="9" r="6"/><path d="M15 15l3 3"/></svg>
+          </button>
           <div style={{ padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, background: rs.bg, color: rs.color }}>
             {ROLE_LABELS[usuario.rol]}
           </div>
@@ -361,6 +405,57 @@ export default function AppShell() {
       </nav>
 
       {/* EDITOR NAV PERSONALIZADO */}
+      {/* BUSCADOR GLOBAL */}
+      {busqGlobalOpen && (
+        <div style={{ position:'fixed', inset:0, zIndex:300, background:'rgba(20,0,40,.5)' }} onClick={() => setBusqGlobalOpen(false)}>
+          <div style={{ position:'absolute', top:'60px', left:'50%', transform:'translateX(-50%)', width:'calc(100% - 32px)', maxWidth:'500px', background:'var(--white)', borderRadius:'16px', overflow:'hidden', boxShadow:'0 8px 32px rgba(0,0,0,.18)' }} onClick={e => e.stopPropagation()}>
+            <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'12px 16px', borderBottom:'1px solid var(--border)' }}>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="var(--text3)" strokeWidth="2" strokeLinecap="round" style={{flexShrink:0}}><circle cx="9" cy="9" r="6"/><path d="M15 15l3 3"/></svg>
+              <input
+                autoFocus
+                type="text"
+                value={busqGlobalQ}
+                onChange={e => setBusqGlobalQ(e.target.value)}
+                placeholder="Buscar alumno, curso, colaborador..."
+                style={{ flex:1, border:'none', outline:'none', fontSize:'15px', background:'transparent', color:'var(--text)', fontFamily:'inherit' }}
+                onKeyDown={e => { if (e.key === 'Escape') setBusqGlobalOpen(false) }}
+              />
+              {busqLoading && <div style={{width:'14px',height:'14px',border:'2px solid var(--border)',borderTopColor:'var(--v)',borderRadius:'50%',animation:'spin .6s linear infinite',flexShrink:0}} />}
+              <button onClick={() => setBusqGlobalOpen(false)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'18px',lineHeight:1,flexShrink:0}}>×</button>
+            </div>
+            {busqResultados.length > 0 && (
+              <div style={{ maxHeight:'320px', overflowY:'auto' }}>
+                {busqResultados.map((r, i) => (
+                  <button key={i} onClick={() => { navTo(r.nav); setBusqGlobalOpen(false) }}
+                    style={{ display:'flex', alignItems:'center', gap:'12px', width:'100%', padding:'12px 16px', border:'none', background:'transparent', cursor:'pointer', textAlign:'left', borderBottom: i<busqResultados.length-1 ? '1px solid var(--border)' : 'none' }}
+                    onMouseEnter={e => (e.currentTarget.style.background='var(--vl)')}
+                    onMouseLeave={e => (e.currentTarget.style.background='transparent')}
+                  >
+                    <div style={{ width:36, height:36, borderRadius:11, background:r.color||'var(--border)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, color:'#fff', flexShrink:0 }}>
+                      {r.tipo==='alumno' ? r.titulo.split(' ').map((n:string)=>n[0]).slice(0,2).join('').toUpperCase()
+                       : r.tipo==='curso' ? r.titulo.slice(0,2).toUpperCase()
+                       : r.titulo[0].toUpperCase()}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:'14px',fontWeight:600,color:'var(--text)'}}>{r.titulo}</div>
+                      <div style={{fontSize:'12px',color:'var(--text3)',marginTop:'1px'}}>{r.sub} · {r.tipo==='alumno'?'Alumno':r.tipo==='curso'?'Curso':'Colaborador'}</div>
+                    </div>
+                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="var(--text3)" strokeWidth="2"><path d="M7 5l5 5-5 5"/></svg>
+                  </button>
+                ))}
+              </div>
+            )}
+            {busqGlobalQ.length >= 2 && !busqLoading && busqResultados.length === 0 && (
+              <div style={{ padding:'24px', textAlign:'center', color:'var(--text3)', fontSize:'13px' }}>Sin resultados para "{busqGlobalQ}"</div>
+            )}
+            {!busqGlobalQ && (
+              <div style={{ padding:'20px 16px', color:'var(--text3)', fontSize:'13px' }}>Escribí el nombre de un alumno, curso o docente</div>
+            )}
+          </div>
+        </div>
+      )}
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+
       {navEditOpen && (() => {
         // IDs actualmente en la barra (los primeros MAX_NAV del orden actual)
         const navActivos = navOrdered.slice(0, MAX_NAV).map(n => n.id)
