@@ -124,20 +124,30 @@ export default function Horarios() {
 
       {/* Chips de resumen por día */}
       {(vista === 'semana' || esProfesora) && !filtroProf && (
-        <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:'6px',marginBottom:'12px'}}>
-          {DIAS_S.map((d, di) => (
-            <div key={d} style={{textAlign:'center',padding:'6px 4px',background:totalesPorDia[di]>0?'var(--vl)':'var(--bg)',borderRadius:'10px',border:`1px solid ${totalesPorDia[di]>0?'#d4a8e8':'var(--border)'}`}}>
-              <div style={{fontSize:'10px',fontWeight:700,color:totalesPorDia[di]>0?'var(--v)':'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em'}}>{d}</div>
-              {totalesPorDia[di] > 0 ? (
-                <>
-                  <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)',lineHeight:1.2,marginTop:'2px'}}>{totalesPorDia[di]}</div>
-                  <div style={{fontSize:'9px',color:'var(--text3)',marginTop:'1px'}}>{totalAlumnosDia[di]} al.</div>
-                </>
-              ) : (
-                <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'4px',fontStyle:'italic'}}>libre</div>
-              )}
-            </div>
-          ))}
+        <div style={{display:'flex',flexDirection:'column',gap:'4px',marginBottom:'14px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'10px 14px'}}>
+          {DIAS.map((diaCompleto, di) => {
+            const cant = totalesPorDia[di]
+            const alumnos = totalAlumnosDia[di]
+            if (cant === 0) return null
+            return (
+              <div key={diaCompleto} style={{display:'flex',alignItems:'center',gap:'8px',padding:'6px 0',borderBottom:di<5&&totalesPorDia.slice(di+1).some(v=>v>0)?'1px solid var(--border)':'none'}}>
+                <div style={{width:'70px',fontSize:'12px',fontWeight:700,color:'var(--v)',flexShrink:0}}>{diaCompleto}</div>
+                <div style={{flex:1,fontSize:'13px',color:'var(--text2)'}}>
+                  <span style={{fontWeight:600,color:'var(--text)'}}>{cant}</span> clase{cant!==1?'s':''} · <span style={{fontWeight:600,color:'var(--text)'}}>{alumnos}</span> alumno{alumnos!==1?'s':''}
+                </div>
+                <div style={{display:'flex',gap:'3px'}}>
+                  {slots.filter((s:any)=>s.dia_semana===di).slice(0,4).map((s:any,i:number)=>{
+                    const prof = profesoras.find((p:any)=>p.id===s.profesora_id)
+                    const col = prof?.color ?? '#888'
+                    return <div key={i} style={{width:'8px',height:'8px',borderRadius:'50%',background:col,flexShrink:0}} title={s.curso_nombre}/>
+                  })}
+                </div>
+              </div>
+            )
+          })}
+          {totalesPorDia.every(v=>v===0) && (
+            <div style={{fontSize:'13px',color:'var(--text3)',textAlign:'center',padding:'8px 0'}}>Sin horarios cargados</div>
+          )}
         </div>
       )}
 
