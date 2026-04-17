@@ -65,7 +65,7 @@ export default function LoginPage() {
       <div style={s.page}>
         <div style={s.card}>
           <div style={s.logoWrap}>
-            <div style={s.logoIcon}>NE</div>
+            <div style={s.logoIcon}>{(process.env.NEXT_PUBLIC_INSTITUTO_SIGLA || 'NE')}</div>
           </div>
           <h1 style={s.title}>Recuperar contraseña</h1>
 
@@ -128,10 +128,10 @@ export default function LoginPage() {
     <div style={s.page}>
       <div style={s.card}>
         <div style={s.logoWrap}>
-          <div style={s.logoIcon}>NE</div>
+          <div style={s.logoIcon}>{(process.env.NEXT_PUBLIC_INSTITUTO_SIGLA || 'NE')}</div>
         </div>
         <h1 style={s.title}>Iniciar sesión</h1>
-        <p style={s.subtitle}>Panel de gestión del instituto</p>
+        <p style={s.subtitle}>{process.env.NEXT_PUBLIC_INSTITUTO_NOMBRE || 'Panel de gestión del instituto'}</p>
 
         <form onSubmit={handleLogin}>
           <div style={s.field}>
