@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next'
 import { AuthProvider } from '@/lib/auth-context'
-import { ErrorBoundary, DebugPanel } from '@/lib/debug'
+import { ErrorBoundary } from '@/lib/debug'
 import './globals.css'
 
 // Inter se carga via CSS en globals.css con @import de Google Fonts
@@ -36,7 +36,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             {children}
           </AuthProvider>
         </ErrorBoundary>
-        <DebugPanel />
       </body>
     </html>
   )
