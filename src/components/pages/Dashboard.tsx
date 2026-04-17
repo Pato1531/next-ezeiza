@@ -271,22 +271,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {alertasAusencia.length > 0 && (
-          <div style={{marginBottom:'18px'}}>
-            <SL style={{marginBottom:'10px'}}>Alertas de ausencias</SL>
-            {alertasAusencia.map((al:any,i:number) => (
-              <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'11px 14px',background:'var(--white)',border:'1.5px solid #f5c5c5',borderRadius:'14px',marginBottom:'8px'}}>
-                <Av color={al.color} nombre={al.nombre} apellido={al.apellido} size={36} />
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:'13.5px',fontWeight:600}}>{al.nombre} {al.apellido}</div>
-                  <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'1px'}}>{al.consecutivas} ausencias consecutivas</div>
-                </div>
-                <span style={{padding:'3px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:'var(--redl)',color:'var(--red)',flexShrink:0}}>⚠ {al.consecutivas}+ faltas</span>
-              </div>
-            ))}
-          </div>
-        )}
-
         <SL style={{marginBottom:'10px'}}>{diaHoy ? `Clases de hoy · ${diaHoy}` : 'Clases del día'}</SL>
         {cursosHoy.length === 0 ? (
           <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'20px',textAlign:'center',color:'var(--text3)',marginBottom:'18px'}}>
