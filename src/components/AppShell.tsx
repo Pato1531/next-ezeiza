@@ -4,6 +4,7 @@ import React, { useState, useEffect, lazy, Suspense } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useComunicados } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
+import { ToastProvider, showToast } from './Toast'
 import Dashboard from './pages/Dashboard'
 import Alumnos from './pages/Alumnos'
 import Cursos from './pages/Cursos'
@@ -113,6 +114,19 @@ export default function AppShell() {
   const [vistosLocal, setVistosLocal] = useState<string[]>([])
   const [atencionBadge, setAtencionBadge] = useState(0)
   const [onboardingVisto, setOnboardingVisto] = useState<Set<string>>(new Set())
+  const [navCustom, setNavCustom] = useState<string[] | null>(null)
+  const [navEditOpen, setNavEditOpen] = useState(false)
+
+  // Toast global: escuchar pago-registrado
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent).detail
+      if (d?.nombre) showToast(`\u2713 Pago de ${d.nombre} registrado`)
+      else showToast('\u2713 Pago registrado')
+    }
+    window.addEventListener('pago-registrado', handler)
+    return () => window.removeEventListener('pago-registrado', handler)
+  }, [])
 
   // Ajustar página inicial según permisos del usuario (solo en cliente)
   useEffect(() => {
@@ -140,6 +154,14 @@ export default function AppShell() {
       const saved = JSON.parse(localStorage.getItem(`comunicados_vistos_${usuario.id}`) || '[]')
       setVistosLocal(saved)
     } catch { setVistosLocal([]) }
+  }, [usuario?.id])
+
+  useEffect(() => {
+    if (!usuario) return
+    try {
+      const saved = JSON.parse(localStorage.getItem(`nav_custom_${usuario.id}`) || 'null')
+      if (Array.isArray(saved) && saved.length >= 3) setNavCustom(saved)
+    } catch {}
   }, [usuario?.id])
 
   useEffect(() => {
@@ -189,9 +211,19 @@ export default function AppShell() {
 
   const allAllowed = ALL_NAV.filter(n => puedeVer(n.id))
   const MAX_NAV = 5
-  const navItems = allAllowed.slice(0, MAX_NAV)
-  const masItems = allAllowed.slice(MAX_NAV)
+  // Nav personalizado: reordenar según preferencia del usuario
+  const navOrdered = navCustom
+    ? [...navCustom.filter(id => allAllowed.some(n => n.id === id)).map(id => allAllowed.find(n => n.id === id)!),
+       ...allAllowed.filter(n => !navCustom.includes(n.id))]
+    : allAllowed
+  const navItems = navOrdered.slice(0, MAX_NAV)
+  const masItems = navOrdered.slice(MAX_NAV)
   const hayMas = masItems.length > 0
+
+  const saveNavCustom = (ids: string[]) => {
+    setNavCustom(ids)
+    try { localStorage.setItem(`nav_custom_${usuario?.id}`, JSON.stringify(ids)) } catch {}
+  }
 
   const rs = ROLE_STYLES[usuario.rol] ?? ROLE_STYLES.profesora
 
@@ -210,6 +242,7 @@ export default function AppShell() {
   }
 
   return (
+    <ToastProvider>
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
 
       {/* TOPBAR */}
@@ -229,6 +262,9 @@ export default function AppShell() {
           <div style={{ padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, background: rs.bg, color: rs.color }}>
             {ROLE_LABELS[usuario.rol]}
           </div>
+          <button onClick={() => setNavEditOpen(true)} title="Personalizar navegación" style={{ width:'32px', height:'32px', borderRadius:'10px', background:'var(--bg)', border:'1px solid var(--border)', color:'var(--text2)', fontSize:'16px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            ⚙
+          </button>
           <button onClick={() => navTo('perfil')} style={{ width: '36px', height: '36px', borderRadius: '12px', background: usuario.color, border: 'none', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
             {usuario.initials}
           </button>
@@ -323,6 +359,50 @@ export default function AppShell() {
           </button>
         )}
       </nav>
+
+      {/* EDITOR NAV PERSONALIZADO */}
+      {navEditOpen && (
+        <div style={{ position:'fixed', inset:0, zIndex:200, background:'rgba(20,0,40,.45)', display:'flex', alignItems:'flex-end', justifyContent:'center' }} onClick={() => setNavEditOpen(false)}>
+          <div style={{ background:'var(--white)', borderRadius:'24px 24px 0 0', padding:'24px 20px 40px', width:'100%', maxWidth:'480px' }} onClick={e => e.stopPropagation()}>
+            <div style={{ width:'40px', height:'4px', background:'var(--border)', borderRadius:'2px', margin:'0 auto 16px' }} />
+            <div style={{ fontSize:'16px', fontWeight:700, marginBottom:'6px' }}>Personalizar navegación</div>
+            <div style={{ fontSize:'13px', color:'var(--text2)', marginBottom:'16px' }}>Los primeros 5 aparecen en la barra. Tocá para reorganizar.</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+              {allAllowed.map((item, idx) => {
+                const pos = navCustom ? navCustom.indexOf(item.id) : idx
+                const enNav = (navCustom ? navCustom.slice(0,5) : allAllowed.slice(0,5).map(n => n.id)).includes(item.id)
+                return (
+                  <div key={item.id} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'11px 14px', background:enNav ? 'var(--vl)' : 'var(--white)', border:`1.5px solid ${enNav ? 'var(--v)' : 'var(--border)'}`, borderRadius:'12px' }}>
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke={enNav ? 'var(--v)' : 'var(--text3)'} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                      {item.icon.split('M').filter(Boolean).map((d: string, i: number) => <path key={i} d={`M${d}`} />)}
+                    </svg>
+                    <span style={{ flex:1, fontSize:'14px', fontWeight:600, color: enNav ? 'var(--v)' : 'var(--text)' }}>{item.label}</span>
+                    {enNav && <span style={{ fontSize:'11px', color:'var(--v)', fontWeight:600 }}>Nav</span>}
+                    <div style={{ display:'flex', flexDirection:'column', gap:'4px' }}>
+                      <button disabled={idx===0} onClick={() => {
+                        const cur = navCustom || allAllowed.map(n => n.id)
+                        const i = cur.indexOf(item.id); if(i<=0) return
+                        const next = [...cur]; [next[i-1],next[i]] = [next[i],next[i-1]]; saveNavCustom(next)
+                      }} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text3)', fontSize:'14px', lineHeight:1, padding:'1px 4px', opacity:idx===0?0.3:1 }}>↑</button>
+                      <button disabled={idx===allAllowed.length-1} onClick={() => {
+                        const cur = navCustom || allAllowed.map(n => n.id)
+                        const i = cur.indexOf(item.id); if(i<0||i>=cur.length-1) return
+                        const next = [...cur]; [next[i],next[i+1]] = [next[i+1],next[i]]; saveNavCustom(next)
+                      }} style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text3)', fontSize:'14px', lineHeight:1, padding:'1px 4px', opacity:idx===allAllowed.length-1?0.3:1 }}>↓</button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <button onClick={() => { saveNavCustom(allAllowed.map(n => n.id)); setNavEditOpen(false) }}
+              style={{ width:'100%', marginTop:'16px', padding:'12px', background:'transparent', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontWeight:600, cursor:'pointer', color:'var(--text2)' }}>
+              Restablecer orden
+            </button>
+          </div>
+        </div>
+      )}
+
     </div>
+    </ToastProvider>
   )
 }
