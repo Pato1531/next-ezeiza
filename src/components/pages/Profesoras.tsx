@@ -19,7 +19,7 @@ export default function Profesoras() {
   const { usuario } = useAuth()
   const [vista, setVista] = useState<Vista>('lista')
   const [selId, setSelId] = useState<string|null>(null)
-  const [tab, setTab] = useState<'datos'|'asistencia'|'licencias'|'liquidacion'>('datos')
+  const [tab, setTab] = useState<'datos'|'licencias'|'liquidacion'>('datos')
   const [form, setForm] = useState<any>(null)
   const [guardando, setGuardando] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -226,7 +226,7 @@ export default function Profesoras() {
 
         <div style={{display:'flex',gap:'6px',marginBottom:'18px',overflowX:'auto'}}>
           <TabBtn active={tab==='datos'} onClick={() => setTab('datos')}>Datos</TabBtn>
-          <TabBtn active={tab==='asistencia'} onClick={() => setTab('asistencia')}>Asistencia</TabBtn>
+
           {puedeEditar && <>
             <TabBtn active={tab==='licencias'} onClick={() => setTab('licencias')}>Licencias</TabBtn>
             <TabBtn active={tab==='liquidacion'} onClick={() => setTab('liquidacion')}>Liquidación</TabBtn>
@@ -250,17 +250,7 @@ export default function Profesoras() {
           <FieldRO label="Horas por semana" value={`${sel.horas_semana}hs`} />
         </Card>}
 
-        {tab === 'asistencia' && <Card>
-          <SL style={{marginBottom:'14px'}}>Asistencia 2025</SL>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(6,1fr)',gap:'8px'}}>
-            {MESES_S.map(m => (
-              <div key={m}>
-                <div style={{fontSize:'10px',color:'var(--text3)',textAlign:'center',marginBottom:'5px',fontWeight:500}}>{m}</div>
-                <div style={{height:'52px',borderRadius:'10px',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,background:'var(--greenl)',color:'var(--green)'}}>95%</div>
-              </div>
-            ))}
-          </div>
-        </Card>}
+        
 
         {tab === 'licencias' && <Card>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}}>
