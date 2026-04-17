@@ -12,6 +12,7 @@ interface Resultado {
   url: string
   email: string
   password: string
+  instituto_id: string
 }
 
 const IS = {
@@ -68,7 +69,7 @@ export default function AdminPage() {
     setError('')
 
     try {
-      const res = await fetch('/api/registro', {
+      const res = await fetch('/api/admin-crear-sede', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -87,9 +88,10 @@ export default function AdminPage() {
       setResultado({
         instituto: json.instituto?.nombre || instNombre,
         slug: json.instituto?.slug || instSlug,
-        url: `https://next-${json.instituto?.slug || instSlug}.vercel.app`,
+        url: `https://${json.instituto?.slug || instSlug}.vercel.app`,
         email: dirEmail.trim().toLowerCase(),
         password: dirPass,
+        instituto_id: json.instituto_id || '',
       })
       setEstado('done')
       setStep('success')
@@ -154,6 +156,7 @@ export default function AdminPage() {
         <div style={{ background: '#f9f5fd', borderRadius: '12px', padding: '16px', marginBottom: '16px' }}>
           <div style={{ fontSize: '11px', fontWeight: 700, color: '#652f8d', textTransform: 'uppercase', letterSpacing: '.06em', marginBottom: '12px' }}>Datos para entregar al cliente</div>
           {[
+            { label: 'Instituto ID (para Vercel)', val: resultado.instituto_id, mono: true },
             { label: 'URL de acceso', val: resultado.url, mono: true },
             { label: 'Email director', val: resultado.email, mono: true },
             { label: 'Contraseña inicial', val: resultado.password, mono: true },
@@ -232,7 +235,7 @@ export default function AdminPage() {
               <input style={IS} value={instSlug}
                 onChange={e => { setInstSlug(e.target.value); setSlugManual(true) }}
                 placeholder="palermo" />
-              <div style={{ fontSize: '10px', color: '#9b8eaa', marginTop: '3px' }}>next-{instSlug || 'slug'}.vercel.app</div>
+              <div style={{ fontSize: '10px', color: '#9b8eaa', marginTop: '3px' }}>{instSlug || 'mi-instituto'}.vercel.app</div>
             </div>
             <div>
               <div style={{ fontSize: '11px', fontWeight: 600, color: '#9b8eaa', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '4px' }}>Plan</div>
