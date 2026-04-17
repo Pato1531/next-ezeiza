@@ -14,6 +14,8 @@ export default function CuotasPorCurso() {
   const [nuevaCuota, setNuevaCuota] = useState('')
   const [aplicando, setAplicando] = useState(false)
   const [resultado, setResultado] = useState<{ ok: number; err: number } | null>(null)
+  const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
+  const [modoAplicar, setModoAplicar] = useState<'todos'|'seleccion'>('todos')
 
   // Cargar alumnos del curso seleccionado
   useEffect(() => {
@@ -30,6 +32,8 @@ export default function CuotasPorCurso() {
       setLoadingAlumnos(false)
       setResultado(null)
       setNuevaCuota('')
+      setSeleccionados(new Set())
+      setModoAplicar('todos')
     }
     cargar()
   }, [selCursoId])
@@ -47,13 +51,17 @@ export default function CuotasPorCurso() {
   const aplicarCuota = async () => {
     const cuota = parseFloat(nuevaCuota)
     if (isNaN(cuota) || cuota <= 0) return alert('Ingresá un monto válido mayor a 0')
-    if (!window.confirm(`¿Aplicar $${cuota.toLocaleString('es-AR')} a los ${alumnosCurso.length} alumnos de ${cursoSel?.nombre}?`)) return
+    const destino = modoAplicar === 'seleccion' && seleccionados.size > 0
+      ? alumnosCurso.filter(a => seleccionados.has(a.id))
+      : alumnosCurso
+    if (destino.length === 0) return alert('Seleccioná al menos un alumno')
+    if (!window.confirm(`¿Aplicar $${cuota.toLocaleString('es-AR')} a ${destino.length} alumno${destino.length!==1?'s':''}?`)) return
 
     setAplicando(true)
     const sb = createClient()
     let ok = 0, err = 0
 
-    for (const al of alumnosCurso) {
+    for (const al of destino) {
       try {
         // Guardar en historial
         await sb.from('cuotas_historial').insert({
@@ -70,7 +78,8 @@ export default function CuotasPorCurso() {
     }
 
     // Actualizar estado local
-    setAlumnosCurso(prev => prev.map(a => ({ ...a, cuota_mensual: cuota })))
+    const idsActualizados = new Set(destino.map((a:any) => a.id))
+    setAlumnosCurso(prev => prev.map(a => idsActualizados.has(a.id) ? { ...a, cuota_mensual: cuota } : a))
     setResultado({ ok, err })
     setAplicando(false)
     if (ok > 0) setNuevaCuota('')
@@ -140,8 +149,19 @@ export default function CuotasPorCurso() {
 
               {/* Actualización masiva */}
               <div style={{background:'var(--vl)',border:'1.5px solid var(--v)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
-                <div style={{fontSize:'13px',fontWeight:700,color:'var(--v)',marginBottom:'10px'}}>
-                  Actualizar cuota de todos los alumnos del curso
+                <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px',flexWrap:'wrap',gap:'8px'}}>
+                  <div style={{fontSize:'13px',fontWeight:700,color:'var(--v)'}}>Actualizar cuota</div>
+                  <div style={{display:'flex',gap:'4px'}}>
+                    {(['todos','seleccion'] as const).map(m => (
+                      <button key={m} onClick={() => setModoAplicar(m)}
+                        style={{padding:'5px 12px',borderRadius:'20px',fontSize:'12px',fontWeight:600,cursor:'pointer',border:'1.5px solid',
+                          borderColor: modoAplicar===m ? 'var(--v)' : 'var(--border)',
+                          background: modoAplicar===m ? 'var(--v)' : 'var(--white)',
+                          color: modoAplicar===m ? '#fff' : 'var(--text2)'}}>
+                        {m === 'todos' ? `Todos (${alumnosCurso.length})` : `Selección (${seleccionados.size})`}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div style={{display:'flex',gap:'8px',alignItems:'flex-start',flexWrap:'wrap'}}>
                   <div style={{flex:1,minWidth:'140px'}}>
@@ -167,7 +187,7 @@ export default function CuotasPorCurso() {
                       whiteSpace:'nowrap',
                     }}
                   >
-                    {aplicando ? 'Aplicando...' : `Aplicar a ${alumnosCurso.length} alumnos`}
+                    {aplicando ? 'Aplicando...' : modoAplicar === 'seleccion' && seleccionados.size > 0 ? `Aplicar a ${seleccionados.size} seleccionados` : `Aplicar a ${alumnosCurso.length} alumnos`}
                   </button>
                 </div>
                 <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'8px'}}>
@@ -189,12 +209,22 @@ export default function CuotasPorCurso() {
 
               {/* Lista individual editable */}
               <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',overflow:'hidden'}}>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 140px',background:'var(--bg)',borderBottom:'1.5px solid var(--border)',padding:'10px 16px'}}>
+                <div style={{display:'grid',gridTemplateColumns:'36px 1fr 140px',background:'var(--bg)',borderBottom:'1.5px solid var(--border)',padding:'10px 16px',alignItems:'center'}}>
+                  <input type="checkbox"
+                    checked={seleccionados.size === alumnosCurso.length && alumnosCurso.length > 0}
+                    onChange={e => setSeleccionados(e.target.checked ? new Set(alumnosCurso.map((a:any)=>a.id)) : new Set())}
+                    style={{width:16,height:16,cursor:'pointer'}}
+                  />
                   <div style={{fontSize:'10px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase'}}>Alumno</div>
                   <div style={{fontSize:'10px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',textAlign:'center'}}>Cuota mensual</div>
                 </div>
                 {alumnosCurso.map((a: any) => (
-                  <div key={a.id} style={{display:'grid',gridTemplateColumns:'1fr 140px',padding:'10px 16px',borderBottom:'1px solid var(--border)',alignItems:'center'}}>
+                  <div key={a.id} style={{display:'grid',gridTemplateColumns:'36px 1fr 140px',padding:'10px 16px',borderBottom:'1px solid var(--border)',alignItems:'center',background:seleccionados.has(a.id)?'var(--vl)':'transparent'}}>
+                    <input type="checkbox"
+                      checked={seleccionados.has(a.id)}
+                      onChange={e => setSeleccionados(prev => { const n = new Set(prev); e.target.checked ? n.add(a.id) : n.delete(a.id); return n })}
+                      style={{width:16,height:16,cursor:'pointer'}}
+                    />
                     <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
                       <div style={{width:32,height:32,borderRadius:'10px',background:a.color||'#652f8d',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}}>
                         {a.nombre?.[0]}{a.apellido?.[0]}
