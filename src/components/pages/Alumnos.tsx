@@ -275,7 +275,14 @@ export default function Alumnos() {
   if (vista === 'lista') return (
     <div className="fade-in">
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}}>
-        <SL>{alumnos.length} alumnos</SL>
+        <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+          <SL>{alumnos.length} alumnos</SL>
+          {puedeVerPagos && (
+            <span style={{padding:'2px 9px',borderRadius:'20px',fontSize:'11px',fontWeight:600,background:'var(--vl)',color:'var(--v)',border:'1px solid #d4a8e8'}}>
+              {mesFiltroNombre}
+            </span>
+          )}
+        </div>
         <div style={{display:'flex',gap:'8px'}}>
           {puedeEditar && (
             <button onClick={() => setVista('pagos_masivos')} style={{padding:'9px 14px',background:'var(--white)',color:'var(--green)',border:'1.5px solid var(--green)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
@@ -377,14 +384,20 @@ export default function Alumnos() {
         const sinCurso = alumnosSinCurso.has(a.id)
         return (
           <ListItem key={a.id} onClick={() => irADetalle(a.id)}>
-            <div style={{position:'relative',flexShrink:0}}>
-              <Av color={a.color} size={44}>{a.nombre[0]}{a.apellido[0]}</Av>
-              <div style={{position:'absolute',bottom:0,right:0,width:'13px',height:'13px',borderRadius:'50%',background:pagado?'var(--green)':'var(--red)',border:'2px solid var(--white)'}} title={pagado?`Pagó ${mesActual}`:`Sin pago ${mesActual}`} />
-            </div>
+            <Av color={a.color} size={44}>{a.nombre[0]}{a.apellido[0]}</Av>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:'15px',fontWeight:600}}>{a.nombre} {a.apellido}</div>
-              <div style={{display:'flex',gap:'5px',marginTop:'4px',flexWrap:'wrap'}}>
+              <div style={{display:'flex',gap:'5px',marginTop:'5px',flexWrap:'wrap',alignItems:'center'}}>
                 <span style={{padding:'2px 7px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:col?.bg,color:col?.text}}>{a.nivel}</span>
+                {puedeVerPagos && (
+                  <span style={{padding:'2px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:700,
+                    background: pagado ? 'var(--greenl)' : 'var(--redl)',
+                    color: pagado ? 'var(--green)' : 'var(--red)',
+                    border: `1px solid ${pagado ? 'var(--green)' : '#f5c5c5'}`
+                  }}>
+                    {pagado ? `✓ ${mesFiltroNombre}` : `✗ ${mesFiltroNombre}`}
+                  </span>
+                )}
                 {a.es_menor && <span style={{padding:'2px 7px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:'#E0F0F7',color:'#1a6b8a'}}>Menor</span>}
                 {sinCurso && <span style={{padding:'2px 7px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:'var(--amberl)',color:'var(--amber)'}}>Sin curso</span>}
               </div>
