@@ -45,7 +45,9 @@ const ModalSheet = ({title,children,onClose}:any) => (
 )
 
 
-type Vista = 'lista' | 'detalle' | 'form' | 'baja' | 'bajas_historicas' | 'pagos_masivos'
+import { showToast } from '../Toast'
+
+type Vista = 'lista' | 'detalle' | 'form' | 'baja' | 'bajas_historicas' | 'pagos_masivos' | 'renovacion_matricula'
 
 export default function Alumnos() {
   const { alumnos: todosAlumnos, loading, actualizar, agregar, recargar } = useAlumnos()
@@ -74,6 +76,7 @@ export default function Alumnos() {
   const [selId, setSelId] = useState<string|null>(null)
   const [tab, setTab] = useState<'datos'|'pagos'>('datos')
   const [form, setForm] = useState<any>(null)
+  const [formStep, setFormStep] = useState(0)
   const [guardando, setGuardando] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [busqueda, setBusqueda] = useState('')
@@ -125,6 +128,14 @@ export default function Alumnos() {
   const [loadingBajas, setLoadingBajas] = useState(false)
   const [pago, setPago] = useState({ mes: MESES[new Date().getMonth()], anio: new Date().getFullYear(), monto: 0, metodo:'Efectivo', fecha_pago: new Date().toISOString().split('T')[0], observaciones:'' })
 
+  const [renovacionMes, setRenovacionMes] = useState(new Date().getMonth())
+  const [renovacionAnio, setRenovacionAnio] = useState(new Date().getFullYear())
+  const [renovacionMonto, setRenovacionMonto] = useState('')
+  const [renovacionMetodo, setRenovacionMetodo] = useState('Efectivo')
+  const [renovacionSeleccionados, setRenovacionSeleccionados] = useState<Set<string>>(new Set())
+  const [renovacionAplicando, setRenovacionAplicando] = useState(false)
+  const [renovacionResultado, setRenovacionResultado] = useState<{ok:number;err:number}|null>(null)
+
   const puedeVerPagos = ['director','coordinadora','secretaria'].includes(usuario?.rol||'')
   const puedeEditar = usuario?.rol !== 'profesora'
   const selLive = alumnos.find(a => a.id === selId)
@@ -145,9 +156,10 @@ export default function Alumnos() {
   }
   const irAFormNuevo = () => {
     setForm({ nombre:'', apellido:'', dni:'', edad:0, fecha_nacimiento:'', fecha_alta:new Date().toISOString().split('T')[0], matricula:0, telefono:'', email:'', nivel:'Básico', cuota_mensual:0, es_menor:false, padre_nombre:'', padre_telefono:'', padre_email:'', padre_dni:'', color: COLORES[alumnos.length % COLORES.length] })
+    setFormStep(0)
     setVista('form')
   }
-  const irAFormEditar = () => { if (sel) { setForm({...sel}); setVista('form') } }
+  const irAFormEditar = () => { if (sel) { setForm({...sel}); setFormStep(0); setVista('form') } }
 
   const guardar = async () => {
     if (!form?.nombre || !form?.apellido) return alert('Nombre y apellido son obligatorios')
@@ -263,6 +275,12 @@ export default function Alumnos() {
             <button onClick={() => setVista('pagos_masivos')} style={{padding:'9px 14px',background:'var(--white)',color:'var(--green)',border:'1.5px solid var(--green)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
               <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2H4a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/><path d="M14 2v6h6M10 12v4M8 14h4"/></svg>
               Pagos
+            </button>
+          )}
+          {(usuario?.rol === 'director' || usuario?.rol === 'secretaria') && (
+            <button onClick={() => { setRenovacionSeleccionados(new Set()); setRenovacionResultado(null); setRenovacionMonto(''); setVista('renovacion_matricula') }} style={{padding:'9px 14px',background:'var(--white)',color:'#652f8d',border:'1.5px solid #652f8d',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
+              <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 9V7a5 5 0 00-10 0v2M5 9h10l1 9H4L5 9z"/></svg>
+              Matrícula
             </button>
           )}
           {puedeEditar && (
@@ -382,70 +400,135 @@ export default function Alumnos() {
     </div>
   )
 
-  // ── FORMULARIO ──
-  if (vista === 'form') return (
-    <div className="fade-in">
-      <BtnG sm onClick={() => form?.id ? irADetalle(form.id) : irALista()} style={{marginBottom:'20px'}}>← Cancelar</BtnG>
-      <div style={{fontSize:'20px',fontWeight:700,marginBottom:'20px'}}>{form?.id ? 'Editar alumno' : 'Nuevo alumno'}</div>
-      <Card>
-        <Row2>
-          <Field2 label="Nombre *"><Input value={form?.nombre||''} onChange={(v:string)=>setForm({...form,nombre:v})} /></Field2>
-          <Field2 label="Apellido *"><Input value={form?.apellido||''} onChange={(v:string)=>setForm({...form,apellido:v})} /></Field2>
-        </Row2>
-        <Row2>
-          <Field2 label="Fecha de nacimiento">
-            <input type="date" style={IS} value={form?.fecha_nacimiento||''} onChange={(e:any)=>{
-              const fn = e.target.value
-              const edad = fn ? Math.floor((Date.now() - new Date(fn).getTime()) / (365.25*24*60*60*1000)) : 0
-              setForm({...form, fecha_nacimiento:fn, edad})
-            }} />
-          </Field2>
-          <Field2 label="Teléfono"><Input value={form?.telefono||''} onChange={(v:string)=>setForm({...form,telefono:v})} /></Field2>
-        </Row2>
-        <Row2>
-          <Field2 label="DNI alumno"><Input value={form?.dni||''} onChange={(v:string)=>setForm({...form,dni:v})} placeholder="Sin puntos..." /></Field2>
-          <Field2 label="Fecha de alta">
-            <input type="date" style={IS} value={form?.fecha_alta||new Date().toISOString().split('T')[0]} onChange={(e:any)=>setForm({...form,fecha_alta:e.target.value})} />
-          </Field2>
-        </Row2>
-        <Field2 label="Email"><Input type="email" value={form?.email||''} onChange={(v:string)=>setForm({...form,email:v})} />
-        </Field2>
-        <Row2>
-          <Field2 label="Matrícula de inscripción ($)"><Input type="number" value={form?.matricula||''} onChange={(v:string)=>setForm({...form,matricula:+v})} /></Field2>
-          <Field2 label="Cuota mensual ($)"><Input type="number" value={form?.cuota_mensual||''} onChange={(v:string)=>setForm({...form,cuota_mensual:+v})} /></Field2>
-        </Row2>
-        <Row2>
-          <Field2 label="Nivel">
-            <select style={IS} value={form?.nivel||'Básico'} onChange={(e:any)=>setForm({...form,nivel:e.target.value})}>
-              {NIVELES.map(n=><option key={n}>{n}</option>)}
-            </select>
-          </Field2>
-          <Field2 label="¿Es menor de edad?">
-            <select style={IS} value={form?.es_menor?'si':'no'} onChange={(e:any)=>setForm({...form,es_menor:e.target.value==='si'})}>
-              <option value="no">No</option>
-              <option value="si">Sí</option>
-            </select>
-          </Field2>
-        </Row2>
-        {form?.es_menor && <>
-          <Row2>
-            <Field2 label="Nombre padre/madre"><Input value={form?.padre_nombre||''} onChange={(v:string)=>setForm({...form,padre_nombre:v})} /></Field2>
-            <Field2 label="DNI padre/madre"><Input value={form?.padre_dni||''} onChange={(v:string)=>setForm({...form,padre_dni:v})} placeholder="Sin puntos..." /></Field2>
-          </Row2>
-          <Row2>
-            <Field2 label="Tel. contacto"><Input value={form?.padre_telefono||''} onChange={(v:string)=>setForm({...form,padre_telefono:v})} /></Field2>
-            <Field2 label="Email contacto"><Input value={form?.padre_email||''} onChange={(v:string)=>setForm({...form,padre_email:v})} /></Field2>
-          </Row2>
-        </>}
-      </Card>
-      <div style={{display:'flex',gap:'10px',marginTop:'4px'}}>
-        <BtnG style={{flex:1}} onClick={() => form?.id ? irADetalle(form.id) : irALista()}>Cancelar</BtnG>
-        <BtnP style={{flex:2}} onClick={guardar} disabled={guardando}>
-          {guardando ? 'Guardando...' : form?.id ? 'Guardar cambios' : 'Crear alumno'}
-        </BtnP>
+  // ── FORMULARIO MULTI-STEP ──
+  if (vista === 'form') {
+    const esEdicion = !!form?.id
+    const STEPS_NUEVO = ['Datos básicos', 'Contacto', 'Académico', ...(form?.es_menor ? ['Tutor'] : [])]
+    const STEPS_EDICION = ['Datos']
+    const steps = esEdicion ? STEPS_EDICION : STEPS_NUEVO
+    const totalSteps = steps.length
+    const isLastStep = formStep === totalSteps - 1
+
+    const validarStep = () => {
+      if (formStep === 0 && (!form?.nombre?.trim() || !form?.apellido?.trim())) {
+        alert('Nombre y apellido son obligatorios'); return false
+      }
+      return true
+    }
+    const siguiente = () => { if (!validarStep()) return; if (isLastStep) guardar(); else setFormStep(s => s+1) }
+    const anterior = () => { if (formStep === 0) { esEdicion ? irADetalle(form.id) : irALista() } else setFormStep(s => s-1) }
+
+    return (
+      <div className="fade-in">
+        <BtnG sm onClick={anterior} style={{marginBottom:'16px'}}>← {formStep === 0 ? 'Cancelar' : 'Anterior'}</BtnG>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'20px'}}>
+          <div style={{fontSize:'20px',fontWeight:700}}>{esEdicion ? 'Editar alumno' : `Nuevo alumno`}</div>
+          {!esEdicion && (
+            <div style={{display:'flex',gap:'5px',alignItems:'center'}}>
+              {steps.map((_:any, i:number) => (
+                <div key={i} style={{width: i===formStep?20:8, height:8, borderRadius:4, background: i<=formStep?'var(--v)':'var(--border)', transition:'all .2s'}} />
+              ))}
+              <span style={{fontSize:'11px',color:'var(--text3)',marginLeft:'6px'}}>{formStep+1}/{totalSteps}</span>
+            </div>
+          )}
+        </div>
+        {!esEdicion && <div style={{fontSize:'12px',color:'var(--text2)',fontWeight:600,textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'14px'}}>{steps[formStep]}</div>}
+
+        <Card>
+          {/* STEP 0: Datos básicos */}
+          {(formStep === 0) && <>
+            <Row2>
+              <Field2 label="Nombre *"><Input value={form?.nombre||''} onChange={(v:string)=>setForm({...form,nombre:v})} /></Field2>
+              <Field2 label="Apellido *"><Input value={form?.apellido||''} onChange={(v:string)=>setForm({...form,apellido:v})} /></Field2>
+            </Row2>
+            <Row2>
+              <Field2 label="Fecha de nacimiento">
+                <input type="date" style={IS} value={form?.fecha_nacimiento||''} onChange={(e:any)=>{
+                  const fn = e.target.value
+                  const edad = fn ? Math.floor((Date.now() - new Date(fn).getTime()) / (365.25*24*60*60*1000)) : 0
+                  const esMenorAuto = edad < 18 && edad > 0
+                  setForm({...form, fecha_nacimiento:fn, edad, es_menor: esMenorAuto})
+                }} />
+              </Field2>
+              <Field2 label="DNI alumno"><Input value={form?.dni||''} onChange={(v:string)=>setForm({...form,dni:v})} placeholder="Sin puntos..." /></Field2>
+            </Row2>
+            <Field2 label="Fecha de alta">
+              <input type="date" style={IS} value={form?.fecha_alta||new Date().toISOString().split('T')[0]} onChange={(e:any)=>setForm({...form,fecha_alta:e.target.value})} />
+            </Field2>
+            {esEdicion && <>
+              <Row2>
+                <Field2 label="Teléfono"><Input value={form?.telefono||''} onChange={(v:string)=>setForm({...form,telefono:v})} /></Field2>
+                <Field2 label="Email"><Input type="email" value={form?.email||''} onChange={(v:string)=>setForm({...form,email:v})} /></Field2>
+              </Row2>
+              <Row2>
+                <Field2 label="Matrícula ($)"><Input type="number" value={form?.matricula||''} onChange={(v:string)=>setForm({...form,matricula:+v})} /></Field2>
+                <Field2 label="Cuota mensual ($)"><Input type="number" value={form?.cuota_mensual||''} onChange={(v:string)=>setForm({...form,cuota_mensual:+v})} /></Field2>
+              </Row2>
+              <Row2>
+                <Field2 label="Nivel"><select style={IS} value={form?.nivel||'Básico'} onChange={(e:any)=>setForm({...form,nivel:e.target.value})}>{NIVELES.map(n=><option key={n}>{n}</option>)}</select></Field2>
+                <Field2 label="¿Es menor?"><select style={IS} value={form?.es_menor?'si':'no'} onChange={(e:any)=>setForm({...form,es_menor:e.target.value==='si'})}><option value="no">No</option><option value="si">Sí</option></select></Field2>
+              </Row2>
+              {form?.es_menor && <>
+                <Row2>
+                  <Field2 label="Nombre tutor"><Input value={form?.padre_nombre||''} onChange={(v:string)=>setForm({...form,padre_nombre:v})} /></Field2>
+                  <Field2 label="DNI tutor"><Input value={form?.padre_dni||''} onChange={(v:string)=>setForm({...form,padre_dni:v})} /></Field2>
+                </Row2>
+                <Row2>
+                  <Field2 label="Tel. tutor"><Input value={form?.padre_telefono||''} onChange={(v:string)=>setForm({...form,padre_telefono:v})} /></Field2>
+                  <Field2 label="Email tutor"><Input value={form?.padre_email||''} onChange={(v:string)=>setForm({...form,padre_email:v})} /></Field2>
+                </Row2>
+              </>}
+            </>}
+          </>}
+
+          {/* STEP 1 nuevo: Contacto */}
+          {!esEdicion && formStep === 1 && <>
+            <Row2>
+              <Field2 label="Teléfono"><Input value={form?.telefono||''} onChange={(v:string)=>setForm({...form,telefono:v})} /></Field2>
+              <Field2 label="Email"><Input type="email" value={form?.email||''} onChange={(v:string)=>setForm({...form,email:v})} /></Field2>
+            </Row2>
+            {form?.edad && form.edad > 0 && (
+              <div style={{padding:'10px 14px',background: form.es_menor?'var(--amberl)':'var(--greenl)',borderRadius:'10px',fontSize:'13px',color:form.es_menor?'var(--amber)':'var(--green)',fontWeight:500,marginBottom:'8px'}}>
+                {form.es_menor ? `⚠ Alumno menor de edad (${form.edad} años) — se pedirán datos del tutor` : `✓ Mayor de edad (${form.edad} años)`}
+              </div>
+            )}
+            {!form?.fecha_nacimiento && <Field2 label="¿Es menor de edad?"><select style={IS} value={form?.es_menor?'si':'no'} onChange={(e:any)=>setForm({...form,es_menor:e.target.value==='si'})}><option value="no">No</option><option value="si">Sí</option></select></Field2>}
+          </>}
+
+          {/* STEP 2 nuevo: Académico */}
+          {!esEdicion && formStep === 2 && <>
+            <Row2>
+              <Field2 label="Nivel"><select style={IS} value={form?.nivel||'Básico'} onChange={(e:any)=>setForm({...form,nivel:e.target.value})}>{NIVELES.map(n=><option key={n}>{n}</option>)}</select></Field2>
+              <Field2 label="Cuota mensual ($)"><Input type="number" value={form?.cuota_mensual||''} onChange={(v:string)=>setForm({...form,cuota_mensual:+v})} /></Field2>
+            </Row2>
+            <Field2 label="Matrícula de inscripción ($)"><Input type="number" value={form?.matricula||''} onChange={(v:string)=>setForm({...form,matricula:+v})} /></Field2>
+            <div style={{padding:'10px 14px',background:'var(--vl)',borderRadius:'10px',fontSize:'12px',color:'var(--text2)',marginTop:'4px'}}>
+              💡 Si ingresás un monto de matrícula, se registrará automáticamente como pago al crear el alumno.
+            </div>
+          </>}
+
+          {/* STEP 3 nuevo: Tutor (solo si es menor) */}
+          {!esEdicion && formStep === 3 && form?.es_menor && <>
+            <Row2>
+              <Field2 label="Nombre padre/madre *"><Input value={form?.padre_nombre||''} onChange={(v:string)=>setForm({...form,padre_nombre:v})} /></Field2>
+              <Field2 label="DNI tutor"><Input value={form?.padre_dni||''} onChange={(v:string)=>setForm({...form,padre_dni:v})} placeholder="Sin puntos..." /></Field2>
+            </Row2>
+            <Row2>
+              <Field2 label="Tel. contacto *"><Input value={form?.padre_telefono||''} onChange={(v:string)=>setForm({...form,padre_telefono:v})} /></Field2>
+              <Field2 label="Email contacto"><Input value={form?.padre_email||''} onChange={(v:string)=>setForm({...form,padre_email:v})} /></Field2>
+            </Row2>
+          </>}
+        </Card>
+
+        <div style={{display:'flex',gap:'10px',marginTop:'4px'}}>
+          {formStep > 0 && <BtnG style={{flex:1}} onClick={() => setFormStep(s=>s-1)}>← Anterior</BtnG>}
+          <BtnP style={{flex:2}} onClick={siguiente} disabled={guardando}>
+            {guardando ? 'Guardando...' : isLastStep ? (esEdicion ? 'Guardar cambios' : 'Crear alumno') : 'Siguiente →'}
+          </BtnP>
+        </div>
       </div>
-    </div>
-  )
+    )
+  }
 
   // ── DETALLE ──
   if (vista === 'detalle') {
@@ -615,6 +698,122 @@ export default function Alumnos() {
       ))}
     </div>
   )
+
+  // ── VISTA RENOVACIÓN DE MATRÍCULA ──
+  if (vista === 'renovacion_matricula') {
+    const MESES_LISTA2 = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+    const alumnosActivos = alumnos.filter((a:any) => (a as any).activo !== false)
+    const todosSeleccionados = alumnosActivos.length > 0 && renovacionSeleccionados.size === alumnosActivos.length
+    const toggleTodos = () => {
+      if (todosSeleccionados) setRenovacionSeleccionados(new Set())
+      else setRenovacionSeleccionados(new Set(alumnosActivos.map(a => a.id)))
+    }
+
+    const aplicarRenovacion = async () => {
+      const monto = parseFloat(renovacionMonto)
+      if (isNaN(monto) || monto <= 0) { alert('Ingresá un monto válido'); return }
+      if (renovacionSeleccionados.size === 0) { alert('Seleccioná al menos un alumno'); return }
+      const mesNombre = MESES_LISTA2[renovacionMes]
+      if (!window.confirm(`¿Registrar matrícula de $${monto.toLocaleString('es-AR')} a ${renovacionSeleccionados.size} alumno${renovacionSeleccionados.size!==1?'s':''}?`)) return
+      setRenovacionAplicando(true)
+      let ok = 0; let err = 0
+      const fechaHoy = new Date().toISOString().split('T')[0]
+      await Promise.all([...renovacionSeleccionados].map(async (alumno_id) => {
+        try {
+          const res = await fetch('/api/registrar-pago', {
+            method: 'POST', headers: apiHeaders(),
+            body: JSON.stringify({ alumno_id, mes: mesNombre, anio: renovacionAnio, monto, metodo: renovacionMetodo, fecha_pago: fechaHoy, tipo: 'matricula', observaciones: 'Renovación matrícula anual' })
+          })
+          if (res.ok) ok++; else err++
+        } catch { err++ }
+      }))
+      setRenovacionResultado({ ok, err })
+      setRenovacionAplicando(false)
+      showToast(`✓ ${ok} matrículas registradas`)
+      logActivity('Renovación matrícula masiva', 'Alumnos', `${ok} alumnos · $${monto.toLocaleString('es-AR')} · ${mesNombre} ${renovacionAnio}`)
+    }
+
+    return (
+      <div className="fade-in">
+        <BtnG sm onClick={irALista} style={{marginBottom:'20px'}}>← Volver</BtnG>
+        <div style={{fontSize:'20px',fontWeight:700,marginBottom:'6px'}}>Renovación de matrícula</div>
+        <div style={{fontSize:'13px',color:'var(--text2)',marginBottom:'20px'}}>Registrá la matrícula del ciclo lectivo a múltiples alumnos a la vez.</div>
+
+        {renovacionResultado ? (
+          <div style={{padding:'24px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',textAlign:'center'}}>
+            <div style={{fontSize:'40px',marginBottom:'12px'}}>✓</div>
+            <div style={{fontSize:'18px',fontWeight:700,marginBottom:'4px',color:'var(--green)'}}>{renovacionResultado.ok} matrículas registradas</div>
+            {renovacionResultado.err > 0 && <div style={{fontSize:'13px',color:'var(--red)',marginBottom:'8px'}}>{renovacionResultado.err} errores</div>}
+            <div style={{display:'flex',gap:'10px',justifyContent:'center',marginTop:'16px'}}>
+              <BtnG sm onClick={() => setRenovacionResultado(null)}>Otra renovación</BtnG>
+              <BtnP sm onClick={irALista}>Volver a alumnos</BtnP>
+            </div>
+          </div>
+        ) : (
+          <>
+            <Card>
+              <SL style={{marginBottom:'12px'}}>Configuración del pago</SL>
+              <Row2>
+                <Field2 label="Mes">
+                  <select style={IS} value={renovacionMes} onChange={e => setRenovacionMes(+e.target.value)}>
+                    {MESES_LISTA2.map((m,i) => <option key={m} value={i}>{m}</option>)}
+                  </select>
+                </Field2>
+                <Field2 label="Año">
+                  <input type="number" style={IS} value={renovacionAnio} onChange={e => setRenovacionAnio(+e.target.value)} min={2020} max={2035} />
+                </Field2>
+              </Row2>
+              <Row2>
+                <Field2 label="Monto matrícula ($)"><Input type="number" value={renovacionMonto} onChange={(v:string)=>setRenovacionMonto(v)} placeholder="Ej: 50000" /></Field2>
+                <Field2 label="Método">
+                  <select style={IS} value={renovacionMetodo} onChange={e => setRenovacionMetodo(e.target.value)}>
+                    {['Efectivo','Transferencia','Tarjeta','MercadoPago','Otro'].map(m=><option key={m}>{m}</option>)}
+                  </select>
+                </Field2>
+              </Row2>
+            </Card>
+
+            <Card>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px'}}>
+                <SL>Alumnos ({renovacionSeleccionados.size} seleccionados)</SL>
+                <button onClick={toggleTodos} style={{fontSize:'12px',fontWeight:600,color:'var(--v)',background:'none',border:'none',cursor:'pointer'}}>
+                  {todosSeleccionados ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                </button>
+              </div>
+              <div style={{maxHeight:'340px',overflowY:'auto',display:'flex',flexDirection:'column',gap:'6px'}}>
+                {alumnosActivos.map((a:any) => {
+                  const sel = renovacionSeleccionados.has(a.id)
+                  return (
+                    <div key={a.id} onClick={() => setRenovacionSeleccionados(prev => { const n = new Set(prev); sel ? n.delete(a.id) : n.add(a.id); return n })}
+                      style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',borderRadius:'12px',border:`1.5px solid ${sel?'var(--v)':'var(--border)'}`,background:sel?'var(--vl)':'var(--white)',cursor:'pointer',transition:'all .15s'}}>
+                      <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${sel?'var(--v)':'var(--border)'}`,background:sel?'var(--v)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                        {sel && <span style={{color:'#fff',fontSize:'12px',lineHeight:1}}>✓</span>}
+                      </div>
+                      <Av color={a.color} size={34}>{a.nombre[0]}{a.apellido[0]}</Av>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:'13.5px',fontWeight:600}}>{a.nombre} {a.apellido}</div>
+                        <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'1px'}}>{a.nivel}</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </Card>
+
+            {renovacionSeleccionados.size > 0 && renovacionMonto && (
+              <div style={{padding:'12px 16px',background:'var(--vl)',borderRadius:'12px',marginBottom:'14px',fontSize:'13px',color:'var(--v)',fontWeight:500}}>
+                Total a registrar: <strong>${(parseFloat(renovacionMonto)||0 * renovacionSeleccionados.size).toLocaleString('es-AR')}</strong> · {renovacionSeleccionados.size} alumno{renovacionSeleccionados.size!==1?'s':''}
+              </div>
+            )}
+
+            <BtnP onClick={aplicarRenovacion} disabled={renovacionAplicando || renovacionSeleccionados.size === 0 || !renovacionMonto} style={{width:'100%'}}>
+              {renovacionAplicando ? 'Registrando...' : `Registrar ${renovacionSeleccionados.size} matrícula${renovacionSeleccionados.size!==1?'s':''}`}
+            </BtnP>
+          </>
+        )}
+      </div>
+    )
+  }
 
   // ── VISTA PAGOS MASIVOS ──
   if (vista === 'pagos_masivos') return (
@@ -836,7 +1035,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
     setModalPago(false)
     if (resultado) {
       logActivity('Registró pago', 'Pagos', `${a.nombre} ${a.apellido} — ${pago.mes} ${pago.anio} — $${pago.monto}`)
-      window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: a.id } }))
+      window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: a.id, nombre: `${a.nombre} ${a.apellido}` } }))
       generarRecibo({ ...pago, alumno_id: a.id })
     }
   }
@@ -881,6 +1080,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
       <div style={{display:'flex',gap:'6px',marginBottom:'18px',overflowX:'auto'}}>
         <TabBtn active={tab==='datos'} onClick={() => setTab('datos')}>Datos</TabBtn>
         {puedeVerPagos && <TabBtn active={tab==='pagos'} onClick={() => setTab('pagos')}>Pagos ({pagos.length})</TabBtn>}
+        <TabBtn active={tab==='progreso'} onClick={() => setTab('progreso')}>Progreso</TabBtn>
       </div>
 
       {tab === 'datos' && <Card>
@@ -1029,6 +1229,82 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
         </div>
         {asignando && <div style={{textAlign:'center',padding:'12px',color:'var(--v)',fontSize:'13px',fontWeight:600}}>Asignando...</div>}
       </ModalSheet>}
+
+      {tab === 'progreso' && (
+        <div>
+          {/* Progreso académico del alumno */}
+          <Card>
+            <SL style={{marginBottom:'12px'}}>Nivel actual</SL>
+            <div style={{display:'flex',alignItems:'center',gap:'12px',padding:'12px',background:'var(--vl)',borderRadius:'12px',marginBottom:'16px'}}>
+              <div style={{width:44,height:44,borderRadius:13,background:NIVEL_COL[a.nivel]?.bg||'var(--vl)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                <span style={{fontSize:'11px',fontWeight:700,color:NIVEL_COL[a.nivel]?.text||'var(--v)'}}>{(a.nivel||'').slice(0,3).toUpperCase()}</span>
+              </div>
+              <div>
+                <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>{a.nivel||'Sin nivel'}</div>
+                <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'2px'}}>
+                  {a.fecha_alta ? `Desde ${new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR',{month:'long',year:'numeric'})}` : '—'}
+                </div>
+              </div>
+            </div>
+
+            {/* Historial de cursos como timeline */}
+            {historial.length > 0 && <>
+              <SL style={{marginBottom:'10px'}}>Historial de cursos</SL>
+              <div style={{position:'relative',paddingLeft:'20px'}}>
+                <div style={{position:'absolute',left:'7px',top:0,bottom:0,width:'1px',background:'var(--border)'}} />
+                {historial.map((h:any,i:number) => (
+                  <div key={h.id} style={{position:'relative',marginBottom:'14px'}}>
+                    <div style={{position:'absolute',left:'-17px',top:'4px',width:'10px',height:'10px',borderRadius:'50%',background:'var(--v)',border:'2px solid var(--white)'}} />
+                    <div style={{fontSize:'13px',fontWeight:600,color:'var(--v)'}}>{h.curso_nuevo_nombre}</div>
+                    <div style={{fontSize:'11.5px',color:'var(--text3)',marginTop:'2px'}}>{h.curso_anterior_nombre && `← ${h.curso_anterior_nombre} · `}{fmtFecha(h.fecha)}</div>
+                  </div>
+                ))}
+              </div>
+            </>}
+
+            {/* Historial de cuotas */}
+            {histCuotas.length > 0 && <>
+              <SL style={{marginBottom:'10px',marginTop:'16px'}}>Historial de cuotas</SL>
+              {histCuotas.map((h:any) => (
+                <div key={h.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 0',borderBottom:'1px solid var(--border)',fontSize:'12.5px'}}>
+                  <span style={{color:'var(--text3)'}}>$</span>
+                  <span style={{color:'var(--red)',textDecoration:'line-through',color:'var(--text3)'}}>${h.cuota_anterior?.toLocaleString('es-AR')}</span>
+                  <span style={{color:'var(--text3)'}}>→</span>
+                  <span style={{fontWeight:600,color:'var(--v)'}}>${h.cuota_nueva?.toLocaleString('es-AR')}</span>
+                  <span style={{marginLeft:'auto',color:'var(--text3)',fontSize:'11px'}}>{fmtFecha(h.vigente_desde)}</span>
+                </div>
+              ))}
+            </>}
+
+            {historial.length === 0 && histCuotas.length === 0 && (
+              <div style={{textAlign:'center',padding:'24px',color:'var(--text3)',fontSize:'13px'}}>
+                <div style={{fontSize:'32px',marginBottom:'8px'}}>📊</div>
+                <div>Sin historial registrado todavía</div>
+                <div style={{fontSize:'12px',marginTop:'4px'}}>Los cambios de curso y cuota aparecerán aquí</div>
+              </div>
+            )}
+
+            {/* Resumen de pagos */}
+            {pagos.length > 0 && <>
+              <SL style={{marginBottom:'10px',marginTop:'16px'}}>Resumen de pagos</SL>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px'}}>
+                <div style={{background:'var(--vl)',borderRadius:'10px',padding:'10px',textAlign:'center'}}>
+                  <div style={{fontSize:'18px',fontWeight:700,color:'var(--v)'}}>{pagos.length}</div>
+                  <div style={{fontSize:'11px',color:'var(--text3)'}}>Pagos</div>
+                </div>
+                <div style={{background:'var(--greenl)',borderRadius:'10px',padding:'10px',textAlign:'center'}}>
+                  <div style={{fontSize:'18px',fontWeight:700,color:'var(--green)'}}>${Math.round(pagos.reduce((s:number,p:any)=>s+(p.monto||0),0)/1000)}k</div>
+                  <div style={{fontSize:'11px',color:'var(--text3)'}}>Total</div>
+                </div>
+                <div style={{background:'var(--amberl)',borderRadius:'10px',padding:'10px',textAlign:'center'}}>
+                  <div style={{fontSize:'18px',fontWeight:700,color:'var(--amber)'}}>${a.cuota_mensual?.toLocaleString('es-AR')}</div>
+                  <div style={{fontSize:'11px',color:'var(--text3)'}}>Cuota actual</div>
+                </div>
+              </div>
+            </>}
+          </Card>
+        </div>
+      )}
 
       {modalPago && <ModalSheet title="Registrar pago" onClose={() => setModalPago(false)}>
         <Field2 label="Mes">
@@ -1260,6 +1536,7 @@ function PagosMasivos({ alumnos, onVolver }: any) {
       }
 
       // Disparar evento para refrescar filtros
+      showToast(`✓ ${inserts.length} pago${inserts.length!==1?'s':''} registrado${inserts.length!==1?'s':''}`)
       inserts.forEach(ins => window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: ins.alumno_id } })))
       // Actualizar badge "ya pagó" localmente
       const pagadosOk = resultados.filter(r => !r.error).map((_, i) => inserts[i].alumno_id)
