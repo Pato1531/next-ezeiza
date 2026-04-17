@@ -98,6 +98,81 @@ class PanelErrorBoundary extends React.Component<
   }
 }
 
+function NavEditor({ allAllowed, navOrdered, MAX_NAV, saveNavCustom, onClose }: any) {
+  const navActivos = navOrdered.slice(0, MAX_NAV).map((n: any) => n.id)
+
+  const toggleItem = (id: string) => {
+    const estaActivo = navActivos.includes(id)
+    let nextActivos: string[]
+    if (estaActivo) {
+      if (navActivos.length <= 3) return
+      nextActivos = navActivos.filter((i: string) => i !== id)
+    } else {
+      nextActivos = navActivos.length < MAX_NAV
+        ? [...navActivos, id]
+        : [...navActivos.slice(0, MAX_NAV - 1), id]
+    }
+    const resto = allAllowed.map((n: any) => n.id).filter((i: string) => !nextActivos.includes(i))
+    saveNavCustom([...nextActivos, ...resto])
+  }
+
+  return (
+    <div style={{ position:'fixed', inset:0, zIndex:200, background:'rgba(20,0,40,.45)', display:'flex', alignItems:'flex-end', justifyContent:'center' }} onClick={onClose}>
+      <div style={{ background:'var(--white)', borderRadius:'24px 24px 0 0', padding:'24px 20px 36px', width:'100%', maxWidth:'480px', maxHeight:'85vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+        <div style={{ width:'40px', height:'4px', background:'var(--border)', borderRadius:'2px', margin:'0 auto 16px' }} />
+        <div style={{ fontSize:'16px', fontWeight:700, marginBottom:'4px' }}>Personalizar navegación</div>
+        <div style={{ fontSize:'13px', color:'var(--text2)', marginBottom:'6px' }}>
+          Elegí hasta 5 módulos para la barra inferior.
+        </div>
+        <div style={{ fontSize:'12px', color:'var(--v)', fontWeight:600, marginBottom:'16px' }}>
+          {navActivos.length}/5 seleccionados
+        </div>
+
+        <div style={{ fontSize:'11px', fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:'10px' }}>
+          En la barra
+        </div>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:'8px', marginBottom:'18px', minHeight:'40px' }}>
+          {navActivos.length === 0 && (
+            <div style={{ fontSize:'13px', color:'var(--text3)', fontStyle:'italic' }}>Sin módulos seleccionados</div>
+          )}
+          {allAllowed.filter((n: any) => navActivos.includes(n.id)).map((item: any) => (
+            <button key={item.id} onClick={() => toggleItem(item.id)}
+              style={{ display:'flex', alignItems:'center', gap:'6px', padding:'8px 14px', background:'var(--v)', color:'#fff', border:'none', borderRadius:'20px', fontSize:'13px', fontWeight:600, cursor:'pointer' }}>
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                {item.icon.split('M').filter(Boolean).map((d: string, i: number) => <path key={i} d={`M${d}`} />)}
+              </svg>
+              {item.label}
+              <span style={{ opacity:.7, fontSize:'14px', lineHeight:1 }}>×</span>
+            </button>
+          ))}
+        </div>
+
+        <div style={{ fontSize:'11px', fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:'10px' }}>
+          Disponibles
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
+          {allAllowed.filter((n: any) => !navActivos.includes(n.id)).map((item: any) => (
+            <button key={item.id} onClick={() => toggleItem(item.id)}
+              disabled={navActivos.length >= MAX_NAV}
+              style={{ display:'flex', alignItems:'center', gap:'12px', padding:'11px 14px', background:'var(--white)', border:'1.5px solid var(--border)', borderRadius:'12px', cursor: navActivos.length >= MAX_NAV ? 'not-allowed' : 'pointer', opacity: navActivos.length >= MAX_NAV ? 0.45 : 1, textAlign:'left' }}>
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="var(--text3)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                {item.icon.split('M').filter(Boolean).map((d: string, i: number) => <path key={i} d={`M${d}`} />)}
+              </svg>
+              <span style={{ flex:1, fontSize:'14px', fontWeight:500, color:'var(--text)' }}>{item.label}</span>
+              <span style={{ fontSize:'18px', color:'var(--text3)', lineHeight:1 }}>+</span>
+            </button>
+          ))}
+        </div>
+
+        <button onClick={() => { saveNavCustom(allAllowed.map((n: any) => n.id)); onClose() }}
+          style={{ width:'100%', marginTop:'16px', padding:'12px', background:'transparent', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontWeight:600, cursor:'pointer', color:'var(--text2)' }}>
+          Restablecer orden por defecto
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function AppShell() {
   const { usuario, puedeVer } = useAuth()
 
@@ -456,83 +531,15 @@ export default function AppShell() {
       )}
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
 
-      {navEditOpen && (() => {
-        // IDs actualmente en la barra (los primeros MAX_NAV del orden actual)
-        const navActivos = navOrdered.slice(0, MAX_NAV).map(n => n.id)
-
-        const toggleItem = (id: string) => {
-          const estaActivo = navActivos.includes(id)
-          let nextActivos: string[]
-          if (estaActivo) {
-            // Sacar del nav — solo si quedan al menos 3
-            if (navActivos.length <= 3) return
-            nextActivos = navActivos.filter(i => i !== id)
-          } else {
-            // Agregar al nav — si hay 5, el último sale
-            nextActivos = navActivos.length < MAX_NAV
-              ? [...navActivos, id]
-              : [...navActivos.slice(0, MAX_NAV - 1), id]
-          }
-          // Reconstruir el orden completo: activos primero, resto después
-          const resto = allAllowed.map(n => n.id).filter(i => !nextActivos.includes(i))
-          saveNavCustom([...nextActivos, ...resto])
-        }
-
-        return (
-          <div style={{ position:'fixed', inset:0, zIndex:200, background:'rgba(20,0,40,.45)', display:'flex', alignItems:'flex-end', justifyContent:'center' }} onClick={() => setNavEditOpen(false)}>
-            <div style={{ background:'var(--white)', borderRadius:'24px 24px 0 0', padding:'24px 20px 36px', width:'100%', maxWidth:'480px', maxHeight:'85vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
-              <div style={{ width:'40px', height:'4px', background:'var(--border)', borderRadius:'2px', margin:'0 auto 16px' }} />
-              <div style={{ fontSize:'16px', fontWeight:700, marginBottom:'4px' }}>Personalizar navegación</div>
-              <div style={{ fontSize:'13px', color:'var(--text2)', marginBottom:'6px' }}>
-                Elegí hasta 5 módulos para la barra inferior.
-              </div>
-              <div style={{ fontSize:'12px', color:'var(--v)', fontWeight:600, marginBottom:'16px' }}>
-                {navActivos.length}/5 seleccionados
-              </div>
-
-              {/* Chips de módulos activos */}
-              <div style={{ fontSize:'11px', fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:'10px' }}>
-                En la barra
-              </div>
-              <div style={{ display:'flex', flexWrap:'wrap', gap:'8px', marginBottom:'18px' }}>
-                {allAllowed.filter(n => navActivos.includes(n.id)).map(item => (
-                  <button key={item.id} onClick={() => toggleItem(item.id)}
-                    style={{ display:'flex', alignItems:'center', gap:'6px', padding:'8px 14px', background:'var(--v)', color:'#fff', border:'none', borderRadius:'20px', fontSize:'13px', fontWeight:600, cursor:'pointer' }}>
-                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      {item.icon.split('M').filter(Boolean).map((d: string, i: number) => <path key={i} d={`M${d}`} />)}
-                    </svg>
-                    {item.label}
-                    <span style={{ opacity:.7, fontSize:'14px', lineHeight:1 }}>×</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Lista de módulos disponibles para agregar */}
-              <div style={{ fontSize:'11px', fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:'10px' }}>
-                Disponibles
-              </div>
-              <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
-                {allAllowed.filter(n => !navActivos.includes(n.id)).map(item => (
-                  <button key={item.id} onClick={() => toggleItem(item.id)}
-                    disabled={navActivos.length >= MAX_NAV}
-                    style={{ display:'flex', alignItems:'center', gap:'12px', padding:'11px 14px', background:'var(--white)', border:'1.5px solid var(--border)', borderRadius:'12px', cursor: navActivos.length >= MAX_NAV ? 'not-allowed' : 'pointer', opacity: navActivos.length >= MAX_NAV ? 0.45 : 1, textAlign:'left' }}>
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="var(--text3)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                      {item.icon.split('M').filter(Boolean).map((d: string, i: number) => <path key={i} d={`M${d}`} />)}
-                    </svg>
-                    <span style={{ flex:1, fontSize:'14px', fontWeight:500, color:'var(--text)' }}>{item.label}</span>
-                    <span style={{ fontSize:'18px', color:'var(--text3)', lineHeight:1 }}>+</span>
-                  </button>
-                ))}
-              </div>
-
-              <button onClick={() => { saveNavCustom(allAllowed.map(n => n.id)); setNavEditOpen(false) }}
-                style={{ width:'100%', marginTop:'16px', padding:'12px', background:'transparent', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontWeight:600, cursor:'pointer', color:'var(--text2)' }}>
-                Restablecer orden por defecto
-              </button>
-            </div>
-          </div>
-        )
-      })()}
+      {navEditOpen && (
+        <NavEditor
+          allAllowed={allAllowed}
+          navOrdered={navOrdered}
+          MAX_NAV={MAX_NAV}
+          saveNavCustom={saveNavCustom}
+          onClose={() => setNavEditOpen(false)}
+        />
+      )}
 
     </div>
     </ToastProvider>
