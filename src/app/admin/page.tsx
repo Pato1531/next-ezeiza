@@ -62,7 +62,8 @@ export default function AdminPage() {
   const crear = async () => {
     if (!instNombre.trim()) return setError('El nombre del instituto es obligatorio')
     if (!dirNombre.trim() || !dirApellido.trim()) return setError('Nombre y apellido del director son obligatorios')
-    if (!dirEmail.includes('@')) return setError('El email no es válido')
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!emailRegex.test(dirEmail.trim())) return setError('El email no es válido (formato: usuario@dominio.com)')
     if (dirPass.length < 8) return setError('La contraseña debe tener al menos 8 caracteres')
 
     setEstado('loading')
