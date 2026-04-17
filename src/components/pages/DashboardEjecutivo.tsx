@@ -30,7 +30,7 @@ export default function DashboardEjecutivo() {
   const [erIngresos, setErIngresos] = useState(0)
   const [erEditing,  setErEditing]  = useState<Record<string,number>>({})
   const [erGuardando, setErGuardando] = useState<Record<string,boolean>>({})
-  const [erTab, setErTab] = useState<'resumen'|'estado'>('resumen')
+  const [erTab, setErTab] = useState<'resumen'|'estado'|'cierre'>('resumen')
   const erDebounceRef = useRef<Record<string,ReturnType<typeof setTimeout>>>({})
 
   const mesNombre    = MESES[mes]
@@ -267,7 +267,7 @@ export default function DashboardEjecutivo() {
             background: erTab===t ? 'var(--v)' : 'var(--white)',
             color: erTab===t ? '#fff' : 'var(--text2)'
           }}>
-            {t === 'resumen' ? 'Resumen' : 'Estado de Resultado'}
+            {t === 'resumen' ? 'Resumen' : t === 'estado' ? 'Est. Resultado' : '📊 Cierre de mes'}
           </button>
         ))}
       </div>
@@ -378,6 +378,21 @@ export default function DashboardEjecutivo() {
             </div>
           </div>
         </div>
+      ) : erTab === 'cierre' ? (
+        <CierreDeMes
+          mes={mesNombre}
+          anio={anio}
+          totalCobrado={totalCobrado}
+          proyeccion={pagosEstimados => pagosEstimados}
+          alumnos={alumnos}
+          cursos={cursos}
+          profesoras={profesoras}
+          pagos={pagos}
+          liquidaciones={liquidaciones}
+          altasMes={altasMes}
+          bajasMes={bajasMes}
+          pagosMesAnt={pagosMesAnt}
+        />
       ) : (
         <>
           {/* KPIs principales */}
@@ -547,3 +562,133 @@ function KpiCard({ label, val, sub, color, trend }: {
     </div>
   )
 }
+
+function CierreDeMes({ mes, anio, totalCobrado, alumnos, cursos, profesoras, pagos, liquidaciones, altasMes, bajasMes, pagosMesAnt }: any) {
+  const fmt$ = (n: number) => '$' + Math.round(n).toLocaleString('es-AR')
+  const totalAnt = (pagosMesAnt || []).reduce((s: number, p: any) => s + (p.monto || 0), 0)
+  const variacion = totalAnt > 0 ? Math.round(((totalCobrado - totalAnt) / totalAnt) * 100) : 0
+  const totalLiq = (liquidaciones || []).reduce((s: number, l: any) => s + (l.total || 0), 0)
+  const margen = totalCobrado - totalLiq
+
+  const descargarPDF = () => {
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Cierre ${mes} ${anio}</title>
+    <style>
+      body{font-family:Arial,sans-serif;padding:32px;font-size:13px;color:#1a1020;max-width:700px;margin:0 auto}
+      h1{font-size:22px;color:#652f8d;margin-bottom:4px}
+      .sub{color:#9b8eaa;font-size:13px;margin-bottom:24px}
+      .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+      .card{border:1px solid #e0d8f0;border-radius:10px;padding:14px}
+      .val{font-size:22px;font-weight:700;color:#652f8d}
+      .lbl{font-size:11px;color:#9b8eaa;margin-top:4px}
+      table{width:100%;border-collapse:collapse;margin-top:8px}
+      th{text-align:left;font-size:11px;color:#9b8eaa;text-transform:uppercase;padding:6px 0;border-bottom:1px solid #e0d8f0}
+      td{padding:8px 0;border-bottom:1px solid #f4f0fa;font-size:12px}
+      .positive{color:#2d7a4f} .negative{color:#c0392b}
+      @media print{body{padding:16px}}
+    </style></head><body>
+    <h1>Cierre de mes — ${mes} ${anio}</h1>
+    <div class="sub">Generado el ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
+    <div class="grid">
+      <div class="card"><div class="val">${fmt$(totalCobrado)}</div><div class="lbl">Total cobrado</div></div>
+      <div class="card"><div class="val ${variacion >= 0 ? 'positive' : 'negative'}">${variacion >= 0 ? '+' : ''}${variacion}%</div><div class="lbl">vs mes anterior</div></div>
+      <div class="card"><div class="val">${fmt$(totalLiq)}</div><div class="lbl">Total liquidaciones</div></div>
+      <div class="card"><div class="val ${margen >= 0 ? 'positive' : 'negative'}">${fmt$(margen)}</div><div class="lbl">Margen estimado</div></div>
+    </div>
+    <h2 style="font-size:14px;margin-bottom:8px">Altas del mes</h2>
+    ${altasMes?.length > 0 ? `<table><thead><tr><th>Nombre</th><th>Nivel</th><th>Fecha</th></tr></thead><tbody>
+      ${altasMes.map((a: any) => `<tr><td>${a.nombre} ${a.apellido}</td><td>${a.nivel}</td><td>${a.fecha_alta ? new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td></tr>`).join('')}
+    </tbody></table>` : '<p style="color:#9b8eaa">Sin altas este mes</p>'}
+    <h2 style="font-size:14px;margin:16px 0 8px">Bajas del mes</h2>
+    ${bajasMes?.length > 0 ? `<table><thead><tr><th>Nombre</th><th>Nivel</th><th>Motivo</th></tr></thead><tbody>
+      ${bajasMes.map((b: any) => `<tr><td>${b.alumno_nombre} ${b.alumno_apellido}</td><td>${b.nivel}</td><td>${b.motivo}</td></tr>`).join('')}
+    </tbody></table>` : '<p style="color:#9b8eaa">Sin bajas este mes</p>'}
+    <script>setTimeout(()=>window.print(),400)</script>
+    </body></html>`
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 15000)
+  }
+
+  return (
+    <div>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px'}}>
+        <div style={{fontSize:'15px',fontWeight:700}}>Cierre — {mes} {anio}</div>
+        <button onClick={descargarPDF} style={{padding:'8px 14px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'12px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
+          <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2H4a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/><path d="M14 2v6h6M10 14v-4M7 11l3 3 3-3"/></svg>
+          Exportar PDF
+        </button>
+      </div>
+
+      {/* KPIs de cierre */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'16px'}}>
+        <div style={{background:'var(--vl)',border:'1.5px solid #d4a8e8',borderRadius:'16px',padding:'16px'}}>
+          <div style={{fontSize:'24px',fontWeight:700,color:'var(--v)'}}>{fmt$(totalCobrado)}</div>
+          <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'3px'}}>Total cobrado</div>
+          {variacion !== 0 && <div style={{fontSize:'11px',marginTop:'4px',fontWeight:600,color:variacion>=0?'var(--green)':'var(--red)'}}>{variacion>=0?'↑':'↓'} {Math.abs(variacion)}% vs mes anterior</div>}
+        </div>
+        <div style={{background:margen>=0?'var(--greenl)':'var(--redl)',border:`1.5px solid ${margen>=0?'#a3e0bc':'#f5c5c5'}`,borderRadius:'16px',padding:'16px'}}>
+          <div style={{fontSize:'24px',fontWeight:700,color:margen>=0?'var(--green)':'var(--red)'}}>{fmt$(margen)}</div>
+          <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'3px'}}>Margen estimado</div>
+          <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'4px'}}>Cobrado − liquidaciones</div>
+        </div>
+        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px'}}>
+          <div style={{fontSize:'24px',fontWeight:700}}>{fmt$(totalLiq)}</div>
+          <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'3px'}}>Liquidaciones docentes</div>
+        </div>
+        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px'}}>
+          <div style={{display:'flex',gap:'12px'}}>
+            <div>
+              <div style={{fontSize:'20px',fontWeight:700,color:'var(--green)'}}>+{altasMes?.length||0}</div>
+              <div style={{fontSize:'11px',color:'var(--text3)'}}>Altas</div>
+            </div>
+            <div>
+              <div style={{fontSize:'20px',fontWeight:700,color:'var(--red)'}}>−{bajasMes?.length||0}</div>
+              <div style={{fontSize:'11px',color:'var(--text3)'}}>Bajas</div>
+            </div>
+          </div>
+          <div style={{fontSize:'11px',color:'var(--text2)',marginTop:'4px'}}>Movimiento del mes</div>
+        </div>
+      </div>
+
+      {/* Altas */}
+      {altasMes?.length > 0 && (
+        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',marginBottom:'12px',overflow:'hidden'}}>
+          <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',fontSize:'12px',fontWeight:700,color:'var(--green)',display:'flex',alignItems:'center',gap:'6px'}}>
+            <span>↑</span> {altasMes.length} alta{altasMes.length!==1?'s':''} en {mes}
+          </div>
+          {altasMes.map((a: any) => (
+            <div key={a.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+              <div style={{flex:1,fontSize:'13px',fontWeight:600}}>{a.nombre} {a.apellido}</div>
+              <span style={{fontSize:'11.5px',color:'var(--text2)'}}>{a.nivel}</span>
+              <span style={{fontSize:'11px',color:'var(--text3)'}}>{a.fecha_alta ? new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR') : '—'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Bajas */}
+      {bajasMes?.length > 0 && (
+        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',marginBottom:'12px',overflow:'hidden'}}>
+          <div style={{padding:'12px 16px',borderBottom:'1px solid var(--border)',fontSize:'12px',fontWeight:700,color:'var(--red)',display:'flex',alignItems:'center',gap:'6px'}}>
+            <span>↓</span> {bajasMes.length} baja{bajasMes.length!==1?'s':''} en {mes}
+          </div>
+          {bajasMes.map((b: any, i: number) => (
+            <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 16px',borderBottom:'1px solid var(--border)'}}>
+              <div style={{flex:1,fontSize:'13px',fontWeight:600}}>{b.alumno_nombre} {b.alumno_apellido}</div>
+              <span style={{fontSize:'11px',color:'var(--text2)'}}>{b.motivo}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {altasMes?.length === 0 && bajasMes?.length === 0 && (
+        <div style={{padding:'20px',textAlign:'center',color:'var(--text3)',fontSize:'13px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px'}}>
+          Sin movimientos de alumnos este mes
+        </div>
+      )}
+    </div>
+  )
+}
+
