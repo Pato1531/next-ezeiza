@@ -189,6 +189,12 @@ export default function Alumnos() {
                 tipo: 'matricula',
                 observaciones: 'Matrícula de inscripción'
               })
+            }).then(() => {
+              // Notificar al dashboard y al bus de eventos
+              window.dispatchEvent(new CustomEvent('pago-registrado', {
+                detail: { alumno_id: (nuevo as any).id, nombre: `${datos.nombre} ${datos.apellido}` }
+              }))
+              showToast(`✓ Matrícula de ${datos.nombre} ${datos.apellido} registrada`)
             }).catch(() => {})
           }
           irADetalle((nuevo as any).id)
