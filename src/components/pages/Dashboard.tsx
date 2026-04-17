@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useAlumnos, useProfesoras, useCursos, store } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
+import { showToast } from '../Toast'
+import { apiHeaders } from '@/lib/hooks'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const NIVEL_COL: Record<string,{bg:string,text:string}> = {
@@ -35,6 +37,10 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [proximosEventos, setProximosEventos] = useState<any[]>([])
   const [cumpleanos, setCumpleanos] = useState<any[]>([])
+  const [asistModal, setAsistModal] = useState<{curso: any; alumnos: any[]} | null>(null)
+  const [asistEstados, setAsistEstados] = useState<Record<string,'P'|'A'|'T'>>({})
+  const [asistTema, setAsistTema] = useState('')
+  const [asistGuardando, setAsistGuardando] = useState(false)
 
   const today = new Date()
   const mesActual = MESES[today.getMonth()]
@@ -106,6 +112,47 @@ export default function Dashboard() {
     }
     cargarCumpleanos()
   }, [])
+
+  const abrirAsistencia = async (curso: any) => {
+    const sb = createClient()
+    const { data } = await sb.from('cursos_alumnos')
+      .select('alumnos(id, nombre, apellido, color)')
+      .eq('curso_id', curso.id)
+    const lista = (data || []).map((r: any) => r.alumnos).filter(Boolean)
+    const estados: Record<string,'P'|'A'|'T'> = {}
+    lista.forEach((a: any) => { estados[a.id] = 'P' })
+    setAsistEstados(estados)
+    setAsistTema('')
+    setAsistModal({ curso, alumnos: lista })
+  }
+
+  const guardarAsistencia = async () => {
+    if (!asistModal) return
+    setAsistGuardando(true)
+    const hoy = new Date().toISOString().split('T')[0]
+    const sb = createClient()
+    try {
+      // Crear clase
+      const { data: claseData, error: claseErr } = await sb.from('clases').insert({
+        curso_id: asistModal.curso.id,
+        fecha: hoy,
+        tema: asistTema.trim() || 'Clase del día',
+      }).select().single()
+      if (claseErr) throw claseErr
+      // Registrar asistencia de cada alumno
+      const inserts = asistModal.alumnos.map((a: any) => ({
+        clase_id: claseData.id,
+        alumno_id: a.id,
+        estado: asistEstados[a.id] || 'P',
+      }))
+      await sb.from('asistencia_clases').insert(inserts)
+      showToast(`✓ Asistencia de ${asistModal.curso.nombre} guardada`)
+      setAsistModal(null)
+    } catch (e: any) {
+      showToast('Error al guardar: ' + e.message, 'error')
+    }
+    setAsistGuardando(false)
+  }
 
   const cargarAlertas = async () => {
     setLoading(true)
@@ -230,7 +277,7 @@ export default function Dashboard() {
             {cursosHoy.map(c => {
               const col = NIVEL_COL[c.nivel] ?? NIVEL_COL['Básico']
               return (
-                <CursoCard key={c.id} c={c} col={col} />
+                <CursoCardConBoton key={c.id} c={c} col={col} onAsistencia={() => abrirAsistencia(c)} />
               )
             })}
           </div>
@@ -243,6 +290,19 @@ export default function Dashboard() {
               {proximosEventos.map((ev:any) => <EventoCard key={ev.id} ev={ev} />)}
             </div>
           </>
+        )}
+
+        {asistModal && (
+          <ModalAsistencia
+            modal={asistModal}
+            estados={asistEstados}
+            setEstados={setAsistEstados}
+            tema={asistTema}
+            setTema={setAsistTema}
+            guardando={asistGuardando}
+            onGuardar={guardarAsistencia}
+            onCerrar={() => setAsistModal(null)}
+          />
         )}
       </div>
     )
@@ -320,7 +380,9 @@ export default function Dashboard() {
                     {c.hora_inicio?.slice(0,5)||'—'}–{c.hora_fin?.slice(0,5)||'—'} · {prof?prof.nombre:'Sin asignar'}
                   </div>
                 </div>
-                <div style={{fontSize:'13px',fontWeight:700,color:'var(--v)',flexShrink:0}}>{c.hora_inicio?.slice(0,5)||'—'}</div>
+                <button onClick={() => abrirAsistencia(c)} style={{padding:'6px 11px',background:'var(--vl)',color:'var(--v)',border:'1px solid #d4a8e8',borderRadius:'8px',fontSize:'11px',fontWeight:700,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}}>
+                  Asistencia
+                </button>
               </div>
             )
           })
@@ -395,6 +457,20 @@ export default function Dashboard() {
           </div>
         </>
       )}
+
+      {/* MODAL ASISTENCIA RÁPIDA */}
+      {asistModal && (
+        <ModalAsistencia
+          modal={asistModal}
+          estados={asistEstados}
+          setEstados={setAsistEstados}
+          tema={asistTema}
+          setTema={setAsistTema}
+          guardando={asistGuardando}
+          onGuardar={guardarAsistencia}
+          onCerrar={() => setAsistModal(null)}
+        />
+      )}
     </div>
   )
 }
@@ -442,6 +518,94 @@ const CursoCard = ({c,col}:any) => (
     <div style={{fontSize:'13px',fontWeight:700,color:'var(--v)',flexShrink:0}}>{c.hora_inicio?.slice(0,5)||'—'}</div>
   </div>
 )
+
+const CursoCardConBoton = ({c, col, onAsistencia}:any) => (
+  <div style={{display:'flex',alignItems:'center',gap:'12px',padding:'13px 14px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',marginBottom:'8px'}}>
+    <div style={{width:42,height:42,borderRadius:13,background:col.bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+      <span style={{fontSize:'10px',fontWeight:700,color:col.text}}>{(c.nivel||'').slice(0,3).toUpperCase()}</span>
+    </div>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontSize:'14px',fontWeight:600}}>{c.nombre}</div>
+      <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'2px'}}>{c.hora_inicio?.slice(0,5)||'—'}–{c.hora_fin?.slice(0,5)||'—'}</div>
+    </div>
+    <button onClick={onAsistencia} style={{padding:'6px 11px',background:'var(--vl)',color:'var(--v)',border:'1px solid #d4a8e8',borderRadius:'8px',fontSize:'11px',fontWeight:700,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}}>
+      Asistencia
+    </button>
+  </div>
+)
+
+function ModalAsistencia({ modal, estados, setEstados, tema, setTema, guardando, onGuardar, onCerrar }: any) {
+  const { curso, alumnos } = modal
+  const presentes = Object.values(estados).filter(e => e === 'P').length
+  const ausentes = Object.values(estados).filter(e => e === 'A').length
+  return (
+    <div style={{position:'fixed',inset:0,background:'rgba(20,0,40,.5)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:500}} onClick={e=>{if(e.target===e.currentTarget)onCerrar()}}>
+      <div style={{background:'var(--white)',borderRadius:'24px 24px 0 0',padding:'24px 20px 32px',width:'100%',maxWidth:'480px',maxHeight:'80vh',overflowY:'auto'}}>
+        <div style={{width:'40px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 16px'}}/>
+        <div style={{fontSize:'17px',fontWeight:700,marginBottom:'4px'}}>{curso.nombre}</div>
+        <div style={{fontSize:'12px',color:'var(--text2)',marginBottom:'16px'}}>
+          {new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})} · {curso.hora_inicio?.slice(0,5)}
+        </div>
+        {/* Tema */}
+        <input
+          type="text"
+          value={tema}
+          onChange={e => setTema(e.target.value)}
+          placeholder="Tema de la clase (opcional)"
+          style={{width:'100%',padding:'10px 13px',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontFamily:'inherit',outline:'none',color:'var(--text)',background:'var(--white)',marginBottom:'14px',boxSizing:'border-box'}}
+        />
+        {/* Resumen */}
+        <div style={{display:'flex',gap:'8px',marginBottom:'12px'}}>
+          <div style={{flex:1,padding:'8px',background:'var(--greenl)',borderRadius:'10px',textAlign:'center'}}>
+            <div style={{fontSize:'18px',fontWeight:700,color:'var(--green)'}}>{presentes}</div>
+            <div style={{fontSize:'11px',color:'var(--text3)'}}>Presentes</div>
+          </div>
+          <div style={{flex:1,padding:'8px',background:'var(--redl)',borderRadius:'10px',textAlign:'center'}}>
+            <div style={{fontSize:'18px',fontWeight:700,color:'var(--red)'}}>{ausentes}</div>
+            <div style={{fontSize:'11px',color:'var(--text3)'}}>Ausentes</div>
+          </div>
+          <div style={{flex:1,padding:'8px',background:'var(--amberl)',borderRadius:'10px',textAlign:'center'}}>
+            <div style={{fontSize:'18px',fontWeight:700,color:'var(--amber)'}}>{Object.values(estados).filter(e=>e==='T').length}</div>
+            <div style={{fontSize:'11px',color:'var(--text3)'}}>Tarde</div>
+          </div>
+        </div>
+        {/* Lista de alumnos */}
+        <div style={{display:'flex',flexDirection:'column',gap:'6px',marginBottom:'16px'}}>
+          {alumnos.map((a: any) => {
+            const est = estados[a.id] || 'P'
+            return (
+              <div key={a.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',borderRadius:'12px',border:'1.5px solid var(--border)',background:'var(--white)'}}>
+                <div style={{width:34,height:34,borderRadius:10,background:a.color||'#652f8d',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'#fff',flexShrink:0}}>
+                  {a.nombre[0]}{a.apellido[0]}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'13.5px',fontWeight:600}}>{a.nombre} {a.apellido}</div>
+                </div>
+                <div style={{display:'flex',gap:'4px'}}>
+                  {(['P','A','T'] as const).map(e => (
+                    <button key={e} onClick={() => setEstados((prev: any) => ({...prev,[a.id]:e}))}
+                      style={{width:'30px',height:'28px',borderRadius:'8px',border:'1.5px solid',fontSize:'12px',fontWeight:700,cursor:'pointer',
+                        borderColor: est===e ? (e==='P'?'var(--green)':e==='A'?'var(--red)':'var(--amber)') : 'var(--border)',
+                        background: est===e ? (e==='P'?'var(--greenl)':e==='A'?'var(--redl)':'var(--amberl)') : 'transparent',
+                        color: est===e ? (e==='P'?'var(--green)':e==='A'?'var(--red)':'var(--amber)') : 'var(--text3)'
+                      }}>{e}</button>
+                  ))}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {alumnos.length === 0 && <div style={{textAlign:'center',padding:'20px',color:'var(--text3)',fontSize:'13px'}}>Sin alumnos asignados a este curso</div>}
+        <div style={{display:'flex',gap:'10px'}}>
+          <button onClick={onCerrar} style={{flex:1,padding:'12px',background:'transparent',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer',color:'var(--text2)'}}>Cancelar</button>
+          <button onClick={onGuardar} disabled={guardando||alumnos.length===0} style={{flex:2,padding:'12px',background:guardando?'#aaa':'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:700,cursor:guardando?'not-allowed':'pointer'}}>
+            {guardando ? 'Guardando...' : 'Confirmar clase'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 const EventoCard = ({ev}:any) => {
   const tipo = TIPOS_AGENDA.find(t => t.value === ev.tipo) || TIPOS_AGENDA[6]
