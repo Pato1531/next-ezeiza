@@ -217,22 +217,42 @@ export default function Dashboard() {
             else if (estado === 'P' || estado === 'T') break
             // si no hay registro para esa clase, no interrumpir (clase sin datos)
           }
-          if (consecutivas >= 2) {
+          if (consecutivas >= 2 && !alertasMap[alumno_id]) {
             const al = alumnos.find(a => a.id === alumno_id)
-            if (al && !alertasMap[alumno_id]) {
-              const cur = cursos.find(c => c.id === curso_id)
+            const cur = cursos.find(c => c.id === curso_id)
+            if (al) {
               alertasMap[alumno_id] = {
                 nombre: al.nombre, apellido: al.apellido,
                 color: al.color || '#652f8d',
                 consecutivas,
                 curso: cur?.nombre || '',
               }
+            } else {
+              // Alumno no está en el store aún — guardarlo con datos mínimos para buscarlo después
+              alertasMap[alumno_id] = {
+                nombre: alumno_id, apellido: '',
+                color: '#652f8d', consecutivas,
+                curso: cur?.nombre || '',
+                _pendingLookup: true,
+              } as any
             }
           }
         })
       }))
 
-      setAlertasAusencia(Object.values(alertasMap).slice(0, 5))
+      // Resolver alumnos que no estaban en el store
+      const pendientes = Object.entries(alertasMap).filter(([, v]) => (v as any)._pendingLookup)
+      if (pendientes.length > 0) {
+        const ids = pendientes.map(([id]) => id)
+        const { data: alumnosDB } = await sb.from('alumnos').select('id,nombre,apellido,color').in('id', ids)
+        alumnosDB?.forEach((a: any) => {
+          if (alertasMap[a.id]) {
+            alertasMap[a.id] = { ...alertasMap[a.id], nombre: a.nombre, apellido: a.apellido, color: a.color || '#652f8d' }
+            delete (alertasMap[a.id] as any)._pendingLookup
+          }
+        })
+      }
+      setAlertasAusencia(Object.values(alertasMap).filter((v: any) => !v._pendingLookup).slice(0, 10))
     } catch (e) {
       console.error('[Dashboard] alertas ausencias:', e)
     }
