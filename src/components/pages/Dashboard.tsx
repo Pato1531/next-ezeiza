@@ -351,7 +351,7 @@ export default function Dashboard() {
       {cumpleanos.length > 0 && (
         <div style={{marginBottom:'18px'}}>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
-            <SL>Cumpleaños próximos</SL>
+            <SL>Próximos Cumpleaños de Alumnos</SL>
             <span style={{fontSize:'11px',color:'var(--text3)',fontWeight:500}}>Próximos 30 días</span>
           </div>
           <div style={{background:'var(--white)',border:'1.5px solid #fce7f3',borderRadius:'16px',overflow:'hidden'}}>
