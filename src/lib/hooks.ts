@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { devError, devLog } from '@/lib/debug'
 import { createClient } from '@/lib/supabase'
 import type { Profesora, Alumno, Curso, Clase, HorarioItem, Pago } from '@/lib/supabase'
 
@@ -209,19 +208,19 @@ function useSupabaseQuery<T>(
   const fetch = useCallback(async () => {
     if (fetchingRef.current) return
     if (shouldSkip) {
-      devLog(`[${cacheKey}] skipped (shouldSkip=true)`)
+      // devLog(`[${cacheKey}] skipped (shouldSkip=true)`)
       return
     }
     fetchingRef.current = true
     if (mountedRef.current) setIsFetching(true)
     try {
       const result = await fetcherRef.current()
-      devLog(`[${cacheKey}] fetched ${result.length} items`)
+      // devLog(`[${cacheKey}] fetched ${result.length} items`)
       // storeSet notifica a TODOS los suscriptores — no importa qué instancia fetcheó
       storeSet<T>(cacheKey, result)
       _storeHasData[cacheKey] = true
     } catch (e: any) {
-      devError(`[${cacheKey}] fetch error: ${e?.message ?? String(e)}`)
+      // devError(`[${cacheKey}] fetch error: ${e?.message ?? String(e)}`)
     } finally {
       fetchingRef.current = false
       if (mountedRef.current) {
@@ -267,11 +266,11 @@ function useRefetchOnFocus(refetch: () => Promise<void> | void, label = 'hook') 
       if (Date.now() - lastRun.current < 2000) return
       running.current = true
       try {
-        devLog('[refetch] ' + label)
+        // devLog('[refetch] ' + label)
         await refetchRef.current()
         lastRun.current = Date.now()
       } catch (e: any) {
-        devError('[refetch error] ' + label + ': ' + (e?.message ?? String(e)))
+        // devError('[refetch error] ' + label + ': ' + (e?.message ?? String(e)))
       } finally {
         running.current = false
       }
