@@ -7,10 +7,12 @@ import './globals.css'
 // Esto evita el error "Failed to fetch font" durante el build de Vercel
 // que ocurre cuando next/font/google intenta descargar la fuente en tiempo de build
 
+const institutoNombre = process.env.NEXT_PUBLIC_INSTITUTO_NOMBRE || 'Next Ezeiza'
+
 export const metadata: Metadata = {
-  title: 'Next Ezeiza — Panel de gestión',
-  description: 'Sistema de gestión del Instituto de Inglés Next Ezeiza',
-  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'Next Ezeiza' },
+  title: `${institutoNombre} — Panel de gestión`,
+  description: `Sistema de gestión del Instituto de Inglés ${institutoNombre}`,
+  appleWebApp: { capable: true, statusBarStyle: 'default', title: institutoNombre },
 }
 
 export const viewport: Viewport = {
