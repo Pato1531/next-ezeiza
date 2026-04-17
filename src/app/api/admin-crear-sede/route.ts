@@ -22,7 +22,8 @@ export async function POST(req: NextRequest) {
 
     if (!instituto_nombre?.trim()) return NextResponse.json({ error: 'Nombre del instituto obligatorio' }, { status: 400 })
     if (!director_nombre?.trim()) return NextResponse.json({ error: 'Nombre del director obligatorio' }, { status: 400 })
-    if (!director_email?.includes('@')) return NextResponse.json({ error: 'Email no válido' }, { status: 400 })
+    const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(director_email?.trim() || '')
+    if (!emailOk) return NextResponse.json({ error: 'Email no válido' }, { status: 400 })
     if (!director_password || director_password.length < 6) return NextResponse.json({ error: 'Contraseña mínimo 6 caracteres' }, { status: 400 })
 
     const supabase = sb()
@@ -44,6 +45,9 @@ export async function POST(req: NextRequest) {
     }
 
     // 3. Crear usuario en Auth
+    // Log para diagnóstico: confirmar URL del proyecto
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'NO CONFIGURADA'
+    console.log('[admin-crear-sede] usando Supabase URL:', supabaseUrl.slice(0, 40))
     const { data: authData, error: errAuth } = await supabase.auth.admin.createUser({
       email: director_email.trim().toLowerCase(),
       password: director_password,
@@ -53,7 +57,12 @@ export async function POST(req: NextRequest) {
     if (errAuth) {
       await supabase.from('institutos').delete().eq('id', instituto.id)
       console.error('[admin-crear-sede] auth:', errAuth)
-      return NextResponse.json({ error: errAuth.message?.includes('already registered') ? 'Ya existe una cuenta con ese email' : 'Error al crear usuario: ' + errAuth.message }, { status: 400 })
+      const msg = errAuth.message || ''
+      let userMsg = 'Error al crear usuario: ' + msg
+      if (msg.includes('already registered') || msg.includes('already exists')) userMsg = 'Ya existe una cuenta con ese email'
+      else if (msg.includes('Database error')) userMsg = 'Error de base de datos en Supabase Auth. Verificá que el SUPABASE_SERVICE_ROLE_KEY en Vercel sea del proyecto correcto (Next Ezeiza, no App Gestion Docente).'
+      else if (msg.includes('invalid')) userMsg = 'Email con formato inválido según Supabase: ' + msg
+      return NextResponse.json({ error: userMsg }, { status: 400 })
     }
 
     // 4. Crear registro en tabla usuarios
