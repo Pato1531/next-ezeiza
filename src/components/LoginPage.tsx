@@ -175,11 +175,7 @@ export default function LoginPage() {
           </button>
         </div>
 
-        {/* Link a registro — igual que el original */}
-        <div style={s.registroWrap}>
-          <span style={{ fontSize: '13px', color: 'var(--text3)' }}>¿Sos director de un instituto? </span>
-          <a href="/registro" style={s.registroLink}>Registrá tu sede</a>
-        </div>
+
       </div>
     </div>
   )
