@@ -377,7 +377,13 @@ export default function AppShell() {
             </svg>
           </div>
           <div style={{ fontSize: '16px', fontWeight: 700, letterSpacing: '-.2px' }}>
-            <span style={{ color: 'var(--v)' }}>Next</span> Ezeiza
+            {(() => {
+              const nombre = process.env.NEXT_PUBLIC_INSTITUTO_NOMBRE || 'Next Ezeiza'
+              const partes = nombre.split(' ')
+              const primera = partes[0]
+              const resto = partes.slice(1).join(' ')
+              return <><span style={{ color: 'var(--v)' }}>{primera}</span>{resto ? ' ' + resto : ''}</>
+            })()}
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
