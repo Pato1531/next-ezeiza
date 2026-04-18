@@ -100,3 +100,26 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: e.message, data: [] }, { status: 500 })
   }
 }
+
+// DELETE — eliminar un pago por id
+export async function DELETE(req: NextRequest) {
+  try {
+    const { id } = await req.json()
+    if (!id) return NextResponse.json({ error: 'Falta id del pago' }, { status: 400 })
+
+    const institutoId = getInstitutoId(req)
+    const { error } = await sb()
+      .from('pagos_alumnos')
+      .delete()
+      .eq('id', id)
+      .eq('instituto_id', institutoId)
+
+    if (error) {
+      console.error('[registrar-pago DELETE]', error)
+      return NextResponse.json({ error: error.message }, { status: 500 })
+    }
+    return NextResponse.json({ ok: true })
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
+}
