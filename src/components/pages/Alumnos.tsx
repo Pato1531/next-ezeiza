@@ -978,6 +978,8 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
 
   const [ultimoPago, setUltimoPago] = useState<any>(null)
   const [modalRecibo, setModalRecibo] = useState(false)
+  const [pagoAEliminar, setPagoAEliminar] = useState<any>(null)
+  const [eliminandoPago, setEliminandoPago] = useState(false)
 
   // Normalizar teléfono al formato wa.me (+54 9 11 XXXXXXXX)
   const normalizarTel = (tel: string) => {
@@ -1011,6 +1013,30 @@ Te recordamos que la cuota de *${pago.mes} ${pago.anio}* de *${a.nombre} ${a.ape
 
 Podés abonar en el instituto o por transferencia. Ante cualquier consulta estamos a disposición. ¡Muchas gracias! 🙏`
     abrirWS(tel, msg)
+  }
+
+  const eliminarPago = async () => {
+    if (!pagoAEliminar) return
+    setEliminandoPago(true)
+    try {
+      const res = await fetch('/api/registrar-pago', {
+        method: 'DELETE',
+        headers: apiHeaders(),
+        body: JSON.stringify({ id: pagoAEliminar.id })
+      })
+      const json = await res.json()
+      if (json.ok) {
+        showToast('Pago eliminado')
+        logActivity('Eliminó pago', 'Pagos', `${a.nombre} ${a.apellido} — ${pagoAEliminar.mes} ${pagoAEliminar.anio} — $${pagoAEliminar.monto}`)
+        window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: a.id } }))
+      } else {
+        showToast('Error al eliminar: ' + (json.error || 'Error desconocido'), 'error')
+      }
+    } catch (e: any) {
+      showToast('Error al eliminar pago', 'error')
+    }
+    setEliminandoPago(false)
+    setPagoAEliminar(null)
   }
 
   const generarRecibo = (p: any) => {
@@ -1051,40 +1077,14 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
     }
   }
   const guardarPago = async () => {
-    // Calcular total y conceptos seleccionados
-    const conceptosList: {tipo: string; monto: number; label: string}[] = []
-    if (pagoConceptos.cuota && a.cuota_mensual > 0)
-      conceptosList.push({ tipo: 'cuota', monto: a.cuota_mensual, label: `Cuota ${pago.mes} ${pago.anio}` })
-    if (pagoConceptos.recargo && pagoConceptos.montoRecargo > 0)
-      conceptosList.push({ tipo: 'recargo', monto: pagoConceptos.montoRecargo, label: `Cuota con recargo ${pago.mes} ${pago.anio}` })
-    if (pagoConceptos.matricula && a.matricula > 0)
-      conceptosList.push({ tipo: 'matricula', monto: a.matricula, label: 'Matrícula' })
-
-    if (conceptosList.length === 0) return alert('Seleccioná al menos un concepto')
-    const totalMonto = conceptosList.reduce((s, c) => s + c.monto, 0)
     setGuardandoPago(true)
-
-    // Registrar un pago por cada concepto seleccionado
-    const resultados: any[] = []
-    for (const concepto of conceptosList) {
-      const res = await registrar({
-        ...pago,
-        alumno_id: a.id,
-        monto: concepto.monto,
-        tipo: concepto.tipo,
-        observaciones: concepto.label + (pago.observaciones ? ' · ' + pago.observaciones : ''),
-      })
-      if (res) resultados.push(res)
-    }
+    const resultado = await registrar({ ...pago, alumno_id: a.id })
     setGuardandoPago(false)
     setModalPago(false)
-    setPagoConceptos({ cuota: false, recargo: false, matricula: false, montoRecargo: 0 })
-
-    if (resultados.length > 0) {
-      logActivity('Registró pago', 'Pagos', `${a.nombre} ${a.apellido} — ${pago.mes} ${pago.anio} — $${totalMonto}`)
+    if (resultado) {
+      logActivity('Registró pago', 'Pagos', `${a.nombre} ${a.apellido} — ${pago.mes} ${pago.anio} — $${pago.monto}`)
       window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: a.id, nombre: `${a.nombre} ${a.apellido}` } }))
-      // Generar recibo combinado
-      generarReciboCombinado(conceptosList, totalMonto, pago)
+      generarRecibo({ ...pago, alumno_id: a.id })
     }
   }
 
@@ -1281,11 +1281,43 @@ ${itemsWS}
                 <button onClick={() => generarRecibo(p)} style={{padding:'7px 10px',background:'var(--vl)',color:'var(--v)',border:'none',borderRadius:'9px',fontSize:'11px',fontWeight:700,cursor:'pointer',flexShrink:0}}>
                   Recibo
                 </button>
+                {puedeEditar && (
+                  <button onClick={() => setPagoAEliminar(p)}
+                    style={{padding:'7px 8px',background:'var(--redl)',color:'var(--red)',border:'none',borderRadius:'9px',fontSize:'11px',fontWeight:700,cursor:'pointer',flexShrink:0}}>
+                    ✕
+                  </button>
+                )}
               </div>
             </div>
           )
         })}
       </Card>}
+
+      {pagoAEliminar && (
+        <ModalSheet title="¿Eliminar pago?" onClose={() => setPagoAEliminar(null)}>
+          <div style={{padding:'8px 0 16px'}}>
+            <div style={{fontSize:'14px',color:'var(--text)',fontWeight:600,marginBottom:'6px'}}>
+              {pagoAEliminar.mes} {pagoAEliminar.anio} · ${pagoAEliminar.monto?.toLocaleString('es-AR')}
+            </div>
+            <div style={{fontSize:'13px',color:'var(--text2)',marginBottom:'4px'}}>
+              {pagoAEliminar.metodo} · {fmtFecha(pagoAEliminar.fecha_pago)}
+            </div>
+            {pagoAEliminar.observaciones && (
+              <div style={{fontSize:'12px',color:'var(--text3)',marginTop:'4px'}}>{pagoAEliminar.observaciones}</div>
+            )}
+            <div style={{marginTop:'12px',padding:'10px 12px',background:'var(--redl)',borderRadius:'10px',fontSize:'12px',color:'var(--red)',fontWeight:500}}>
+              Esta acción no se puede deshacer. El pago será eliminado permanentemente.
+            </div>
+          </div>
+          <div style={{display:'flex',gap:'10px'}}>
+            <BtnG style={{flex:1}} onClick={() => setPagoAEliminar(null)}>Cancelar</BtnG>
+            <button onClick={eliminarPago} disabled={eliminandoPago}
+              style={{flex:2,padding:'12px',background:'var(--red)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:eliminandoPago?'not-allowed':'pointer'}}>
+              {eliminandoPago ? 'Eliminando...' : 'Sí, eliminar pago'}
+            </button>
+          </div>
+        </ModalSheet>
+      )}
 
       {confirmDelete && <ModalSheet title="¿Eliminar alumno?" onClose={onCancelDelete}>
         <p style={{fontSize:'14px',color:'var(--text2)',marginBottom:'20px'}}>Esta acción desactiva al alumno del sistema.</p>
@@ -1397,113 +1429,25 @@ ${itemsWS}
         </div>
       )}
 
-      {modalPago && (() => {
-        const totalConceptos =
-          (pagoConceptos.cuota ? (a.cuota_mensual||0) : 0) +
-          (pagoConceptos.recargo ? (pagoConceptos.montoRecargo||0) : 0) +
-          (pagoConceptos.matricula ? (a.matricula||0) : 0)
-        const hayConceptos = pagoConceptos.cuota || pagoConceptos.recargo || pagoConceptos.matricula
-        return (
-          <ModalSheet title="Registrar pago" onClose={() => setModalPago(false)}>
-            {/* Mes y fecha */}
-            <div style={{display:'flex',gap:'8px',marginBottom:'12px'}}>
-              <Field2 label="Mes" style={{flex:1}}>
-                <select style={IS} value={pago.mes} onChange={e=>setPago({...pago,mes:e.target.value})}>
-                  {MESES.map(m=><option key={m}>{m}</option>)}
-                </select>
-              </Field2>
-              <Field2 label="Fecha" style={{flex:1}}>
-                <input style={IS} type="date" value={pago.fecha_pago} onChange={e=>setPago({...pago,fecha_pago:e.target.value})} />
-              </Field2>
-            </div>
-
-            {/* Conceptos */}
-            <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'8px'}}>Conceptos a cobrar</div>
-
-            {/* Cuota mensual */}
-            <div onClick={()=>a.cuota_mensual>0&&setPagoConceptos(p=>({...p,cuota:!p.cuota}))}
-              style={{display:'flex',alignItems:'center',gap:'10px',padding:'12px 14px',borderRadius:'12px',marginBottom:'8px',cursor:a.cuota_mensual>0?'pointer':'not-allowed',opacity:a.cuota_mensual>0?1:0.4,
-                border:`1.5px solid ${pagoConceptos.cuota?'var(--v)':'var(--border)'}`,
-                background:pagoConceptos.cuota?'var(--vl)':'var(--white)'}}>
-              <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${pagoConceptos.cuota?'var(--v)':'var(--border)'}`,background:pagoConceptos.cuota?'var(--v)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                {pagoConceptos.cuota && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2.5"><path d="M2 5l2 2 4-4"/></svg>}
-              </div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:'14px',fontWeight:600}}>Cuota mensual</div>
-                <div style={{fontSize:'12px',color:'var(--text2)'}}>{pago.mes} {pago.anio}</div>
-              </div>
-              <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>
-                {a.cuota_mensual>0 ? `$${(a.cuota_mensual).toLocaleString('es-AR')}` : 'Sin cuota'}
-              </div>
-            </div>
-
-            {/* Cuota con recargo */}
-            <div style={{borderRadius:'12px',marginBottom:'8px',border:`1.5px solid ${pagoConceptos.recargo?'var(--amber)':'var(--border)'}`,background:pagoConceptos.recargo?'var(--amberl)':'var(--white)'}}>
-              <div onClick={()=>setPagoConceptos(p=>({...p,recargo:!p.recargo}))}
-                style={{display:'flex',alignItems:'center',gap:'10px',padding:'12px 14px',cursor:'pointer'}}>
-                <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${pagoConceptos.recargo?'var(--amber)':'var(--border)'}`,background:pagoConceptos.recargo?'var(--amber)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                  {pagoConceptos.recargo && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2.5"><path d="M2 5l2 2 4-4"/></svg>}
-                </div>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:'14px',fontWeight:600}}>Cuota con recargo</div>
-                  <div style={{fontSize:'12px',color:'var(--text2)'}}>Monto manual</div>
-                </div>
-                <div style={{fontSize:'15px',fontWeight:700,color:'var(--amber)'}}>
-                  {pagoConceptos.montoRecargo>0 ? `$${pagoConceptos.montoRecargo.toLocaleString('es-AR')}` : '—'}
-                </div>
-              </div>
-              {pagoConceptos.recargo && (
-                <div style={{padding:'0 14px 12px'}}>
-                  <input type="number" style={{...IS,borderColor:'var(--amber)'}} placeholder="Ingresá el monto con recargo..."
-                    value={pagoConceptos.montoRecargo||''}
-                    onChange={e=>setPagoConceptos(p=>({...p,montoRecargo:+e.target.value}))}
-                    autoFocus />
-                </div>
-              )}
-            </div>
-
-            {/* Matrícula */}
-            <div onClick={()=>a.matricula>0&&setPagoConceptos(p=>({...p,matricula:!p.matricula}))}
-              style={{display:'flex',alignItems:'center',gap:'10px',padding:'12px 14px',borderRadius:'12px',marginBottom:'14px',cursor:a.matricula>0?'pointer':'not-allowed',opacity:a.matricula>0?1:0.4,
-                border:`1.5px solid ${pagoConceptos.matricula?'#1a6b8a':'var(--border)'}`,
-                background:pagoConceptos.matricula?'#e0f0f7':'var(--white)'}}>
-              <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${pagoConceptos.matricula?'#1a6b8a':'var(--border)'}`,background:pagoConceptos.matricula?'#1a6b8a':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                {pagoConceptos.matricula && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2.5"><path d="M2 5l2 2 4-4"/></svg>}
-              </div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:'14px',fontWeight:600}}>Matrícula</div>
-                <div style={{fontSize:'12px',color:'var(--text2)'}}>Inscripción {pago.anio}</div>
-              </div>
-              <div style={{fontSize:'15px',fontWeight:700,color:'#1a6b8a'}}>
-                {a.matricula>0 ? `$${(a.matricula).toLocaleString('es-AR')}` : 'Sin matrícula'}
-              </div>
-            </div>
-
-            {/* Método */}
-            <Field2 label="Método de pago">
-              <select style={IS} value={pago.metodo} onChange={e=>setPago({...pago,metodo:e.target.value})}>
-                <option>Efectivo</option><option>Transferencia</option><option>MercadoPago</option>
-              </select>
-            </Field2>
-            <Field2 label="Observaciones"><Input value={pago.observaciones} onChange={(v:string)=>setPago({...pago,observaciones:v})} placeholder="Opcional..." /></Field2>
-
-            {/* Total */}
-            {hayConceptos && (
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',background:'var(--vl)',borderRadius:'12px',marginTop:'4px',marginBottom:'12px'}}>
-                <span style={{fontSize:'13px',color:'var(--text2)',fontWeight:600}}>Total a cobrar</span>
-                <span style={{fontSize:'20px',fontWeight:700,color:'var(--v)'}}>${totalConceptos.toLocaleString('es-AR')}</span>
-              </div>
-            )}
-
-            <div style={{display:'flex',gap:'10px',marginTop:'4px'}}>
-              <BtnG style={{flex:1}} onClick={() => setModalPago(false)}>Cancelar</BtnG>
-              <BtnP style={{flex:2}} onClick={guardarPago} disabled={guardandoPago||!hayConceptos}>
-                {guardandoPago?'Guardando...':hayConceptos?`Cobrar $${totalConceptos.toLocaleString('es-AR')}`:'Seleccioná un concepto'}
-              </BtnP>
-            </div>
-          </ModalSheet>
-        )
-      })()}
+      {modalPago && <ModalSheet title="Registrar pago" onClose={() => setModalPago(false)}>
+        <Field2 label="Mes">
+          <select style={IS} value={pago.mes} onChange={e=>setPago({...pago,mes:e.target.value})}>
+            {MESES.map(m=><option key={m}>{m}</option>)}
+          </select>
+        </Field2>
+        <Field2 label="Monto ($)"><Input type="number" value={pago.monto||''} onChange={(v:string)=>setPago({...pago,monto:+v})} /></Field2>
+        <Field2 label="Método">
+          <select style={IS} value={pago.metodo} onChange={e=>setPago({...pago,metodo:e.target.value})}>
+            <option>Efectivo</option><option>Transferencia</option><option>MercadoPago</option>
+          </select>
+        </Field2>
+        <Field2 label="Fecha"><input style={IS} type="date" value={pago.fecha_pago} onChange={e=>setPago({...pago,fecha_pago:e.target.value})} /></Field2>
+        <Field2 label="Observaciones"><Input value={pago.observaciones} onChange={(v:string)=>setPago({...pago,observaciones:v})} placeholder="Opcional..." /></Field2>
+        <div style={{display:'flex',gap:'10px',marginTop:'8px'}}>
+          <BtnG style={{flex:1}} onClick={() => setModalPago(false)}>Cancelar</BtnG>
+          <BtnP style={{flex:2}} onClick={guardarPago} disabled={guardandoPago}>{guardandoPago?'Guardando...':'Registrar pago'}</BtnP>
+        </div>
+      </ModalSheet>}
 
       {modalRecibo && ultimoPago && <ModalSheet title="Pago registrado ✓" onClose={() => setModalRecibo(false)}>
         <div style={{textAlign:'center',padding:'8px 0 16px'}}>
@@ -1661,6 +1605,11 @@ function PagosMasivos({ alumnos, onVolver }: any) {
   const [guardando, setGuardando] = useState(false)
   const [guardado, setGuardado] = useState(false)
   const [busqueda, setBusqueda] = useState('')
+  // Conceptos de pago
+  const [cobrarCuota, setCobrarCuota] = useState(true)
+  const [cobrarRecargo, setCobrarRecargo] = useState(false)
+  const [montoRecargo, setMontoRecargo] = useState('')
+  const [cobrarMatricula, setCobrarMatricula] = useState(false)
 
   const filtrados = busqueda
     ? alumnos.filter((a:any) => `${a.nombre} ${a.apellido}`.toLowerCase().includes(busqueda.toLowerCase()))
@@ -1684,22 +1633,33 @@ function PagosMasivos({ alumnos, onVolver }: any) {
 
   const guardar = async () => {
     if (seleccionados.size === 0) return alert('Seleccioná al menos un alumno')
+    if (!cobrarCuota && !cobrarRecargo && !cobrarMatricula) return alert('Seleccioná al menos un concepto')
+    if (cobrarRecargo && (!montoRecargo || parseFloat(montoRecargo) <= 0)) return alert('Ingresá el monto del recargo')
     setGuardando(true)
     const fecha = new Date().toISOString().split('T')[0]
     const alumnosSeleccionados = alumnos.filter((a:any) => seleccionados.has(a.id))
 
-    const inserts = alumnosSeleccionados.map((a:any) => ({
-      alumno_id: a.id,
-      mes,
-      anio,
-      monto: usarCuotaIndividual ? (a.cuota_mensual || 0) : (parseFloat(montoFijo) || 0),
-      metodo,
-      fecha_pago: fecha,
-      observaciones: 'Pago masivo registrado',
-    }))
+    // Generar un insert por cada concepto seleccionado por cada alumno
+    const inserts: any[] = []
+    for (const a of alumnosSeleccionados) {
+      if (cobrarCuota) inserts.push({
+        alumno_id: a.id, mes, anio, metodo, fecha_pago: fecha,
+        monto: usarCuotaIndividual ? (a.cuota_mensual || 0) : (parseFloat(montoFijo) || 0),
+        tipo: 'cuota', observaciones: `Cuota ${mes} ${anio}`,
+      })
+      if (cobrarRecargo) inserts.push({
+        alumno_id: a.id, mes, anio, metodo, fecha_pago: fecha,
+        monto: parseFloat(montoRecargo) || 0,
+        tipo: 'recargo', observaciones: `Cuota con recargo ${mes} ${anio}`,
+      })
+      if (cobrarMatricula) inserts.push({
+        alumno_id: a.id, mes, anio, metodo, fecha_pago: fecha,
+        monto: a.matricula || 0,
+        tipo: 'matricula', observaciones: 'Matrícula',
+      })
+    }
 
     try {
-      // Guardar todos los pagos en paralelo con apiHeaders (incluye x-instituto-id)
       const resultados = await Promise.all(inserts.map(ins =>
         fetch('/api/registrar-pago', {
           method: 'POST',
@@ -1714,12 +1674,10 @@ function PagosMasivos({ alumnos, onVolver }: any) {
         alert(`${errores.length} pago(s) no se pudieron guardar. Revisá la consola.`)
       }
 
-      // Disparar evento para refrescar filtros
-      showToast(`✓ ${inserts.length} pago${inserts.length!==1?'s':''} registrado${inserts.length!==1?'s':''}`)
-      inserts.forEach(ins => window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: ins.alumno_id } })))
-      // Actualizar badge "ya pagó" localmente
-      const pagadosOk = resultados.filter(r => !r.error).map((_, i) => inserts[i].alumno_id)
-      setAlumnosPagadosMes(prev => new Set([...prev, ...pagadosOk]))
+      showToast(`✓ ${alumnosSeleccionados.length} alumno${alumnosSeleccionados.length!==1?'s':''} · ${inserts.length} concepto${inserts.length!==1?'s':''} registrado${inserts.length!==1?'s':''}`)
+      const alumnosOk = [...new Set(resultados.filter(r => !r.error).map((_, i) => inserts[i].alumno_id))]
+      alumnosOk.forEach(id => window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: id } })))
+      setAlumnosPagadosMes(prev => new Set([...prev, ...alumnosOk]))
     } catch (e) {
       console.error('[PagosMasivos] catch:', e)
       alert('Error de conexión al guardar los pagos.')
@@ -1734,7 +1692,11 @@ function PagosMasivos({ alumnos, onVolver }: any) {
   const totalMonto = [...seleccionados].reduce((sum, id) => {
     const a = alumnos.find((x:any) => x.id === id)
     if (!a) return sum
-    return sum + (usarCuotaIndividual ? (a.cuota_mensual || 0) : (parseFloat(montoFijo) || 0))
+    let t = 0
+    if (cobrarCuota) t += (a.cuota_mensual || 0)
+    if (cobrarRecargo) t += (parseFloat(montoRecargo) || 0)
+    if (cobrarMatricula) t += (a.matricula || 0)
+    return sum + t
   }, 0)
 
   return (
@@ -1914,7 +1876,7 @@ function PagosMasivos({ alumnos, onVolver }: any) {
       {/* Config pago */}
       <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px',marginBottom:'14px'}}>
         <SL style={{marginBottom:'12px'}}>Configuración del pago</SL>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'14px'}}>
           <div>
             <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'3px'}}>Mes</div>
             <select style={IS} value={mes} onChange={e=>setMes(e.target.value)}>
@@ -1930,23 +1892,53 @@ function PagosMasivos({ alumnos, onVolver }: any) {
             </select>
           </div>
         </div>
-        <div>
-          <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'6px'}}>Monto</div>
-          <div style={{display:'flex',gap:'8px',marginBottom:'8px'}}>
-            <button onClick={() => setUsarCuotaIndividual(true)} style={{flex:1,padding:'9px',borderRadius:'10px',border:'1.5px solid',borderColor:usarCuotaIndividual?'var(--v)':'var(--border)',background:usarCuotaIndividual?'var(--vl)':'var(--white)',color:usarCuotaIndividual?'var(--v)':'var(--text2)',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
-              Cuota individual
-            </button>
-            <button onClick={() => setUsarCuotaIndividual(false)} style={{flex:1,padding:'9px',borderRadius:'10px',border:'1.5px solid',borderColor:!usarCuotaIndividual?'var(--v)':'var(--border)',background:!usarCuotaIndividual?'var(--vl)':'var(--white)',color:!usarCuotaIndividual?'var(--v)':'var(--text2)',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
-              Monto fijo
-            </button>
+
+        <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',marginBottom:'8px'}}>Conceptos a cobrar</div>
+
+        {/* Cuota mensual */}
+        <div onClick={()=>setCobrarCuota(!cobrarCuota)}
+          style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',borderRadius:'10px',marginBottom:'8px',cursor:'pointer',
+            border:`1.5px solid ${cobrarCuota?'var(--v)':'var(--border)'}`,background:cobrarCuota?'var(--vl)':'var(--white)'}}>
+          <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${cobrarCuota?'var(--v)':'var(--border)'}`,background:cobrarCuota?'var(--v)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            {cobrarCuota&&<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2.5"><path d="M2 5l2 2 4-4"/></svg>}
           </div>
-          {!usarCuotaIndividual && (
-            <input type="number" value={montoFijo} onChange={e=>setMontoFijo(e.target.value)}
-              placeholder="Monto igual para todos..." style={IS} />
+          <div style={{flex:1}}>
+            <div style={{fontSize:'13px',fontWeight:600}}>Cuota mensual</div>
+            <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'1px'}}>{mes} {anio} · monto individual de cada alumno</div>
+          </div>
+        </div>
+
+        {/* Cuota con recargo */}
+        <div style={{borderRadius:'10px',marginBottom:'8px',border:`1.5px solid ${cobrarRecargo?'var(--amber)':'var(--border)'}`,background:cobrarRecargo?'var(--amberl)':'var(--white)'}}>
+          <div onClick={()=>setCobrarRecargo(!cobrarRecargo)}
+            style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',cursor:'pointer'}}>
+            <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${cobrarRecargo?'var(--amber)':'var(--border)'}`,background:cobrarRecargo?'var(--amber)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+              {cobrarRecargo&&<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2.5"><path d="M2 5l2 2 4-4"/></svg>}
+            </div>
+            <div style={{flex:1}}>
+              <div style={{fontSize:'13px',fontWeight:600}}>Cuota con recargo</div>
+              <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'1px'}}>Monto fijo igual para todos</div>
+            </div>
+            {cobrarRecargo && montoRecargo && <div style={{fontSize:'14px',fontWeight:700,color:'var(--amber)'}}>${parseFloat(montoRecargo||'0').toLocaleString('es-AR')}</div>}
+          </div>
+          {cobrarRecargo && (
+            <div style={{padding:'0 12px 10px'}}>
+              <input type="number" style={{...IS,borderColor:'var(--amber)'}} placeholder="Monto del recargo para todos..." value={montoRecargo} onChange={e=>setMontoRecargo(e.target.value)} />
+            </div>
           )}
-          {usarCuotaIndividual && (
-            <div style={{fontSize:'12px',color:'var(--text3)',padding:'8px 0'}}>Cada alumno pagará su cuota mensual individual</div>
-          )}
+        </div>
+
+        {/* Matrícula */}
+        <div onClick={()=>setCobrarMatricula(!cobrarMatricula)}
+          style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',borderRadius:'10px',cursor:'pointer',
+            border:`1.5px solid ${cobrarMatricula?'#1a6b8a':'var(--border)'}`,background:cobrarMatricula?'#e0f0f7':'var(--white)'}}>
+          <div style={{width:18,height:18,borderRadius:5,border:`2px solid ${cobrarMatricula?'#1a6b8a':'var(--border)'}`,background:cobrarMatricula?'#1a6b8a':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+            {cobrarMatricula&&<svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2.5"><path d="M2 5l2 2 4-4"/></svg>}
+          </div>
+          <div style={{flex:1}}>
+            <div style={{fontSize:'13px',fontWeight:600}}>Matrícula</div>
+            <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'1px'}}>{anio} · monto individual de cada alumno</div>
+          </div>
         </div>
       </div>
 
@@ -1966,7 +1958,10 @@ function PagosMasivos({ alumnos, onVolver }: any) {
         <div style={{maxHeight:'360px',overflowY:'auto'}}>
           {filtrados.map((a:any) => {
             const sel = seleccionados.has(a.id)
-            const monto = usarCuotaIndividual ? a.cuota_mensual : parseFloat(montoFijo)||0
+            let monto = 0
+            if (cobrarCuota) monto += (a.cuota_mensual || 0)
+            if (cobrarRecargo) monto += (parseFloat(montoRecargo) || 0)
+            if (cobrarMatricula) monto += (a.matricula || 0)
             const yaPago = alumnosPagadosMes.has(a.id)
             return (
               <div key={a.id} onClick={() => toggleAlumno(a.id)}
