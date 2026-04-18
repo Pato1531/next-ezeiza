@@ -658,7 +658,7 @@ export default function Alumnos() {
             <table>
               <tr><th>Fecha de baja</th><th>Alumno</th><th>Curso</th><th>Nivel</th><th>Cuota</th><th>Motivo</th></tr>
               ${bajas.map(b=>`<tr>
-                <td>${fmtFecha(b.fecha_baja)}</td>
+                <td>${b.fecha_baja ? b.fecha_baja.split("-").reverse().join("/") : "—"}</td>
                 <td>${b.alumno_nombre} ${b.alumno_apellido}</td>
                 <td>${b.curso_nombre||'—'}</td>
                 <td>${b.nivel||'—'}</td>
