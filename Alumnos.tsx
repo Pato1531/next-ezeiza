@@ -1390,7 +1390,7 @@ ${itemsWS}
               {histCuotas.map((h:any) => (
                 <div key={h.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 0',borderBottom:'1px solid var(--border)',fontSize:'12.5px'}}>
                   <span style={{color:'var(--text3)'}}>$</span>
-                  <span style={{color:'var(--red)',textDecoration:'line-through',color:'var(--text3)'}}>${h.cuota_anterior?.toLocaleString('es-AR')}</span>
+                  <span style={{textDecoration:'line-through',color:'var(--text3)'}}>${h.cuota_anterior?.toLocaleString('es-AR')}</span>
                   <span style={{color:'var(--text3)'}}>→</span>
                   <span style={{fontWeight:600,color:'var(--v)'}}>${h.cuota_nueva?.toLocaleString('es-AR')}</span>
                   <span style={{marginLeft:'auto',color:'var(--text3)',fontSize:'11px'}}>{fmtFecha(h.vigente_desde)}</span>
