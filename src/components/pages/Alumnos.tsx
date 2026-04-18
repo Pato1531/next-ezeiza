@@ -127,6 +127,7 @@ export default function Alumnos() {
   const [bajas, setBajas] = useState<any[]>([])
   const [loadingBajas, setLoadingBajas] = useState(false)
   const [pago, setPago] = useState({ mes: MESES[new Date().getMonth()], anio: new Date().getFullYear(), monto: 0, metodo:'Efectivo', fecha_pago: new Date().toISOString().split('T')[0], observaciones:'' })
+  const [pagoConceptos, setPagoConceptos] = useState({ cuota: false, recargo: false, matricula: false, montoRecargo: 0 })
 
   const [renovacionMes, setRenovacionMes] = useState(new Date().getMonth())
   const [renovacionAnio, setRenovacionAnio] = useState(new Date().getFullYear())
@@ -172,8 +173,8 @@ export default function Alumnos() {
         clearTimeout(t)
         if (nuevo) {
           logActivity('Creó alumno', 'Alumnos', `${datos.nombre} ${datos.apellido}`)
-          // Registrar matrícula como pago via API route (service_role)
-          if (datos.matricula > 0) {
+          // Matrícula se registra manualmente desde el módulo de pagos
+          if (false && datos.matricula > 0) {
             const hoy = new Date()
             const MESES_M = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
             fetch('/api/registrar-pago', {
@@ -569,6 +570,8 @@ export default function Alumnos() {
       setModalPago={setModalPago}
       pago={pago}
       setPago={setPago}
+      pagoConceptos={pagoConceptos}
+      setPagoConceptos={setPagoConceptos}
     />
   )
   }
@@ -901,7 +904,7 @@ function FechaNacimientoField({ alumnoId, fechaActual, puedeEditar, onActualizar
   )
 }
 
-function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVolver, onEditar, onEliminar, confirmDelete, onCancelDelete, onConfirmDelete, modalPago, setModalPago, pago, setPago }: any) {
+function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVolver, onEditar, onEliminar, confirmDelete, onCancelDelete, onConfirmDelete, modalPago, setModalPago, pago, setPago, pagoConceptos, setPagoConceptos }: any) {
   const { pagos: _pagos, registrar } = usePagos(a.id)
   const [pagos, setPagosLocal] = useState<any[]>([])
   useEffect(() => { setPagosLocal(_pagos) }, [_pagos])
@@ -1048,14 +1051,88 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
     }
   }
   const guardarPago = async () => {
+    // Calcular total y conceptos seleccionados
+    const conceptosList: {tipo: string; monto: number; label: string}[] = []
+    if (pagoConceptos.cuota && a.cuota_mensual > 0)
+      conceptosList.push({ tipo: 'cuota', monto: a.cuota_mensual, label: `Cuota ${pago.mes} ${pago.anio}` })
+    if (pagoConceptos.recargo && pagoConceptos.montoRecargo > 0)
+      conceptosList.push({ tipo: 'recargo', monto: pagoConceptos.montoRecargo, label: `Cuota con recargo ${pago.mes} ${pago.anio}` })
+    if (pagoConceptos.matricula && a.matricula > 0)
+      conceptosList.push({ tipo: 'matricula', monto: a.matricula, label: 'Matrícula' })
+
+    if (conceptosList.length === 0) return alert('Seleccioná al menos un concepto')
+    const totalMonto = conceptosList.reduce((s, c) => s + c.monto, 0)
     setGuardandoPago(true)
-    const resultado = await registrar({ ...pago, alumno_id: a.id })
+
+    // Registrar un pago por cada concepto seleccionado
+    const resultados: any[] = []
+    for (const concepto of conceptosList) {
+      const res = await registrar({
+        ...pago,
+        alumno_id: a.id,
+        monto: concepto.monto,
+        tipo: concepto.tipo,
+        observaciones: concepto.label + (pago.observaciones ? ' · ' + pago.observaciones : ''),
+      })
+      if (res) resultados.push(res)
+    }
     setGuardandoPago(false)
     setModalPago(false)
-    if (resultado) {
-      logActivity('Registró pago', 'Pagos', `${a.nombre} ${a.apellido} — ${pago.mes} ${pago.anio} — $${pago.monto}`)
+    setPagoConceptos({ cuota: false, recargo: false, matricula: false, montoRecargo: 0 })
+
+    if (resultados.length > 0) {
+      logActivity('Registró pago', 'Pagos', `${a.nombre} ${a.apellido} — ${pago.mes} ${pago.anio} — $${totalMonto}`)
       window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: a.id, nombre: `${a.nombre} ${a.apellido}` } }))
-      generarRecibo({ ...pago, alumno_id: a.id })
+      // Generar recibo combinado
+      generarReciboCombinado(conceptosList, totalMonto, pago)
+    }
+  }
+
+  const generarReciboCombinado = (conceptos: any[], total: number, pagoInfo: any) => {
+    const contacto = a.es_menor ? a.padre_nombre || a.nombre : a.nombre
+    const tel = a.es_menor ? a.padre_telefono : a.telefono
+    const fecha = new Date().toLocaleDateString('es-AR', { day:'numeric', month:'long', year:'numeric' })
+    const num = Math.floor(Math.random()*900000)+100000
+    const totalFmt = total.toLocaleString('es-AR')
+    const itemsHTML = conceptos.map(c => `
+      <div class="fila">
+        <div class="fila-lab">${c.label}</div>
+        <div class="fila-val">$${c.monto.toLocaleString('es-AR')}</div>
+      </div>`).join('')
+    const itemsWS = conceptos.map(c => `• ${c.label}: *$${c.monto.toLocaleString('es-AR')}*`).join('
+')
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo ${a.nombre} ${a.apellido}</title>
+    <style>body{font-family:Arial,sans-serif;padding:0;margin:0;background:#f5f0fa}.wrap{max-width:400px;margin:20px auto;background:white;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(101,47,141,.15)}.hdr{background:#652f8d;padding:24px;color:white}.logo{font-size:20px;font-weight:900}.logo span{opacity:.7;font-weight:400}.rec-num{font-size:12px;opacity:.7;margin-top:2px}.monto-sec{background:#f2e8f9;padding:20px;text-align:center;border-bottom:2px dashed #d4a8e8}.monto-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}.monto{font-size:44px;font-weight:900;color:#652f8d;letter-spacing:-2px}.monto-mes{font-size:13px;color:#9b8eaa;margin-top:4px}.body{padding:20px}.fila{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0edf5}.fila:last-child{border-bottom:none}.fila-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.04em}.fila-val{font-size:13px;color:#1a1020;font-weight:700;text-align:right;max-width:60%}.total-row{display:flex;justify-content:space-between;padding:12px 0 0;border-top:2px solid #652f8d;margin-top:4px}.total-lab{font-size:13px;font-weight:700;color:#1a1020}.total-val{font-size:18px;font-weight:900;color:#652f8d}.badge{background:#e6f4ec;color:#2d7a4f;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}.footer{background:#faf7fd;padding:14px 20px;text-align:center;font-size:11px;color:#9b8eaa}@media print{body{background:white}.wrap{box-shadow:none;margin:0;border-radius:0}}</style></head><body>
+    <div class="wrap"><div class="hdr"><div class="logo">Next <span>Ezeiza</span></div><div class="rec-num">Comprobante #${num} · ${fecha}</div></div>
+    <div class="monto-sec"><div class="monto-lab">Total abonado</div><div class="monto">$${totalFmt}</div><div class="monto-mes">${pagoInfo.mes} ${pagoInfo.anio}</div></div>
+    <div class="body">
+    <div class="fila"><div class="fila-lab">Alumno</div><div class="fila-val">${a.nombre} ${a.apellido}</div></div>
+    <div class="fila"><div class="fila-lab">Método</div><div class="fila-val">${pagoInfo.metodo||'Efectivo'}</div></div>
+    <div class="fila"><div class="fila-lab">Fecha</div><div class="fila-val">${fecha}</div></div>
+    ${itemsHTML}
+    <div class="total-row"><div class="total-lab">Total</div><div class="total-val">$${totalFmt}</div></div>
+    <div class="fila" style="margin-top:8px"><div class="fila-lab">Estado</div><div class="fila-val"><span class="badge">✓ Pagado</span></div></div>
+    </div>
+    <div class="footer">Next Ezeiza English Institute · Ezeiza, Buenos Aires</div></div>
+    <script>setTimeout(function(){window.print()},400)</script></body></html>`
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'})
+    const url = URL.createObjectURL(blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 15000)
+    if (tel) {
+      const msgWS = `✅ *Recibo de pago — Next Ezeiza*
+
+Hola ${contacto}! Confirmamos el siguiente pago de *${a.nombre} ${a.apellido}*:
+
+${itemsWS}
+
+💰 *Total: $${totalFmt}*
+📅 Fecha: ${fecha}
+💳 Método: ${pagoInfo.metodo||'Efectivo'}
+
+¡Gracias! 🙌`
+      setUltimoPago({ tel, msg: msgWS, urlRecibo: null })
+      setModalRecibo(true)
     }
   }
 
@@ -1325,25 +1402,113 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
         </div>
       )}
 
-      {modalPago && <ModalSheet title="Registrar pago" onClose={() => setModalPago(false)}>
-        <Field2 label="Mes">
-          <select style={IS} value={pago.mes} onChange={e=>setPago({...pago,mes:e.target.value})}>
-            {MESES.map(m=><option key={m}>{m}</option>)}
-          </select>
-        </Field2>
-        <Field2 label="Monto ($)"><Input type="number" value={pago.monto||''} onChange={(v:string)=>setPago({...pago,monto:+v})} /></Field2>
-        <Field2 label="Método">
-          <select style={IS} value={pago.metodo} onChange={e=>setPago({...pago,metodo:e.target.value})}>
-            <option>Efectivo</option><option>Transferencia</option><option>MercadoPago</option>
-          </select>
-        </Field2>
-        <Field2 label="Fecha"><input style={IS} type="date" value={pago.fecha_pago} onChange={e=>setPago({...pago,fecha_pago:e.target.value})} /></Field2>
-        <Field2 label="Observaciones"><Input value={pago.observaciones} onChange={(v:string)=>setPago({...pago,observaciones:v})} placeholder="Opcional..." /></Field2>
-        <div style={{display:'flex',gap:'10px',marginTop:'8px'}}>
-          <BtnG style={{flex:1}} onClick={() => setModalPago(false)}>Cancelar</BtnG>
-          <BtnP style={{flex:2}} onClick={guardarPago} disabled={guardandoPago}>{guardandoPago?'Guardando...':'Registrar pago'}</BtnP>
-        </div>
-      </ModalSheet>}
+      {modalPago && (() => {
+        const totalConceptos =
+          (pagoConceptos.cuota ? (a.cuota_mensual||0) : 0) +
+          (pagoConceptos.recargo ? (pagoConceptos.montoRecargo||0) : 0) +
+          (pagoConceptos.matricula ? (a.matricula||0) : 0)
+        const hayConceptos = pagoConceptos.cuota || pagoConceptos.recargo || pagoConceptos.matricula
+        return (
+          <ModalSheet title="Registrar pago" onClose={() => setModalPago(false)}>
+            {/* Mes y fecha */}
+            <div style={{display:'flex',gap:'8px',marginBottom:'12px'}}>
+              <Field2 label="Mes" style={{flex:1}}>
+                <select style={IS} value={pago.mes} onChange={e=>setPago({...pago,mes:e.target.value})}>
+                  {MESES.map(m=><option key={m}>{m}</option>)}
+                </select>
+              </Field2>
+              <Field2 label="Fecha" style={{flex:1}}>
+                <input style={IS} type="date" value={pago.fecha_pago} onChange={e=>setPago({...pago,fecha_pago:e.target.value})} />
+              </Field2>
+            </div>
+
+            {/* Conceptos */}
+            <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'8px'}}>Conceptos a cobrar</div>
+
+            {/* Cuota mensual */}
+            <div onClick={()=>a.cuota_mensual>0&&setPagoConceptos(p=>({...p,cuota:!p.cuota}))}
+              style={{display:'flex',alignItems:'center',gap:'10px',padding:'12px 14px',borderRadius:'12px',marginBottom:'8px',cursor:a.cuota_mensual>0?'pointer':'not-allowed',opacity:a.cuota_mensual>0?1:0.4,
+                border:`1.5px solid ${pagoConceptos.cuota?'var(--v)':'var(--border)'}`,
+                background:pagoConceptos.cuota?'var(--vl)':'var(--white)'}}>
+              <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${pagoConceptos.cuota?'var(--v)':'var(--border)'}`,background:pagoConceptos.cuota?'var(--v)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                {pagoConceptos.cuota && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2.5"><path d="M2 5l2 2 4-4"/></svg>}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:'14px',fontWeight:600}}>Cuota mensual</div>
+                <div style={{fontSize:'12px',color:'var(--text2)'}}>{pago.mes} {pago.anio}</div>
+              </div>
+              <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>
+                {a.cuota_mensual>0 ? `$${(a.cuota_mensual).toLocaleString('es-AR')}` : 'Sin cuota'}
+              </div>
+            </div>
+
+            {/* Cuota con recargo */}
+            <div style={{borderRadius:'12px',marginBottom:'8px',border:`1.5px solid ${pagoConceptos.recargo?'var(--amber)':'var(--border)'}`,background:pagoConceptos.recargo?'var(--amberl)':'var(--white)'}}>
+              <div onClick={()=>setPagoConceptos(p=>({...p,recargo:!p.recargo}))}
+                style={{display:'flex',alignItems:'center',gap:'10px',padding:'12px 14px',cursor:'pointer'}}>
+                <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${pagoConceptos.recargo?'var(--amber)':'var(--border)'}`,background:pagoConceptos.recargo?'var(--amber)':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                  {pagoConceptos.recargo && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2.5"><path d="M2 5l2 2 4-4"/></svg>}
+                </div>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:'14px',fontWeight:600}}>Cuota con recargo</div>
+                  <div style={{fontSize:'12px',color:'var(--text2)'}}>Monto manual</div>
+                </div>
+                <div style={{fontSize:'15px',fontWeight:700,color:'var(--amber)'}}>
+                  {pagoConceptos.montoRecargo>0 ? `$${pagoConceptos.montoRecargo.toLocaleString('es-AR')}` : '—'}
+                </div>
+              </div>
+              {pagoConceptos.recargo && (
+                <div style={{padding:'0 14px 12px'}}>
+                  <input type="number" style={{...IS,borderColor:'var(--amber)'}} placeholder="Ingresá el monto con recargo..."
+                    value={pagoConceptos.montoRecargo||''}
+                    onChange={e=>setPagoConceptos(p=>({...p,montoRecargo:+e.target.value}))}
+                    autoFocus />
+                </div>
+              )}
+            </div>
+
+            {/* Matrícula */}
+            <div onClick={()=>a.matricula>0&&setPagoConceptos(p=>({...p,matricula:!p.matricula}))}
+              style={{display:'flex',alignItems:'center',gap:'10px',padding:'12px 14px',borderRadius:'12px',marginBottom:'14px',cursor:a.matricula>0?'pointer':'not-allowed',opacity:a.matricula>0?1:0.4,
+                border:`1.5px solid ${pagoConceptos.matricula?'#1a6b8a':'var(--border)'}`,
+                background:pagoConceptos.matricula?'#e0f0f7':'var(--white)'}}>
+              <div style={{width:20,height:20,borderRadius:6,border:`2px solid ${pagoConceptos.matricula?'#1a6b8a':'var(--border)'}`,background:pagoConceptos.matricula?'#1a6b8a':'transparent',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                {pagoConceptos.matricula && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2.5"><path d="M2 5l2 2 4-4"/></svg>}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:'14px',fontWeight:600}}>Matrícula</div>
+                <div style={{fontSize:'12px',color:'var(--text2)'}}>Inscripción {pago.anio}</div>
+              </div>
+              <div style={{fontSize:'15px',fontWeight:700,color:'#1a6b8a'}}>
+                {a.matricula>0 ? `$${(a.matricula).toLocaleString('es-AR')}` : 'Sin matrícula'}
+              </div>
+            </div>
+
+            {/* Método */}
+            <Field2 label="Método de pago">
+              <select style={IS} value={pago.metodo} onChange={e=>setPago({...pago,metodo:e.target.value})}>
+                <option>Efectivo</option><option>Transferencia</option><option>MercadoPago</option>
+              </select>
+            </Field2>
+            <Field2 label="Observaciones"><Input value={pago.observaciones} onChange={(v:string)=>setPago({...pago,observaciones:v})} placeholder="Opcional..." /></Field2>
+
+            {/* Total */}
+            {hayConceptos && (
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',background:'var(--vl)',borderRadius:'12px',marginTop:'4px',marginBottom:'12px'}}>
+                <span style={{fontSize:'13px',color:'var(--text2)',fontWeight:600}}>Total a cobrar</span>
+                <span style={{fontSize:'20px',fontWeight:700,color:'var(--v)'}}>${totalConceptos.toLocaleString('es-AR')}</span>
+              </div>
+            )}
+
+            <div style={{display:'flex',gap:'10px',marginTop:'4px'}}>
+              <BtnG style={{flex:1}} onClick={() => setModalPago(false)}>Cancelar</BtnG>
+              <BtnP style={{flex:2}} onClick={guardarPago} disabled={guardandoPago||!hayConceptos}>
+                {guardandoPago?'Guardando...':hayConceptos?`Cobrar $${totalConceptos.toLocaleString('es-AR')}`:'Seleccioná un concepto'}
+              </BtnP>
+            </div>
+          </ModalSheet>
+        )
+      })()}
 
       {modalRecibo && ultimoPago && <ModalSheet title="Pago registrado ✓" onClose={() => setModalRecibo(false)}>
         <div style={{textAlign:'center',padding:'8px 0 16px'}}>
