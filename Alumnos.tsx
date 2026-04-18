@@ -45,7 +45,7 @@ const ModalSheet = ({title,children,onClose}:any) => (
 )
 
 
-import { showToast } from '../Toast'
+import { showToast } from '@/components/Toast'
 
 type Vista = 'lista' | 'detalle' | 'form' | 'baja' | 'bajas_historicas' | 'pagos_masivos' | 'renovacion_matricula'
 
