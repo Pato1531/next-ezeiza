@@ -123,15 +123,15 @@ export const PERMISOS: Record<Rol, string[]> = {
   director: [
     'dashboard', 'profesoras', 'alumnos', 'cursos', 'horarios',
     'reportes', 'permisos', 'perfil', 'comunicados', 'agenda',
-    'actividad', 'atencion', 'ejecutivo', 'cuotas',
+    'actividad', 'atencion', 'ejecutivo', 'cuotas', 'pagos',
   ],
   coordinadora: [
     'dashboard', 'profesoras', 'alumnos', 'cursos', 'horarios',
-    'reportes', 'perfil', 'comunicados', 'agenda', 'atencion',
+    'reportes', 'perfil', 'comunicados', 'agenda', 'atencion', 'pagos',
   ],
   secretaria: [
     'dashboard', 'alumnos', 'cursos', 'horarios', 'reportes',
-    'perfil', 'comunicados', 'agenda', 'atencion', 'cuotas',
+    'perfil', 'comunicados', 'agenda', 'atencion', 'cuotas', 'pagos',
   ],
   profesora: [
     'dashboard', 'alumnos', 'cursos', 'horarios',
