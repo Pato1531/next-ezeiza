@@ -54,6 +54,7 @@ const PAGES: Record<string, React.ComponentType> = {
   atencion: AtencionCliente,
   ejecutivo: DashboardEjecutivo,
   cuotas: CuotasPorCurso,
+  pagos: Pagos,
 }
 
 const PAGE_TITLES: Record<string, string> = {
