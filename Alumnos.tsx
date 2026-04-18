@@ -254,8 +254,8 @@ export default function Alumnos() {
     setConfirmDelete(false)
     irALista()
     const sb = createClient()
-   sb.from('alumnos').update({ activo: false }).eq('id', selId)
-      .then(() => recargar()).catch((_e: any) => {})
+    sb.from('alumnos').update({ activo: false }).eq('id', selId)
+      .then(() => { recargar().catch(() => {}) })
   }
 
   const filtrados = alumnos.filter(a => {
