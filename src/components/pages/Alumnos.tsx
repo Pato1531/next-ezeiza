@@ -1094,13 +1094,8 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
     const fecha = new Date().toLocaleDateString('es-AR', { day:'numeric', month:'long', year:'numeric' })
     const num = Math.floor(Math.random()*900000)+100000
     const totalFmt = total.toLocaleString('es-AR')
-    const itemsHTML = conceptos.map(c => `
-      <div class="fila">
-        <div class="fila-lab">${c.label}</div>
-        <div class="fila-val">$${c.monto.toLocaleString('es-AR')}</div>
-      </div>`).join('')
-    const itemsWS = conceptos.map(c => `• ${c.label}: *$${c.monto.toLocaleString('es-AR')}*`).join('
-')
+    const itemsHTML = conceptos.map(c => '<div class="fila"><div class="fila-lab">' + c.label + '</div><div class="fila-val">$' + c.monto.toLocaleString('es-AR') + '</div></div>').join('')
+    const itemsWS = conceptos.map(c => '• ' + c.label + ': *$' + c.monto.toLocaleString('es-AR') + '*').join('\n')
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo ${a.nombre} ${a.apellido}</title>
     <style>body{font-family:Arial,sans-serif;padding:0;margin:0;background:#f5f0fa}.wrap{max-width:400px;margin:20px auto;background:white;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(101,47,141,.15)}.hdr{background:#652f8d;padding:24px;color:white}.logo{font-size:20px;font-weight:900}.logo span{opacity:.7;font-weight:400}.rec-num{font-size:12px;opacity:.7;margin-top:2px}.monto-sec{background:#f2e8f9;padding:20px;text-align:center;border-bottom:2px dashed #d4a8e8}.monto-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}.monto{font-size:44px;font-weight:900;color:#652f8d;letter-spacing:-2px}.monto-mes{font-size:13px;color:#9b8eaa;margin-top:4px}.body{padding:20px}.fila{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0edf5}.fila:last-child{border-bottom:none}.fila-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.04em}.fila-val{font-size:13px;color:#1a1020;font-weight:700;text-align:right;max-width:60%}.total-row{display:flex;justify-content:space-between;padding:12px 0 0;border-top:2px solid #652f8d;margin-top:4px}.total-lab{font-size:13px;font-weight:700;color:#1a1020}.total-val{font-size:18px;font-weight:900;color:#652f8d}.badge{background:#e6f4ec;color:#2d7a4f;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}.footer{background:#faf7fd;padding:14px 20px;text-align:center;font-size:11px;color:#9b8eaa}@media print{body{background:white}.wrap{box-shadow:none;margin:0;border-radius:0}}</style></head><body>
     <div class="wrap"><div class="hdr"><div class="logo">Next <span>Ezeiza</span></div><div class="rec-num">Comprobante #${num} · ${fecha}</div></div>
