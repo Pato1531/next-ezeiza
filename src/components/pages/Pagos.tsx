@@ -412,6 +412,11 @@ export default function Pagos() {
                                 const { error } = await sb.from('pagos_alumnos').delete().eq('id', p.id)
                                 if (!error) {
                                   setPagosReporte(prev => prev.filter(x => x.id !== p.id))
+                                  // Si ya no quedan pagos de ese alumno en el mes, marcarlo como no pagado
+                                  const restantes = pagosReporte.filter(x => x.id !== p.id && x.alumno_id === p.alumno_id)
+                                  if (restantes.length === 0) {
+                                    setAlumnosPagadosMes(prev => { const n = new Set(prev); n.delete(p.alumno_id); return n })
+                                  }
                                   logActivity('Eliminó pago', 'Pagos', `${p.alumnos?.nombre} ${p.alumnos?.apellido} · ${p.mes} ${p.anio}`)
                                   showToast('Pago eliminado')
                                 } else {
@@ -484,6 +489,11 @@ export default function Pagos() {
                   const { error } = await sb.from('pagos_alumnos').delete().eq('id', pagoEditando.id)
                   if (!error) {
                     setPagosReporte(prev => prev.filter(x => x.id !== pagoEditando.id))
+                    // Si ya no quedan pagos de ese alumno en el mes, marcarlo como no pagado
+                    const restantes = pagosReporte.filter(x => x.id !== pagoEditando.id && x.alumno_id === pagoEditando.alumno_id)
+                    if (restantes.length === 0) {
+                      setAlumnosPagadosMes(prev => { const n = new Set(prev); n.delete(pagoEditando.alumno_id); return n })
+                    }
                     logActivity('Eliminó pago', 'Pagos', `${pagoEditando.alumnos?.nombre} ${pagoEditando.alumnos?.apellido} · ${pagoEditando.mes} ${pagoEditando.anio}`)
                     showToast('Pago eliminado')
                     setPagoEditando(null)
