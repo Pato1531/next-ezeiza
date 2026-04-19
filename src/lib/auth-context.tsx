@@ -82,6 +82,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const [permisosCustomPorUsuario, setPermisosCustomPorUsuario] = useState<Record<string, string[]>>({})
 
+  // Recarga permisos_custom de todos los usuarios del instituto.
+  // Se usa desde el módulo Permisos cuando el director edita accesos.
   const recargarPermisosUsuarios = useCallback(async () => {
     try {
       const sb = getClient()
@@ -149,6 +151,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (!mountedRef.current) return
+
+      // ── FIX: cargar permisos_custom del propio usuario desde su fila ──────
+      // El select('*') ya incluye permisos_custom. Esto evita depender de
+      // recargarPermisosUsuarios() que no se llamaba automáticamente al montar,
+      // y garantiza que cualquier cambio en Supabase se refleja en el próximo login.
+      if (Array.isArray(u.permisos_custom) && u.permisos_custom.length > 0) {
+        setPermisosCustomPorUsuario({ [u.id]: u.permisos_custom })
+      } else {
+        setPermisosCustomPorUsuario({})
+      }
+      // ─────────────────────────────────────────────────────────────────────
 
       setUsuario(u)
       setInstituto(inst)
