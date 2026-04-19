@@ -141,3 +141,4 @@ export const PERMISOS: Record<Rol, string[]> = {
 
 export const puedeVer = (rol: Rol, modulo: string) =>
   PERMISOS[rol]?.includes(modulo) ?? false
+// v2
