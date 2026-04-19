@@ -1,6 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useAlumnos, apiHeaders, logActivity } from '@/lib/hooks'
+import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 import { showToast } from '@/components/Toast'
 
@@ -39,6 +40,8 @@ const ModalSheet = ({ title, children, onClose }: any) => (
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function Pagos() {
   const { alumnos } = useAlumnos()
+  const { usuario } = useAuth()
+  const puedeEliminar = usuario?.rol === 'director' || usuario?.rol === 'secretaria'
   const mesActual = MESES[new Date().getMonth()]
   const anioActual = new Date().getFullYear()
 
@@ -53,6 +56,7 @@ export default function Pagos() {
   const [filtroRepMetodo, setFiltroRepMetodo] = useState('')
   const [pagoEditando, setPagoEditando] = useState<any>(null)
   const [guardandoEditPago, setGuardandoEditPago] = useState(false)
+  const [eliminandoPago, setEliminandoPago] = useState(false)
 
   // ── Estado: Registrar ─────────────────────────────────────────────────────
   const [mes, setMes] = useState(mesActual)
@@ -400,6 +404,24 @@ export default function Pagos() {
                             style={{ padding:'5px 10px', background:'var(--vl)', color:'var(--v)', border:'1px solid #d4a8e8', borderRadius:'7px', fontSize:'11px', fontWeight:600, cursor:'pointer', flexShrink:0 }}>
                             Editar
                           </button>
+                          {puedeEliminar && (
+                            <button
+                              onClick={async () => {
+                                if (!confirm(`¿Eliminar el pago de ${p.alumnos?.nombre} ${p.alumnos?.apellido}?`)) return
+                                const sb = createClient()
+                                const { error } = await sb.from('pagos_alumnos').delete().eq('id', p.id)
+                                if (!error) {
+                                  setPagosReporte(prev => prev.filter(x => x.id !== p.id))
+                                  logActivity('Eliminó pago', 'Pagos', `${p.alumnos?.nombre} ${p.alumnos?.apellido} · ${p.mes} ${p.anio}`)
+                                  showToast('Pago eliminado')
+                                } else {
+                                  alert('Error al eliminar el pago')
+                                }
+                              }}
+                              style={{ padding:'5px 10px', background:'var(--redl, #fef2f2)', color:'var(--red, #dc2626)', border:'1px solid #fca5a5', borderRadius:'7px', fontSize:'11px', fontWeight:600, cursor:'pointer', flexShrink:0 }}>
+                              Eliminar
+                            </button>
+                          )}
                         </div>
                       </div>
                     )
@@ -452,6 +474,28 @@ export default function Pagos() {
             <button onClick={() => setPagoEditando(null)} style={{ flex:1, padding:'12px', background:'transparent', color:'var(--text2)', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'14px', fontWeight:600, cursor:'pointer' }}>
               Cancelar
             </button>
+            {puedeEliminar && (
+              <button
+                disabled={eliminandoPago}
+                onClick={async () => {
+                  if (!confirm(`¿Eliminar el pago de ${pagoEditando.alumnos?.nombre} ${pagoEditando.alumnos?.apellido}?`)) return
+                  setEliminandoPago(true)
+                  const sb = createClient()
+                  const { error } = await sb.from('pagos_alumnos').delete().eq('id', pagoEditando.id)
+                  if (!error) {
+                    setPagosReporte(prev => prev.filter(x => x.id !== pagoEditando.id))
+                    logActivity('Eliminó pago', 'Pagos', `${pagoEditando.alumnos?.nombre} ${pagoEditando.alumnos?.apellido} · ${pagoEditando.mes} ${pagoEditando.anio}`)
+                    showToast('Pago eliminado')
+                    setPagoEditando(null)
+                  } else {
+                    alert('Error al eliminar el pago')
+                  }
+                  setEliminandoPago(false)
+                }}
+                style={{ flex:1, padding:'12px', background: eliminandoPago ? '#aaa' : 'var(--redl, #fef2f2)', color: eliminandoPago ? '#fff' : 'var(--red, #dc2626)', border:'1.5px solid #fca5a5', borderRadius:'10px', fontSize:'14px', fontWeight:600, cursor: eliminandoPago ? 'not-allowed' : 'pointer' }}>
+                {eliminandoPago ? 'Eliminando...' : 'Eliminar'}
+              </button>
+            )}
             <button
               disabled={guardandoEditPago}
               onClick={async () => {
