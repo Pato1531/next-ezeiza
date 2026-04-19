@@ -19,14 +19,16 @@ export async function GET(req: NextRequest) {
     const institutoId = getInstitutoId(req)
     const admin = getAdminClient()
 
-    // Nota: permisos_custom puede no existir si no se ejecutó la migración SQL
-    // Seleccionamos solo columnas base — permisos_custom se agrega opcionalmente
-    let q = admin
+    if (!institutoId) {
+      console.warn('[usuarios GET] instituto_id no recibido en el header')
+      return NextResponse.json({ error: 'instituto_id requerido' }, { status: 400 })
+    }
+
+    const { data, error } = await admin
       .from('usuarios')
-      .select('id, nombre, rol, color, initials, activo, instituto_id')
+      .select('id, nombre, email, rol, color, initials, activo, instituto_id, permisos_custom')
+      .eq('instituto_id', institutoId)
       .order('nombre', { ascending: true })
-    if (institutoId) q = (q as any).eq('instituto_id', institutoId)
-    const { data, error } = await q
 
     if (error) {
       console.error('[usuarios GET] Supabase error:', error)
