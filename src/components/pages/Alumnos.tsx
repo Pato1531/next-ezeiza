@@ -194,31 +194,8 @@ export default function Alumnos() {
         const nuevo = await agregar(datos)
         clearTimeout(t)
         if (nuevo) {
-          // Registrar matrícula automáticamente si se ingresó un monto
-          if (datos.matricula && datos.matricula > 0) {
-            const hoy = new Date()
-            const MESES_M = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio',
-              'Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-            fetch('/api/registrar-pago', {
-              method: 'POST',
-              headers: apiHeaders(),
-              body: JSON.stringify({
-                alumno_id: (nuevo as any).id,
-                mes: MESES_M[hoy.getMonth()],
-                anio: hoy.getFullYear(),
-                monto: datos.matricula,
-                metodo: 'Efectivo',
-                fecha_pago: hoy.toISOString().split('T')[0],
-                tipo: 'matricula',
-                observaciones: 'Matrícula de inscripción',
-              })
-            }).then(() => {
-              window.dispatchEvent(new CustomEvent('pago-registrado', {
-                detail: { alumno_id: (nuevo as any).id, nombre: `${datos.nombre} ${datos.apellido}` }
-              }))
-              showToast(`✓ Matrícula de $${datos.matricula.toLocaleString('es-AR')} registrada`)
-            }).catch(() => {})
-          }
+          // La matrícula se guarda como referencia en el alumno pero NO se registra
+          // automáticamente como pago — se cobra manualmente desde el módulo de Pagos
           showToast(`✓ ${datos.nombre} ${datos.apellido} creado correctamente`)
           irADetalle((nuevo as any).id)
         } else {
@@ -549,7 +526,7 @@ export default function Alumnos() {
             </Row2>
             <Field2 label="Matrícula de inscripción ($)"><Input type="number" value={form?.matricula||''} onChange={(v:string)=>setForm({...form,matricula:+v})} /></Field2>
             <div style={{padding:'10px 14px',background:'var(--vl)',borderRadius:'10px',fontSize:'12px',color:'var(--text2)',marginTop:'4px'}}>
-              💡 Si ingresás un monto de matrícula, se registrará automáticamente como pago al crear el alumno.
+              💡 El monto de matrícula queda registrado en el perfil del alumno. Para cobrarlo, usá el módulo de Pagos → Registrar pago → tipo Matrícula.
             </div>
           </>}
 
