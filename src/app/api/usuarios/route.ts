@@ -107,7 +107,8 @@ export async function POST(req: NextRequest) {
       if (rol) updates.rol = rol
       if (color) updates.color = color
 
-      await admin.from('usuarios').update(updates).eq('id', user_id)
+      const { error: updErr } = await admin.from('usuarios').update(updates).eq('id', user_id)
+      if (updErr) { console.error('[usuarios update]', updErr.message); return NextResponse.json({ error: updErr.message }, { status: 500 }) }
 
       if (nombre || rol) {
         await admin.auth.admin.updateUserById(user_id, {
@@ -121,7 +122,8 @@ export async function POST(req: NextRequest) {
     if (accion === 'desactivar') {
       const { user_id } = datos
       if (!user_id) return NextResponse.json({ error: 'user_id requerido' }, { status: 400 })
-      await admin.from('usuarios').update({ activo: false }).eq('id', user_id)
+      const { error: desErr } = await admin.from('usuarios').update({ activo: false }).eq('id', user_id)
+      if (desErr) return NextResponse.json({ error: desErr.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
 
@@ -129,7 +131,8 @@ export async function POST(req: NextRequest) {
     if (accion === 'reactivar') {
       const { user_id } = datos
       if (!user_id) return NextResponse.json({ error: 'user_id requerido' }, { status: 400 })
-      await admin.from('usuarios').update({ activo: true }).eq('id', user_id)
+      const { error: reactErr } = await admin.from('usuarios').update({ activo: true }).eq('id', user_id)
+      if (reactErr) return NextResponse.json({ error: reactErr.message }, { status: 500 })
       return NextResponse.json({ ok: true })
     }
 
