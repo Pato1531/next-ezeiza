@@ -546,16 +546,22 @@ export function useClases(cursoId: string) {
       })
       const json = await res.json()
       if (json.ok) {
-        const row = { id: json.clase_id, ...clase }
-        setData(prev => [row, ...prev])
-        invalidateQuery(`clases-${cursoId}`)
+        const row = { id: json.clase_id, ...clase, created_at: new Date().toISOString() }
+        // Primero actualizar el store con el dato confirmado por la API
+        setData(prev => {
+          // Evitar duplicados si el refetch ya lo trajo
+          const sinDup = prev.filter((c: any) => c.id !== row.id)
+          return [row, ...sinDup]
+        })
         logActivity('Registró clase', 'Cursos', clase.fecha || '')
+        // invalidateQuery DESPUÉS del update local — así el refetch no pisa el dato nuevo
+        setTimeout(() => invalidateQuery(`clases-${cursoId}`), 1500)
         return row
       }
-      console.error('[useClases agregar]', json.error)
+      console.error('[useClases agregar] API error:', json.error)
       return null
     } catch (e: any) {
-      console.error('[useClases agregar] catch', e?.message)
+      console.error('[useClases agregar] catch:', e?.message)
       return null
     }
   }
