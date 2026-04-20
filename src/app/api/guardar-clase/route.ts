@@ -72,13 +72,15 @@ export async function POST(req: NextRequest) {
 
     // 2. Guardar asistencia (eliminar registros anteriores y reinsertar)
     if (Array.isArray(asistencia) && asistencia.length > 0) {
-      await supabase.from('asistencia_clases').delete().eq('clase_id', claseId)
+      const { error: delAsistError } = await supabase.from('asistencia_clases').delete().eq('clase_id', claseId)
+      if (delAsistError) console.warn('[guardar-clase] delete asistencia:', delAsistError.message)
 
       const rows = asistencia.map((a: { alumno_id: string; estado: string; observacion?: string }) => ({
         clase_id: claseId,
         alumno_id: a.alumno_id,
         estado: a.estado || 'P',
         observacion: a.observacion || null,
+        ...(institutoId ? { instituto_id: institutoId } : {}),
       }))
 
       const { error: asistError } = await supabase.from('asistencia_clases').insert(rows)
