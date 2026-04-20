@@ -199,7 +199,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (mountedRef.current) {
         console.warn('[Auth] Safety timeout — forzando loading=false')
         if (typeof window !== 'undefined') localStorage.removeItem('ne_session_uid')
-        setSessionReady(false)
+        hooksSetSessionReady(false)
         setLoading(false)
       }
     }, 6000)
@@ -212,7 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           cargarUsuario(session.user.id)
         } else {
           if (typeof window !== 'undefined') localStorage.removeItem('ne_session_uid')
-          setSessionReady(false)
+          hooksSetSessionReady(false)
           setLoading(false)
         }
       })
