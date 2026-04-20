@@ -97,16 +97,26 @@ export default function Cursos() {
   const eliminar = async () => {
     if (!selId) return
     setConfirmDelete(false)
-    setSelId(null)
-    setVista('lista')
-    // Eliminar via API route (service_role)
-    fetch('/api/actualizar-curso', {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: selId, datos: { activo: false } })
-    }).then(() => {
+    // Esperar confirmación de la API antes de navegar
+    try {
+      const res = await fetch('/api/actualizar-curso', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: selId, datos: { activo: false } })
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) {
+        console.error('[eliminar curso]', json.error || res.status)
+        alert('❌ No se pudo eliminar el curso. Intentá de nuevo.')
+        return
+      }
+      setSelId(null)
+      setVista('lista')
       recargar()
       window.dispatchEvent(new Event('horario-actualizado'))
-    }).catch(() => recargar())
+    } catch (e: any) {
+      console.error('[eliminar curso] catch:', e?.message)
+      alert('❌ Error de conexión al eliminar el curso.')
+    }
   }
 
   // No bloquear con loading — mostrar contenido aunque esté cargando
@@ -309,11 +319,21 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
 
   const eliminarClase = async (claseId: string) => {
     const sb = createClient()
-    await Promise.all([
-      sb.from('asistencia_clases').delete().eq('clase_id', claseId),
-      sb.from('clases').delete().eq('id', claseId)
-    ])
-    setClasesLocal(prev => prev.filter(cl => cl.id !== claseId))
+    try {
+      // Primero borrar asistencia (FK), luego la clase
+      await sb.from('asistencia_clases').delete().eq('clase_id', claseId)
+      const { error } = await sb.from('clases').delete().eq('id', claseId)
+      if (error) {
+        console.error('[eliminarClase]', error.message)
+        alert('❌ No se pudo eliminar la clase.')
+        setConfirmDelClase(null)
+        return
+      }
+      setClasesLocal(prev => prev.filter(cl => cl.id !== claseId))
+    } catch (e: any) {
+      console.error('[eliminarClase] catch:', e?.message)
+      alert('❌ Error al eliminar la clase.')
+    }
     setConfirmDelClase(null)
   }
   const [nuevaClase, setNuevaClase] = useState({ fecha: hoy(), tema:'', descripcion:'' })
@@ -1125,7 +1145,8 @@ function ExamenesTab({ cursoId, alumnosCurso, puedeEditar, puedeCrearExamen }: a
               <button onClick={async () => {
                 const nuevoNombre = prompt('Nuevo nombre del test:', ex.nombre)
                 if (!nuevoNombre || nuevoNombre === ex.nombre) return
-                await sb.from('examenes').update({ nombre: nuevoNombre }).eq('id', ex.id)
+                const { error: updErr } = await sb.from('examenes').update({ nombre: nuevoNombre }).eq('id', ex.id)
+      if (updErr) { console.error('[renombrar examen]', updErr.message); alert('❌ No se pudo guardar el nombre.'); return }
                 recargar()
               }} style={{padding:'5px 10px',background:'var(--vl)',color:'var(--v)',border:'1px solid var(--v)',borderRadius:'7px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
                 Editar
