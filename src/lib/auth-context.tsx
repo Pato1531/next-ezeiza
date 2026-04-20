@@ -3,6 +3,12 @@
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { PERMISOS, type Rol } from '@/lib/supabase'
+import {
+  setCurrentUserName as hooksSetUserName,
+  setInstitutoId     as hooksSetInstitutoId,
+  setSessionReady    as hooksSetSessionReady,
+  setAuthReady       as hooksSetAuthReady,
+} from '@/lib/hooks'
 
 // ── Cliente singleton ─────────────────────────────────────────────────────────
 let _client: ReturnType<typeof createClient> | null = null
@@ -20,17 +26,11 @@ function getClient() {
   return _client
 }
 
-// ── Estado global compartido con hooks.ts ─────────────────────────────────────
-let _userName     = 'Sistema'
-let _institutoId: string | null = null
-let _sessionReady = false
+// ── Helpers de conveniencia para componentes que los necesiten ───────────────
+// Las variables globales reales viven en hooks.ts para que apiHeaders() las lea
+let _institutoIdLocal: string | null = null
 
-export function setCurrentUserName(n: string)  { _userName     = n    }
-export function setInstitutoId(id: string)      { _institutoId  = id   }
-export function setSessionReady(v: boolean)     { _sessionReady = v    }
-export function getCurrentUserName()            { return _userName     }
-export function getStoredInstitutoId()          { return _institutoId  }
-export function isSessionReady()                { return _sessionReady }
+export function getStoredInstitutoId() { return _institutoIdLocal }
 
 // ── Tipos ─────────────────────────────────────────────────────────────────────
 interface Usuario {
@@ -133,8 +133,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
-      setCurrentUserName(u.nombre)
-      setInstitutoId(u.instituto_id)
+      // Actualizar hooks.ts para que apiHeaders() incluya x-instituto-id en todos los fetches
+      hooksSetUserName(u.nombre)
+      hooksSetInstitutoId(u.instituto_id || '')
+      hooksSetAuthReady(true)
+      hooksSetSessionReady(true)
+      _institutoIdLocal = u.instituto_id || null
 
       let inst: Instituto | null = null
       try {
@@ -165,7 +169,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setUsuario(u)
       setInstituto(inst)
-      setSessionReady(true)
+      // hooksSetSessionReady(true) ya se llamó arriba junto con hooksSetInstitutoId
       if (typeof window !== 'undefined') localStorage.setItem('ne_session_uid', uid)
     } catch (e) {
       console.error('[Auth] cargarUsuario error:', e)
@@ -232,7 +236,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (typeof window !== 'undefined') localStorage.removeItem('ne_session_uid')
           setUsuario(null)
           setInstituto(null)
-          setSessionReady(false)
+          hooksSetInstitutoId('')
+          hooksSetUserName('Sistema')
+          hooksSetSessionReady(false)
+          hooksSetAuthReady(false)
+          _institutoIdLocal = null
           setLoading(false)
         }
       })
@@ -256,7 +264,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (typeof window !== 'undefined') localStorage.removeItem('ne_session_uid')
     setUsuario(null)
     setInstituto(null)
-    setSessionReady(false)
+    // Limpiar también hooks.ts para que apiHeaders() deje de enviar el instituto anterior
+    hooksSetInstitutoId('')
+    hooksSetUserName('Sistema')
+    hooksSetSessionReady(false)
+    hooksSetAuthReady(false)
+    _institutoIdLocal = null
     setLoading(false)
     try {
       const sb = getClient()
