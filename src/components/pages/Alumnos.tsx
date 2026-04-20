@@ -254,7 +254,7 @@ export default function Alumnos() {
     setGuardandoBaja(true)
     const sb = createClient()
     try {
-      await Promise.all([
+      const [bajasRes, , alumnoRes] = await Promise.all([
         sb.from('bajas_alumnos').insert({
           alumno_id: sel.id,
           alumno_nombre: sel.nombre,
@@ -266,14 +266,19 @@ export default function Alumnos() {
           fecha_baja: new Date().toISOString().split('T')[0],
         }),
         sb.from('cursos_alumnos').delete().eq('alumno_id', sel.id),
-        sb.from('alumnos').update({ activo: false }).eq('id', sel.id)
+        sb.from('alumnos').update({ activo: false }).eq('id', sel.id),
       ])
+      if (bajasRes.error) throw new Error('Error registrando baja: ' + bajasRes.error.message)
+      if (alumnoRes.error) throw new Error('Error desactivando alumno: ' + alumnoRes.error.message)
       logActivity('Dio de baja alumno', 'Alumnos', `${sel.nombre} ${sel.apellido} — ${motivoBaja === 'Otro' ? motivoLibre : motivoBaja}`)
       await recargar()
-    } catch (e) { console.error(e) }
+      setSelId(null)
+      setVista('lista')
+    } catch (e: any) {
+      console.error('[registrarBaja]', e)
+      showToast('Error al registrar la baja: ' + (e?.message || 'Error desconocido'), 'error')
+    }
     setGuardandoBaja(false)
-    setSelId(null)
-    setVista('lista')
   }
 
   const eliminar = async () => {
@@ -979,14 +984,20 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
     ;(async () => {
       try {
         const sb2 = createClient()
-        await sb2.from('cursos_alumnos').delete().eq('alumno_id', a.id)
-        await sb2.from('cursos_alumnos').insert({
+        const { error: delErr } = await sb2.from('cursos_alumnos').delete().eq('alumno_id', a.id)
+        if (delErr) { console.error('[asignarCurso] delete:', delErr.message); return }
+        const { error: insErr } = await sb2.from('cursos_alumnos').insert({
           curso_id: cursoId,
           alumno_id: a.id,
           fecha_ingreso: new Date().toISOString().split('T')[0]
         })
+        if (insErr) {
+          console.error('[asignarCurso] insert:', insErr.message)
+          showToast('Error al asignar el curso. Recargá y verificá.', 'error')
+          return
+        }
         window.dispatchEvent(new CustomEvent('curso-alumno-updated'))
-      } catch(e) { console.error('Error guardando curso:', e) }
+      } catch(e: any) { console.error('[asignarCurso]', e?.message) }
     })()
   }
 
