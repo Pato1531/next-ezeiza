@@ -156,27 +156,49 @@ export default function Alumnos() {
     setLoadingBajas(false)
   }
   const irAFormNuevo = () => {
-    setForm({ nombre:'', apellido:'', dni:'', edad:0, fecha_nacimiento:'', fecha_alta:new Date().toISOString().split('T')[0], matricula:0, telefono:'', email:'', nivel:'Básico', cuota_mensual:0, es_menor:false, padre_nombre:'', padre_telefono:'', padre_email:'', padre_dni:'', color: COLORES[alumnos.length % COLORES.length] })
+    setForm({
+      nombre:'', apellido:'', dni:'', edad:0, fecha_nacimiento:'',
+      fecha_alta: new Date().toISOString().split('T')[0],
+      matricula:0, telefono:'', email:'', nivel:'Básico', cuota_mensual:0,
+      es_menor:false, padre_nombre:'', padre_telefono:'', padre_email:'', padre_dni:'',
+      color: COLORES[alumnos.length % COLORES.length],
+      instituto_id: usuario?.instituto_id || null,
+    })
     setFormStep(0)
     setVista('form')
   }
   const irAFormEditar = () => { if (sel) { setForm({...sel}); setFormStep(0); setVista('form') } }
 
   const guardar = async () => {
-    if (!form?.nombre || !form?.apellido) return alert('Nombre y apellido son obligatorios')
+    if (!form?.nombre?.trim() || !form?.apellido?.trim()) {
+      return alert('Nombre y apellido son obligatorios')
+    }
     setGuardando(true)
     const { id, activo, ...datos } = form
-    const t = setTimeout(() => { setGuardando(false); irALista() }, 8000)
+
+    // Garantizar instituto_id siempre presente — fallback al usuario actual
+    if (!datos.instituto_id && usuario?.instituto_id) {
+      datos.instituto_id = usuario.instituto_id
+    }
+
+    // Timeout de seguridad — solo navega si no hubo respuesta, nunca confirma guardado
+    const t = setTimeout(() => {
+      setGuardando(false)
+      showToast('La operación tardó demasiado. Revisá si se guardó.', 'error')
+      irALista()
+    }, 12000)
+
     try {
       if (!id) {
+        // ── CREAR NUEVO ALUMNO ──
         const nuevo = await agregar(datos)
         clearTimeout(t)
         if (nuevo) {
-          logActivity('Creó alumno', 'Alumnos', `${datos.nombre} ${datos.apellido}`)
-          // Matrícula se registra manualmente desde el módulo de pagos
-          if (false && datos.matricula > 0) {
+          // Registrar matrícula automáticamente si se ingresó un monto
+          if (datos.matricula && datos.matricula > 0) {
             const hoy = new Date()
-            const MESES_M = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+            const MESES_M = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio',
+              'Agosto','Septiembre','Octubre','Noviembre','Diciembre']
             fetch('/api/registrar-pago', {
               method: 'POST',
               headers: apiHeaders(),
@@ -188,32 +210,37 @@ export default function Alumnos() {
                 metodo: 'Efectivo',
                 fecha_pago: hoy.toISOString().split('T')[0],
                 tipo: 'matricula',
-                observaciones: 'Matrícula de inscripción'
+                observaciones: 'Matrícula de inscripción',
               })
             }).then(() => {
-              // Notificar al dashboard y al bus de eventos
               window.dispatchEvent(new CustomEvent('pago-registrado', {
                 detail: { alumno_id: (nuevo as any).id, nombre: `${datos.nombre} ${datos.apellido}` }
               }))
-              showToast(`✓ Matrícula de ${datos.nombre} ${datos.apellido} registrada`)
+              showToast(`✓ Matrícula de $${datos.matricula.toLocaleString('es-AR')} registrada`)
             }).catch(() => {})
           }
+          showToast(`✓ ${datos.nombre} ${datos.apellido} creado correctamente`)
           irADetalle((nuevo as any).id)
-        } else irALista()
+        } else {
+          showToast('No se pudo crear el alumno. Revisá los datos o la conexión.', 'error')
+          irALista()
+        }
       } else {
-        await actualizar(id, datos)
-        fetch('/api/actualizar-alumno', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id, datos })
-        }).catch(e => console.error('Error API actualizar:', e))
-        logActivity('Editó alumno', 'Alumnos', `${datos.nombre} ${datos.apellido}`)
+        // ── EDITAR ALUMNO EXISTENTE ──
+        // actualizar() del hook ya llama /api/actualizar-alumno internamente
+        const ok = await actualizar(id, datos)
         clearTimeout(t)
+        if (ok) {
+          showToast(`✓ Cambios guardados`)
+        } else {
+          showToast('Error al guardar los cambios', 'error')
+        }
         irADetalle(id)
       }
     } catch (e) {
       clearTimeout(t)
-      console.error('Error guardando alumno:', e)
+      console.error('[guardar alumno]', e)
+      showToast('Error inesperado al guardar', 'error')
       if (id) irADetalle(id)
       else irALista()
     }
@@ -1048,30 +1075,32 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
     const num = Math.floor(Math.random()*900000)+100000
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo ${a.nombre} ${a.apellido}</title>
     <style>body{font-family:Arial,sans-serif;padding:0;margin:0;background:#f5f0fa}.wrap{max-width:400px;margin:20px auto;background:white;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(101,47,141,.15)}.hdr{background:#652f8d;padding:24px;color:white}.logo{font-size:20px;font-weight:900}.logo span{opacity:.7;font-weight:400}.rec-num{font-size:12px;opacity:.7;margin-top:2px}.monto-sec{background:#f2e8f9;padding:20px;text-align:center;border-bottom:2px dashed #d4a8e8}.monto-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}.monto{font-size:44px;font-weight:900;color:#652f8d;letter-spacing:-2px}.monto-mes{font-size:13px;color:#9b8eaa;margin-top:4px}.body{padding:20px}.fila{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0edf5}.fila:last-child{border-bottom:none}.fila-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.04em}.fila-val{font-size:13px;color:#1a1020;font-weight:700;text-align:right;max-width:60%}.badge{background:#e6f4ec;color:#2d7a4f;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}.footer{background:#faf7fd;padding:14px 20px;text-align:center;font-size:11px;color:#9b8eaa}@media print{body{background:white}.wrap{box-shadow:none;margin:0;border-radius:0}}</style></head><body>
-    <div class="wrap"><div class="hdr"><div class="logo">Next <span>Ezeiza</span></div><div class="rec-num">Comprobante #${num} · ${fecha}</div></div>
+    <div class="wrap"><div class="hdr"><div class="logo">${a.instituto_nombre || 'Instituto'}</div><div class="rec-num">Comprobante #${num} · ${fecha}</div></div>
     <div class="monto-sec"><div class="monto-lab">Total abonado</div><div class="monto">$${monto}</div><div class="monto-mes">Cuota ${p.mes} ${p.anio}</div></div>
     <div class="body"><div class="fila"><div class="fila-lab">Alumno</div><div class="fila-val">${a.nombre} ${a.apellido}</div></div><div class="fila"><div class="fila-lab">Método</div><div class="fila-val">${p.metodo||'Efectivo'}</div></div><div class="fila"><div class="fila-lab">Fecha</div><div class="fila-val">${fecha}</div></div><div class="fila"><div class="fila-lab">Estado</div><div class="fila-val"><span class="badge">✓ Pagado</span></div></div></div>
-    <div class="footer">Next Ezeiza English Institute · Ezeiza, Buenos Aires</div></div>
+    <div class="footer">${a.instituto_nombre || 'Instituto de Inglés'}</div></div>
     <script>setTimeout(function(){window.print()},400)</script></body></html>`
     const blob = new Blob([html], {type:'text/html;charset=utf-8'})
     const url = URL.createObjectURL(blob)
     window.open(url, '_blank')
     setTimeout(() => URL.revokeObjectURL(url), 15000)
     if (tel) {
-      const msgWS = `✅ *Recibo de pago — Next Ezeiza*\n\nHola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${a.nombre} ${a.apellido}*.\n\n💰 Monto: *$${monto}*\n📅 Fecha: ${fecha}\n💳 Método: ${p.metodo||'Efectivo'}\n\n¡Gracias! 🙌`
+      const msgWS = `✅ *Recibo de pago — ${a.instituto_nombre || 'Instituto de Inglés'}*\n\nHola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${a.nombre} ${a.apellido}*.\n\n💰 Monto: *$${monto}*\n📅 Fecha: ${fecha}\n💳 Método: ${p.metodo||'Efectivo'}\n\n¡Gracias! 🙌`
       setUltimoPago({ tel, msg: msgWS, urlRecibo: null })
       setModalRecibo(true)
     }
   }
   const guardarPago = async () => {
     setGuardandoPago(true)
+    // registrar() devuelve el row de DB con el id real asignado por Supabase
     const resultado = await registrar({ ...pago, alumno_id: a.id })
     setGuardandoPago(false)
     setModalPago(false)
     if (resultado) {
       logActivity('Registró pago', 'Pagos', `${a.nombre} ${a.apellido} — ${pago.mes} ${pago.anio} — $${pago.monto}`)
       window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: a.id, nombre: `${a.nombre} ${a.apellido}` } }))
-      generarRecibo({ ...pago, alumno_id: a.id })
+      // Pasar resultado (con .id de DB) para que generarRecibo use la URL pública /api/recibo/[id]
+      generarRecibo(resultado)
     }
   }
 
