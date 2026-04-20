@@ -70,7 +70,13 @@ export default function Permisos() {
   const cargarUsuarios = async () => {
     setLoadingUsuarios(true)
     try {
-      const res = await fetch('/api/usuarios', { headers: apiHeaders() })
+      // Usar el instituto_id directamente del usuario en lugar de apiHeaders()
+      // para evitar el lag entre React state y la variable global _institutoId
+      const institutoId = usuario?.instituto_id
+      if (!institutoId) { setLoadingUsuarios(false); return }
+      const res = await fetch('/api/usuarios', {
+        headers: { 'Content-Type': 'application/json', 'x-instituto-id': institutoId }
+      })
       const json = await res.json()
       if (json.error) {
         console.error('[Permisos] cargarUsuarios error:', json.error)
