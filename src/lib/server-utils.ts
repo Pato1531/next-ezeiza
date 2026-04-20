@@ -2,13 +2,15 @@ import { NextRequest } from 'next/server'
 
 /**
  * Obtiene el instituto_id desde el header de la request.
- * Lee NEXT_PUBLIC_INSTITUTO_ID de las variables de entorno del proyecto.
- * Sin fallback hardcodeado — cada proyecto Vercel tiene su propio valor.
+ * Prioridad: header x-instituto-id → variable de entorno NEXT_PUBLIC_INSTITUTO_ID
+ * Devuelve null si no se encuentra ninguno — la route decide cómo manejarlo.
  */
-export function getInstitutoId(req: NextRequest): string {
-  const val = req.headers.get('x-instituto-id')
-  if (val && val.trim().length > 5) return val.trim()
+export function getInstitutoId(req: NextRequest): string | null {
+  const header = req.headers.get('x-instituto-id')
+  if (header && header.trim().length > 5) return header.trim()
+
   const envId = process.env.NEXT_PUBLIC_INSTITUTO_ID
-  if (!envId) throw new Error('NEXT_PUBLIC_INSTITUTO_ID no configurado en variables de entorno')
-  return envId
+  if (envId && envId.trim().length > 5) return envId.trim()
+
+  return null
 }
