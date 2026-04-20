@@ -669,15 +669,29 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
       const continuar = window.confirm('⚠️ No completaste la descripción de los temas vistos.\n\n¿Querés guardar igual? Podés editarla después.')
       if (!continuar) return
     }
-    // Cerrar modal inmediatamente - guardar en background
-    setModalClase(false)
-    setNuevaClase({ fecha: hoy(), tema:'', descripcion:'' })
-    agregarClase({
-      curso_id: c.id,
-      fecha: nuevaClase.fecha,
-      tema: nuevaClase.tema,
-      observacion_coordinadora: nuevaClase.descripcion
-    }).catch(e => console.error('Error guardando clase:', e))
+    // Esperar confirmación antes de cerrar — evita pérdida silenciosa de datos
+    setGuardando(true)
+    try {
+      const resultado = await agregarClase({
+        curso_id: c.id,
+        fecha: nuevaClase.fecha,
+        tema: nuevaClase.tema,
+        observacion_coordinadora: nuevaClase.descripcion,
+        asistencia: [],
+      })
+      if (resultado) {
+        // Agregar inmediatamente a la lista local (optimistic confirmado por DB)
+        setClasesLocal(prev => [resultado, ...prev])
+        setModalClase(false)
+        setNuevaClase({ fecha: hoy(), tema:'', descripcion:'' })
+      } else {
+        alert('❌ No se pudo registrar la clase. Revisá la conexión e intentá de nuevo.')
+      }
+    } catch (e) {
+      console.error('[guardarClase]', e)
+      alert('❌ Error inesperado al guardar la clase.')
+    }
+    setGuardando(false)
   }
 
   const toggleAsist = async (claseId: string, alumnoId: string, est: 'P'|'A'|'T') => {
@@ -1538,9 +1552,16 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
   const cargar = async () => {
     setLoading(true)
     const sb = createClient()
-    const { data } = await sb.from('planificacion_cursos')
+    const { data, error } = await sb.from('planificacion_cursos')
       .select('*').eq('curso_id', cursoId).order('orden').order('created_at')
-    setUnidades(data || [])
+    if (error) {
+      // No sobreescribir con [] si hay error — los datos siguen en memoria
+      console.error('[PlanificacionTab cargar]', error.message)
+      setLoading(false)
+      return
+    }
+    // Solo actualizar si la query fue exitosa (aunque devuelva array vacío)
+    setUnidades(data ?? [])
     setLoading(false)
   }
 
@@ -1562,20 +1583,29 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
     const sb = createClient()
     if (editando) {
       const { error } = await sb.from('planificacion_cursos')
-        .update({ titulo: form.titulo, descripcion: form.descripcion, estado: form.estado })
+        .update({ titulo: form.titulo, descripcion: form.descripcion, estado: form.estado,
+                  fecha_inicio: form.fecha_inicio || null, fecha_cierre: form.fecha_cierre || null })
         .eq('id', editando.id)
       if (!error) {
         setUnidades(prev => prev.map(u => u.id === editando.id ? { ...u, ...form } : u))
         setModal(false)
+      } else {
+        console.error('[PlanificacionTab guardar editar]', error.message)
+        alert('❌ Error al guardar los cambios. Intentá de nuevo.')
       }
     } else {
       const orden = unidades.length
       const { data, error } = await sb.from('planificacion_cursos')
-        .insert({ curso_id: cursoId, titulo: form.titulo, descripcion: form.descripcion, estado: form.estado, orden, fecha_inicio: form.fecha_inicio || null, fecha_cierre: form.fecha_cierre || null })
+        .insert({ curso_id: cursoId, titulo: form.titulo, descripcion: form.descripcion,
+                  estado: form.estado, orden,
+                  fecha_inicio: form.fecha_inicio || null, fecha_cierre: form.fecha_cierre || null })
         .select().single()
       if (!error && data) {
         setUnidades(prev => [...prev, data])
         setModal(false)
+      } else {
+        console.error('[PlanificacionTab guardar insertar]', error?.message)
+        alert('❌ No se pudo guardar la unidad. Revisá la conexión e intentá de nuevo.')
       }
     }
     setGuardando(false)
@@ -1591,8 +1621,13 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
 
   const eliminar = async (id: string) => {
     const sb = createClient()
-    await sb.from('planificacion_cursos').delete().eq('id', id)
-    setUnidades(prev => prev.filter(u => u.id !== id))
+    const { error } = await sb.from('planificacion_cursos').delete().eq('id', id)
+    if (!error) {
+      setUnidades(prev => prev.filter(u => u.id !== id))
+    } else {
+      console.error('[PlanificacionTab eliminar]', error.message)
+      alert('❌ No se pudo eliminar la unidad.')
+    }
     setConfirmDel(null)
   }
 
