@@ -60,12 +60,12 @@ export default function Permisos() {
   const [nuevaPwd, setNuevaPwd] = useState('')
   const [cambiandoPwd, setCambiandoPwd] = useState(false)
 
+  // Cargar usuarios cuando el usuario logueado esté disponible
+  // Garantiza que apiHeaders() ya tiene el instituto_id seteado
   useEffect(() => {
-    // Pequeño delay para que auth-context haya seteado el instituto_id
-    // antes de hacer el fetch
-    const t = setTimeout(() => cargarUsuarios(), 600)
-    return () => clearTimeout(t)
-  }, [])
+    if (!usuario?.instituto_id) return
+    cargarUsuarios()
+  }, [usuario?.instituto_id])
 
   const cargarUsuarios = async () => {
     setLoadingUsuarios(true)
