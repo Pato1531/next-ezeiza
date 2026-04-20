@@ -497,21 +497,44 @@ export function useCursoAlumnos(cursoId: string) {
   )
 
   const agregar = async (alumnoId: string) => {
-    await window.fetch('/api/asignar-curso', {
-      method: 'POST', headers: apiHeaders(),
-      body: JSON.stringify({ curso_id: cursoId, alumno_id: alumnoId })
-    })
-    refetch()
-    return true
+    try {
+      const res = await window.fetch('/api/asignar-curso', {
+        method: 'POST', headers: apiHeaders(),
+        body: JSON.stringify({ curso_id: cursoId, alumno_id: alumnoId })
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) {
+        console.error('[useCursoAlumnos agregar]', json.error || res.status)
+        return false
+      }
+      refetch()
+      return true
+    } catch (e: any) {
+      console.error('[useCursoAlumnos agregar] catch:', e?.message)
+      return false
+    }
   }
 
   const quitar = async (alumnoId: string) => {
+    // Optimistic update — revertir si falla
     setData(prev => prev.filter(a => a.id !== alumnoId))
-    await window.fetch('/api/asignar-curso', {
-      method: 'DELETE', headers: apiHeaders(),
-      body: JSON.stringify({ alumno_id: alumnoId, curso_id: cursoId })
-    })
-    return true
+    try {
+      const res = await window.fetch('/api/asignar-curso', {
+        method: 'DELETE', headers: apiHeaders(),
+        body: JSON.stringify({ alumno_id: alumnoId, curso_id: cursoId })
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) {
+        console.error('[useCursoAlumnos quitar]', json.error || res.status)
+        refetch() // revertir optimistic update
+        return false
+      }
+      return true
+    } catch (e: any) {
+      console.error('[useCursoAlumnos quitar] catch:', e?.message)
+      refetch() // revertir optimistic update
+      return false
+    }
   }
 
   return { alumnosCurso: data, agregar, quitar, recargar: refetch }
@@ -656,9 +679,14 @@ export function useExamenes(cursoId: string) {
   }
 
   const eliminar = async (id: string) => {
-    await createClient().from('examenes').delete().eq('id', id)
-    setData(prev => prev.filter(e => e.id !== id))
-    invalidateQuery(`examenes-${cursoId}`)
+    const { error } = await createClient().from('examenes').delete().eq('id', id)
+    if (!error) {
+      setData(prev => prev.filter(e => e.id !== id))
+      invalidateQuery(`examenes-${cursoId}`)
+      return true
+    }
+    console.error('[useExamenes eliminar]', error.message)
+    return false
   }
 
   return { examenes: data, agregar, eliminar, recargar: refetch }
@@ -806,12 +834,13 @@ export function useComunicados() {
   )
 
   const agregar = async (c: any) => {
-    const { data: row } = await createClient().from('comunicados').insert(c).select().single()
+    const { data: row, error } = await createClient().from('comunicados').insert(c).select().single()
+    if (error) { console.error('[useComunicados agregar]', error.message); return null }
     if (row) {
       setData(prev => [row, ...prev])
       invalidateQuery('comunicados')
     }
-    return row
+    return row ?? null
   }
 
   const eliminar = async (id: string) => {
