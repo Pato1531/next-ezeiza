@@ -82,8 +82,9 @@ export default function Profesoras() {
     setSelId(null)
     setVista('lista')
     const sb = createClient()
-    sb.from('profesoras').update({ activa: false }).eq('id', selId)
-      .then(() => recargar()).catch(() => {})
+    const { error: inactErr } = await sb.from('profesoras').update({ activa: false }).eq('id', selId)
+    if (!inactErr) recargar()
+    else console.error('[inactivar profesora]', inactErr.message)
   }
 
   const guardarLic = async () => {
@@ -92,14 +93,24 @@ export default function Profesoras() {
     const datos = { ...lic, profesora_id: selId }
     // Resetear form para próxima licencia
     setLic({ tipo:'Licencia médica', fecha_desde:hoy(), fecha_hasta:hoy(), observaciones:'', reemplazo_nombre:'', reemplazo_horas:0, es_paga:false, reemplazo_profesora_id:'' })
-    fetch('/api/guardar-licencia', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(datos)
-    }).then(r => r.json()).then(json => {
-      if (json.data) setLicencias(prev => [json.data, ...prev])
-      else console.error('Error guardando licencia:', json.error)
-    }).catch(e => console.error('Error licencia:', e))
+    try {
+      const res = await fetch('/api/guardar-licencia', {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify(datos)
+      })
+      const json = await res.json()
+      if (json.data) {
+        setLicencias(prev => [json.data, ...prev])
+        showToast('✓ Licencia registrada')
+      } else {
+        console.error('[guardarLic]', json.error)
+        showToast('Error al guardar la licencia', 'error')
+      }
+    } catch(e: any) {
+      console.error('[guardarLic] catch:', e?.message)
+      showToast('Error de conexión', 'error')
+    }
   }
 
   const guardarEditLic = async () => {
