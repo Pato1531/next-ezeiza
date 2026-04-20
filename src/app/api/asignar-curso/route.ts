@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getInstitutoId } from '@/lib/server-utils'
 
 function sb() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -10,9 +11,12 @@ export async function POST(req: NextRequest) {
   try {
     const { alumno_id, curso_id } = await req.json()
     if (!alumno_id || !curso_id) return NextResponse.json({ error: 'Faltan datos' }, { status: 400 })
+    const institutoId = getInstitutoId(req)
     await sb().from('cursos_alumnos').delete().eq('alumno_id', alumno_id)
     const { error } = await sb().from('cursos_alumnos').insert({
-      curso_id, alumno_id, fecha_ingreso: new Date().toISOString().split('T')[0]
+      curso_id, alumno_id,
+      fecha_ingreso: new Date().toISOString().split('T')[0],
+      ...(institutoId ? { instituto_id: institutoId } : {}),
     })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     return NextResponse.json({ ok: true })
