@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { createClient, PERMISOS } from '@/lib/supabase'
 
@@ -197,6 +197,11 @@ export default function Perfil() {
         </p>
       </div>
 
+      {/* ── Firma digital (solo director) ── */}
+      {usuario.rol === 'director' && (
+        <FirmaDigital institutoId={usuario.instituto_id} />
+      )}
+
       {/* ── Cerrar sesión ── */}
       <div style={s.section}>
         <button
@@ -208,6 +213,99 @@ export default function Perfil() {
         </button>
       </div>
 
+    </div>
+  )
+}
+
+// ── Componente FirmaDigital ──────────────────────────────────────────────────
+function FirmaDigital({ institutoId }: { institutoId: string }) {
+  const sb = createClient()
+  const [firmaUrl, setFirmaUrl] = useState<string>('')
+  const [subiendo, setSubiendo] = useState(false)
+  const [msg, setMsg] = useState<{tipo:'ok'|'error', texto:string}|null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!institutoId) return
+    sb.from('institutos').select('firma_director_url').eq('id', institutoId).single()
+      .then(({ data }) => { if (data?.firma_director_url) setFirmaUrl(data.firma_director_url) })
+  }, [institutoId])
+
+  const subirFirma = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      setMsg({ tipo:'error', texto:'Solo se aceptan imágenes PNG, JPG o WEBP' }); return
+    }
+    if (file.size > 1024 * 1024) {
+      setMsg({ tipo:'error', texto:'La imagen no puede superar 1MB' }); return
+    }
+    setSubiendo(true)
+    setMsg(null)
+    try {
+      // Subir al bucket 'firmas' de Supabase Storage
+      const ext   = file.name.split('.').pop()
+      const path  = `${institutoId}/firma_director.${ext}`
+      const { error: upErr } = await sb.storage.from('firmas').upload(path, file, {
+        upsert: true, contentType: file.type
+      })
+      if (upErr) throw new Error(upErr.message)
+      // Obtener URL pública
+      const { data: urlData } = sb.storage.from('firmas').getPublicUrl(path)
+      const url = urlData.publicUrl + '?t=' + Date.now() // cache-bust
+      // Guardar en institutos
+      const { error: dbErr } = await sb.from('institutos')
+        .update({ firma_director_url: url }).eq('id', institutoId)
+      if (dbErr) throw new Error(dbErr.message)
+      setFirmaUrl(url)
+      setMsg({ tipo:'ok', texto:'✓ Firma actualizada correctamente' })
+    } catch (e: any) {
+      setMsg({ tipo:'error', texto: e.message || 'Error al subir la firma' })
+    }
+    setSubiendo(false)
+  }
+
+  const eliminarFirma = async () => {
+    if (!confirm('¿Eliminar la firma digital?')) return
+    await sb.from('institutos').update({ firma_director_url: null }).eq('id', institutoId)
+    setFirmaUrl('')
+    setMsg({ tipo:'ok', texto:'Firma eliminada' })
+  }
+
+  return (
+    <div style={{ background:'var(--white)', border:'1.5px solid var(--border)', borderRadius:'16px', padding:'20px', marginBottom:'14px' }}>
+      <div style={{ fontSize:'13px', fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.05em', marginBottom:'14px' }}>
+        Firma digital
+      </div>
+      <div style={{ fontSize:'13px', color:'var(--text2)', marginBottom:'14px', lineHeight:1.5 }}>
+        Se usa en boletines y certificados. Recomendamos una imagen PNG con fondo transparente.
+      </div>
+
+      {/* Preview actual */}
+      {firmaUrl && (
+        <div style={{ marginBottom:'14px', padding:'16px', background:'var(--bg)', borderRadius:'12px', border:'1.5px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+          <img src={firmaUrl} style={{ maxHeight:'60px', maxWidth:'200px', objectFit:'contain' }} alt="Firma actual" />
+          <button onClick={eliminarFirma} style={{ padding:'5px 12px', background:'var(--redl)', color:'var(--red)', border:'1px solid #f5c5c5', borderRadius:'8px', fontSize:'12px', fontWeight:600, cursor:'pointer' }}>
+            Eliminar
+          </button>
+        </div>
+      )}
+
+      {/* Botón subir */}
+      <input ref={inputRef} type="file" accept="image/png,image/jpeg,image/webp" onChange={subirFirma} style={{ display:'none' }} />
+      <button
+        onClick={() => inputRef.current?.click()}
+        disabled={subiendo}
+        style={{ width:'100%', padding:'12px', background: firmaUrl ? 'var(--white)' : 'var(--v)', color: firmaUrl ? 'var(--v)' : '#fff', border: '1.5px solid var(--v)', borderRadius:'10px', fontSize:'14px', fontWeight:600, cursor: subiendo ? 'not-allowed' : 'pointer' }}
+      >
+        {subiendo ? 'Subiendo...' : firmaUrl ? 'Cambiar firma' : '+ Subir firma digital'}
+      </button>
+
+      {msg && (
+        <div style={{ marginTop:'10px', padding:'10px 14px', borderRadius:'10px', fontSize:'13px', fontWeight:500, background: msg.tipo==='ok' ? 'var(--greenl)' : 'var(--redl)', color: msg.tipo==='ok' ? 'var(--green)' : 'var(--red)' }}>
+          {msg.texto}
+        </div>
+      )}
     </div>
   )
 }
