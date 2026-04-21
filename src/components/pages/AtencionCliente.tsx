@@ -316,8 +316,11 @@ function ListaEspera() {
   const cargar = async () => {
     setLoading(true)
     const sb = createClient()
-    const { data } = await sb.from('lista_espera')
-      .select('*').order('created_at', { ascending: false })
+    let q = sb.from('lista_espera').select('*').order('created_at', { ascending: false })
+    // Filtrar por instituto — evita mezclar leads de distintas sedes
+    if (usuario?.instituto_id) q = (q as any).eq('instituto_id', usuario.instituto_id)
+    const { data, error } = await q
+    if (error) console.error('[lista_espera cargar]', error.message)
     setLista(data || [])
     setLoading(false)
   }
@@ -343,6 +346,7 @@ function ListaEspera() {
       celular: form.celular, dia_interes: form.dia_interes,
       franja_horaria: form.franja_horaria, nivel_curso: form.nivel_curso,
       observaciones: form.observaciones,
+      ...(usuario?.instituto_id ? { instituto_id: usuario.instituto_id } : {}),
     }
     if (editandoId) {
       const { error } = await sb.from('lista_espera').update(payload).eq('id', editandoId)
