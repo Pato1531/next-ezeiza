@@ -22,7 +22,8 @@ export default function Actividad() {
       const params = new URLSearchParams()
       if (fechaDesde) params.set('desde', fechaDesde)
       if (fechaHasta) params.set('hasta', fechaHasta)
-      const res = await fetch(`/api/activity?${params.toString()}`)
+      const { apiHeaders } = await import('@/lib/hooks')
+      const res = await fetch(`/api/activity?${params.toString()}`, { headers: apiHeaders() })
       const json = await res.json()
       if (json.data) setLogs(json.data)
     } catch (e) {
