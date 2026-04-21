@@ -34,16 +34,18 @@ export async function GET(
     }
 
     // 2. Instituto
-    let institutoNombre = 'Next Ezeiza English Institute'
-    let institutoSub    = 'Ezeiza · Buenos Aires · Argentina'
-    let colorPrimario   = '#652f8d'
+    let institutoNombre  = 'Next English Institute'
+    let institutoSub     = 'Buenos Aires · Argentina'
+    let colorPrimario    = '#652f8d'
+    let firmaDirectorUrl = ''
     if (alumno.instituto_id) {
       const { data: inst } = await sb
-        .from('institutos').select('nombre, color_primario').eq('id', alumno.instituto_id).single()
+        .from('institutos').select('nombre, color_primario, firma_director_url').eq('id', alumno.instituto_id).single()
       if (inst?.nombre) {
         institutoNombre = inst.nombre
         institutoSub    = 'Buenos Aires · Argentina'
-        if (inst.color_primario) colorPrimario = inst.color_primario
+        if (inst.color_primario)     colorPrimario    = inst.color_primario
+        if (inst.firma_director_url) firmaDirectorUrl = inst.firma_director_url
       }
     }
 
@@ -304,7 +306,12 @@ export async function GET(
             <div class="firma-rol">Docente a cargo</div>
           </div>
           <div class="firma">
-            <div class="firma-linea"></div>
+            ${firmaDirectorUrl
+              ? `<div style="height:56px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:8px">
+                  <img src="${firmaDirectorUrl}" style="max-height:52px;max-width:160px;object-fit:contain" />
+                 </div>`
+              : '<div class="firma-linea"></div>'
+            }
             <div class="firma-nombre">${directorNombre}</div>
             <div class="firma-rol">Director del Instituto</div>
           </div>
