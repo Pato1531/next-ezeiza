@@ -94,7 +94,7 @@ export default function Reportes() {
       } catch {}
     }
     cargarIngresos()
-  }, [mesActualNombre, anioActual])
+  }, [mesActualNombre, anioActual, usuario?.instituto_id])
 
   // Cargar altas y bajas del mes para el reporte de movimientos
   useEffect(() => {
@@ -124,7 +124,7 @@ export default function Reportes() {
       setLoadingMovimientos(false)
     }
     cargarMovimientos()
-  }, [mesActualNombre, anioActual])
+  }, [mesActualNombre, anioActual, usuario?.instituto_id])
 
   // Refrescar cuando se registra un pago desde Alumnos
   useEffect(() => {
