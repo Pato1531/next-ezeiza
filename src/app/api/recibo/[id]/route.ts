@@ -15,10 +15,10 @@ export async function GET(
   try {
     const sb = getSupabase()
 
-    // Cargar el pago principal
+    // Cargar el pago principal — incluye instituto_id del alumno para el nombre de sede
     const { data: p, error } = await sb
       .from('pagos_alumnos')
-      .select('*, alumnos(nombre, apellido, dni, nivel, cuota_mensual, padre_nombre, es_menor)')
+      .select('*, alumnos(nombre, apellido, dni, nivel, cuota_mensual, padre_nombre, es_menor, instituto_id)')
       .eq('id', params.id)
       .single()
 
@@ -37,32 +37,32 @@ export async function GET(
 
     const al = p.alumnos
 
-    // Nombre dinámico de sede
-    let institutoNombre = 'Next Ezeiza English Institute'
-    let institutoCiudad = 'Ezeiza, Buenos Aires'
+    // Nombre dinámico de sede — leer desde la tabla institutos
+    let institutoNombre = 'Next English Institute'
+    let institutoCiudad = ''
     let colorPrimario   = '#652f8d'
+
     if (al?.instituto_id) {
-      const { data: inst } = await sb()
-        .from('institutos').select('nombre, ciudad, color_primario')
-        .eq('id', al.instituto_id).single()
+      const { data: inst } = await sb
+        .from('institutos')
+        .select('nombre, color_primario')
+        .eq('id', al.instituto_id)
+        .single()
       if (inst?.nombre)         institutoNombre = inst.nombre
-      if (inst?.ciudad)         institutoCiudad = inst.ciudad
       if (inst?.color_primario) colorPrimario   = inst.color_primario
+      // institutoCiudad queda como default — columna ciudad no existe en la tabla
     }
-    const instPartes  = institutoNombre.split(' ')
-    const logoHtml    = instPartes.length >= 2
-      ? `<strong>${instPartes[0]}</strong> <span>${instPartes.slice(1).join(' ')}</span>`
+
+    // Logo: primera palabra en negrita, resto con opacidad (ej: "Next Prueba" → <b>Next</b> Prueba)
+    const partes   = institutoNombre.split(' ')
+    const logoHtml = partes.length >= 2
+      ? `<strong>${partes[0]}</strong> <span>${partes.slice(1).join(' ')}</span>`
       : `<strong>${institutoNombre}</strong>`
 
-    const num = params.id.slice(0, 6).toUpperCase()
+    const num   = params.id.slice(0, 6).toUpperCase()
     const fecha = p.fecha_pago
       ? new Date(p.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })
       : new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })
-
-    // Nombre del destinatario (padre si es menor)
-    const destinatario = al?.es_menor && al?.padre_nombre
-      ? al.padre_nombre
-      : `${al?.nombre} ${al?.apellido}`
 
     // Construir líneas de detalle de pago
     const lineasPago = (todosPagos || [p]).map((pg: any) => {
@@ -74,14 +74,16 @@ export async function GET(
         </div>`
     }).join('')
 
-    const totalMonto = (todosPagos || [p]).reduce((acc: number, pg: any) => acc + (pg.monto || 0), 0)
+    const totalMonto   = (todosPagos || [p]).reduce((acc: number, pg: any) => acc + (pg.monto || 0), 0)
     const cuotaMensual = al?.cuota_mensual || 0
-    const ok = totalMonto >= cuotaMensual
+    const ok   = totalMonto >= cuotaMensual
     const parc = totalMonto > 0 && totalMonto < cuotaMensual
     const estadoLabel = ok ? 'Completo' : parc ? 'Parcial' : 'Pendiente'
     const estadoColor = ok ? '#2d7a4f' : parc ? '#b45309' : '#c0392b'
-    const estadoBg = ok ? '#e6f4ec' : parc ? '#fef3cd' : '#fdeaea'
-    const dniRow = al?.dni ? `<div class="fila"><div class="fila-lab">DNI</div><div class="fila-val">${al.dni}</div></div>` : ''
+    const estadoBg    = ok ? '#e6f4ec' : parc ? '#fef3cd' : '#fdeaea'
+    const dniRow      = al?.dni
+      ? `<div class="fila"><div class="fila-lab">DNI</div><div class="fila-val">${al.dni}</div></div>`
+      : ''
     const tieneMatricula = (todosPagos || []).some((pg: any) => pg.tipo === 'matricula')
 
     const html = `<!DOCTYPE html>
@@ -146,7 +148,7 @@ export async function GET(
       </div>
     </div>
     <button class="print-btn" onclick="window.print()">Guardar / Imprimir</button>
-    <div class="footer">${institutoNombre} &middot; ${institutoCiudad}</div>
+    <div class="footer">${institutoNombre}${institutoCiudad ? ' &middot; ' + institutoCiudad : ''}</div>
   </div>
 </body>
 </html>`
