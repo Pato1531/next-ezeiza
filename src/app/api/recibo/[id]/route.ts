@@ -135,7 +135,7 @@ export async function GET(
       <div class="monto">$${totalMonto.toLocaleString('es-AR')}</div>
       <div class="monto-mes">${p.mes} ${p.anio} &middot; ${p.metodo || 'Efectivo'}</div>
     </div>
-    ${(todosPagos && todosPagos.length > 1) ? `<div class="detalle-pagos">${lineasPago}</div>` : ''}
+    ${(todosPagos && (todosPagos.length > 1 || tieneMatricula)) ? `<div class="detalle-pagos">${lineasPago}</div>` : ''}
     <div class="body">
       <div class="fila"><div class="fila-lab">Alumno</div><div class="fila-val">${al?.nombre} ${al?.apellido}</div></div>
       ${al?.es_menor ? `<div class="fila"><div class="fila-lab">Responsable</div><div class="fila-val">${al?.padre_nombre || ''}</div></div>` : ''}
