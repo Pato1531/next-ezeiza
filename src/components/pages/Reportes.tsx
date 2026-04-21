@@ -114,14 +114,9 @@ export default function Reportes() {
                 .gte('fecha_alta', inicioMes).lte('fecha_alta', finMes).eq('activo', true)
                 .order('fecha_alta', { ascending: false })
           ),
-          (institutoId
-            ? sb.from('bajas_alumnos').select('alumno_nombre, alumno_apellido, nivel, cuota_mensual, fecha_baja, motivo')
-                .gte('fecha_baja', inicioMes).lte('fecha_baja', finMes)
-                .eq('instituto_id', institutoId).order('fecha_baja', { ascending: false })
-            : sb.from('bajas_alumnos').select('alumno_nombre, alumno_apellido, nivel, cuota_mensual, fecha_baja, motivo')
-                .gte('fecha_baja', inicioMes).lte('fecha_baja', finMes)
-                .order('fecha_baja', { ascending: false })
-          )
+          sb.from('bajas_alumnos').select('alumno_nombre, alumno_apellido, nivel, cuota_mensual, fecha_baja, motivo')
+            .gte('fecha_baja', inicioMes).lte('fecha_baja', finMes)
+            .order('fecha_baja', { ascending: false })
         ])
         setAltasDelMes(altasRes.data || [])
         setBajasDelMes(bajasRes.data || [])
