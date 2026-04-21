@@ -52,14 +52,18 @@ export async function GET(
     }
 
     // 2. Instituto
-    let institutoNombre = 'Next Ezeiza English Institute'
-    let institutoSub    = 'Instituto de Inglés · Ezeiza, Buenos Aires'
+    let institutoNombre    = 'Next English Institute'
+    let institutoSub       = 'Instituto de Inglés'
+    let colorPrimario      = '#652f8d'
+    let firmaDirectorUrl   = ''
     if (alumno.instituto_id) {
       const { data: inst } = await sb
-        .from('institutos').select('nombre').eq('id', alumno.instituto_id).single()
+        .from('institutos').select('nombre, color_primario, firma_director_url').eq('id', alumno.instituto_id).single()
       if (inst?.nombre) {
-        institutoNombre = inst.nombre
-        institutoSub    = 'Instituto de Inglés · Buenos Aires'
+        institutoNombre      = inst.nombre
+        institutoSub         = 'Instituto de Inglés'
+        if (inst.color_primario)     colorPrimario     = inst.color_primario
+        if (inst.firma_director_url) firmaDirectorUrl  = inst.firma_director_url
       }
     }
 
@@ -76,6 +80,12 @@ export async function GET(
 
     const docente = (curso as any).profesoras
     const docenteNombre = docente ? `${docente.nombre} ${docente.apellido}` : 'Docente'
+
+    // Director del instituto
+    const { data: director } = await sb
+      .from('usuarios').select('nombre')
+      .eq('rol', 'director').eq('instituto_id', alumno.instituto_id).single()
+    const directorNombre = director?.nombre || 'Director'
 
     // 4. Exámenes del curso con notas del alumno
     const { data: examenes } = await sb
@@ -172,7 +182,7 @@ export async function GET(
     /* ── CABECERA ── */
     .head {
       background: #fff;
-      border-bottom: 4px solid #652f8d;
+      border-bottom: 4px solid ${colorPrimario};
       padding: 28px 36px 22px;
     }
     .head-inner {
@@ -183,7 +193,7 @@ export async function GET(
     .inst-block { display: flex; align-items: center; gap: 14px; }
     .inst-logo {
       width: 50px; height: 50px;
-      background: #652f8d;
+      background: ${colorPrimario};
       border-radius: 10px;
       display: flex; align-items: center; justify-content: center;
       color: #fff;
@@ -202,7 +212,7 @@ export async function GET(
     .doc-tipo { text-align: right; }
     .doc-titulo {
       font-family: 'Lora', Georgia, serif;
-      font-size: 15px; color: #652f8d;
+      font-size: 15px; color: ${colorPrimario};
     }
     .doc-periodo { font-size: 12px; color: #9b8eaa; margin-top: 4px; }
 
@@ -219,7 +229,7 @@ export async function GET(
     }
     .alumno-dni { font-size: 12px; color: #9b8eaa; margin-top: 3px; }
     .curso-chip {
-      background: #ede0f7; color: #652f8d;
+      background: #ede0f7; color: ${colorPrimario};
       border-radius: 20px; padding: 5px 14px;
       font-size: 12px; font-weight: 600;
       white-space: nowrap; margin-left: 16px;
@@ -260,11 +270,11 @@ export async function GET(
     /* ── OBSERVACIONES ── */
     .obs-block {
       margin-top: 24px; background: #faf5fd;
-      border-left: 3px solid #652f8d;
+      border-left: 3px solid ${colorPrimario};
       border-radius: 0 10px 10px 0; padding: 16px 18px;
     }
     .obs-label {
-      font-size: 10px; font-weight: 700; color: #652f8d;
+      font-size: 10px; font-weight: 700; color: ${colorPrimario};
       text-transform: uppercase; letter-spacing: .1em; margin-bottom: 8px;
     }
     .obs-text { font-size: 13px; color: #5a4d6a; line-height: 1.6; }
@@ -278,7 +288,7 @@ export async function GET(
 
     /* ── FOOTER ── */
     .footer {
-      background: #652f8d; margin-top: 32px;
+      background: ${colorPrimario}; margin-top: 32px;
       padding: 16px 36px;
       display: flex; justify-content: space-between; align-items: center;
       font-size: 11px; color: rgba(255,255,255,.65);
@@ -338,11 +348,21 @@ export async function GET(
         </div>
       </div>
 
-      <div class="firma-wrap">
+      <div class="firma-wrap" style="display:flex;justify-content:space-between;margin-top:36px;">
         <div class="firma">
           <div class="firma-linea"></div>
           <div class="firma-nombre">${docenteNombre}</div>
           <div class="firma-rol">Docente a cargo</div>
+        </div>
+        <div class="firma">
+          ${firmaDirectorUrl
+            ? `<div style="height:56px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:0">
+                <img src="${firmaDirectorUrl}" style="max-height:52px;max-width:160px;object-fit:contain" />
+               </div>`
+            : '<div class="firma-linea"></div>'
+          }
+          <div class="firma-nombre">${directorNombre}</div>
+          <div class="firma-rol">Director del Instituto</div>
         </div>
       </div>
     </div>
