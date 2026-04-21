@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAlumnos, useProfesoras, useCursos, apiHeaders } from '@/lib/hooks'
+import { useAuth } from '@/lib/auth-context'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
@@ -13,6 +14,7 @@ export default function DashboardEjecutivo() {
   const [mes,  setMes]  = useState(hoy.getMonth())
   const [anio, setAnio] = useState(hoy.getFullYear())
 
+  const { usuario }    = useAuth()
   const { alumnos }    = useAlumnos()
   const { profesoras } = useProfesoras()
   const { cursos }     = useCursos()
@@ -57,9 +59,12 @@ export default function DashboardEjecutivo() {
         sb.from('liquidaciones')
           .select('total, estado, profesora_id')
           .eq('mes', mesNombre).eq('anio', anio),
-        sb.from('alumnos')
-          .select('id, nombre, apellido, nivel, fecha_alta')
-          .gte('fecha_alta', inicioMes).lte('fecha_alta', finMes).eq('activo', true),
+        usuario?.instituto_id
+          ? sb.from('alumnos').select('id, nombre, apellido, nivel, fecha_alta')
+              .gte('fecha_alta', inicioMes).lte('fecha_alta', finMes).eq('activo', true)
+              .eq('instituto_id', usuario.instituto_id)
+          : sb.from('alumnos').select('id, nombre, apellido, nivel, fecha_alta')
+              .gte('fecha_alta', inicioMes).lte('fecha_alta', finMes).eq('activo', true),
         sb.from('bajas_alumnos')
           .select('alumno_nombre, alumno_apellido, nivel, fecha_baja, motivo')
           .gte('fecha_baja', inicioMes).lte('fecha_baja', finMes),
@@ -95,7 +100,7 @@ export default function DashboardEjecutivo() {
     // Intentar a los 800ms y de nuevo a los 2500ms como fallback
     setTimeout(cargarER, 800)
     setTimeout(cargarER, 2500)
-  }, [mes, anio])
+  }, [mes, anio, usuario?.instituto_id])
 
   // Sincronizar erIngresos con pagos reales cuando estos cargan
   // Esto garantiza que el EERR siempre muestre el total correcto
