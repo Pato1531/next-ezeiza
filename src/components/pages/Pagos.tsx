@@ -118,6 +118,32 @@ export default function Pagos() {
     const matchMetodo = !filtroRepMetodo || p.metodo === filtroRepMetodo
     return matchDia && matchMetodo
   })
+
+  // Agrupar pagos por alumno: un alumno que pagó cuota+matrícula → una sola fila con total
+  // Se usa el pago de tipo 'cuota' como base (o el primero disponible)
+  // para el ID del recibo, que internamente ya suma todos los pagos del mes
+  const pagosAgrupados = (() => {
+    const grupos: Record<string, any> = {}
+    for (const p of pagosReporteFiltrados) {
+      const key = `${p.alumno_id}-${p.mes}-${p.anio}`
+      if (!grupos[key]) {
+        grupos[key] = { ...p, _montoTotal: 0, _tipos: [] }
+      }
+      grupos[key]._montoTotal += (p.monto || 0)
+      grupos[key]._tipos.push(p.tipo || 'cuota')
+      // Preferir el ID del pago de cuota para el recibo (suma todo el mes)
+      if (p.tipo === 'cuota') {
+        grupos[key].id = p.id
+        grupos[key].monto = p.monto
+        grupos[key].metodo = p.metodo
+        grupos[key].fecha_pago = p.fecha_pago
+      }
+    }
+    return Object.values(grupos).sort((a: any, b: any) =>
+      (b.fecha_pago || '').localeCompare(a.fecha_pago || '')
+    )
+  })()
+
   const totalRecaudado = pagosReporteFiltrados.reduce((s, p) => s + (p.monto || 0), 0)
 
   const filtrados = busqueda
@@ -350,7 +376,7 @@ export default function Pagos() {
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'12px', flexWrap:'wrap', gap:'8px' }}>
                 <div>
                   <div style={{ fontSize:'15px', fontWeight:700 }}>
-                    {pagosReporteFiltrados.length} pagos{filtroRepDia ? ` · ${new Date(filtroRepDia + 'T12:00:00').toLocaleDateString('es-AR')}` : ` · ${repMes} ${repAnio}`}
+                    {pagosAgrupados.length} alumnos · {pagosReporteFiltrados.length} cobros{filtroRepDia ? ` · ${new Date(filtroRepDia + 'T12:00:00').toLocaleDateString('es-AR')}` : ` · ${repMes} ${repAnio}`}
                   </div>
                   <div style={{ fontSize:'13px', color:'var(--v)', fontWeight:600 }}>Total: ${totalRecaudado.toLocaleString('es-AR')}</div>
                 </div>
@@ -366,7 +392,7 @@ export default function Pagos() {
                 </div>
               ) : (
                 <div style={{ background:'var(--white)', border:'1.5px solid var(--border)', borderRadius:'14px', overflow:'hidden' }}>
-                  {pagosReporteFiltrados.map((p: any, i: number) => {
+                  {pagosAgrupados.map((p: any, i: number) => {
                     const tel = p.alumnos?.es_menor
                       ? (p.alumnos.padre_telefono || p.alumnos.telefono)
                       : (p.alumnos?.telefono || p.alumnos?.padre_telefono)
@@ -376,9 +402,10 @@ export default function Pagos() {
                       ? new Date(p.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR', { day:'numeric', month:'long', year:'numeric' })
                       : new Date().toLocaleDateString('es-AR', { day:'numeric', month:'long', year:'numeric' })
                     const urlRecibo = typeof window !== 'undefined' ? `${window.location.origin}/api/recibo/${p.id}` : ''
-                    const textoWS = `✅ *Recibo de pago*\n\nHola ${contacto}! Confirmamos el pago de *${p.mes} ${p.anio}* de *${p.alumnos?.nombre} ${p.alumnos?.apellido}*.\n\n💰 Monto: *$${p.monto?.toLocaleString('es-AR')}*\n📅 Fecha: ${fechaFmt}\n💳 Método: ${p.metodo || 'Efectivo'}\n\n📄 Tu recibo: ${urlRecibo}\n\n¡Gracias! 🙌`
+                    const montoTotal = (p._montoTotal || p.monto) || 0
+                    const textoWS = `✅ *Recibo de pago*\n\nHola ${contacto}! Confirmamos el pago de *${p.mes} ${p.anio}* de *${p.alumnos?.nombre} ${p.alumnos?.apellido}*.\n\n💰 Monto: *$${montoTotal.toLocaleString('es-AR')}*\n📅 Fecha: ${fechaFmt}\n💳 Método: ${p.metodo || 'Efectivo'}\n\n📄 Tu recibo: ${urlRecibo}\n\n¡Gracias! 🙌`
                     return (
-                      <div key={p.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 16px', borderBottom: i < pagosReporteFiltrados.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                      <div key={p.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 16px', borderBottom: i < pagosAgrupados.length - 1 ? '1px solid var(--border)' : 'none' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
                           <div style={{ width:32, height:32, borderRadius:8, background:p.alumnos?.color || '#652f8d', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, color:'#fff', flexShrink:0 }}>
                             {p.alumnos?.nombre?.[0]}{p.alumnos?.apellido?.[0]}
@@ -389,7 +416,14 @@ export default function Pagos() {
                           </div>
                         </div>
                         <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-                          <div style={{ fontSize:'15px', fontWeight:700, color:'var(--v)' }}>${p.monto?.toLocaleString('es-AR')}</div>
+                          <div style={{ fontSize:'15px', fontWeight:700, color:'var(--v)' }}>
+                            ${(p._montoTotal || p.monto)?.toLocaleString('es-AR')}
+                            {p._tipos?.length > 1 && (
+                              <span style={{ fontSize:'10px', fontWeight:600, color:'#1a6b8a', background:'#e0f0f7', padding:'1px 7px', borderRadius:'10px', marginLeft:'6px' }}>
+                                {p._tipos.includes('matricula') ? '+ Matrícula' : ''}
+                              </span>
+                            )}
+                          </div>
                           {cel && (
                             <a
                               href={`https://wa.me/54${cel}?text=${encodeURIComponent(textoWS)}`}
