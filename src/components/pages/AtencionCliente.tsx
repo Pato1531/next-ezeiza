@@ -292,6 +292,7 @@ function EstadoBadge({ estado, onClick }: { estado?: string; onClick?: () => voi
 }
 
 function ListaEspera() {
+  const { usuario } = useAuth()
   const [lista, setLista] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
@@ -317,7 +318,6 @@ function ListaEspera() {
     setLoading(true)
     const sb = createClient()
     let q = sb.from('lista_espera').select('*').order('created_at', { ascending: false })
-    // Filtrar por instituto — evita mezclar leads de distintas sedes
     if (usuario?.instituto_id) q = (q as any).eq('instituto_id', usuario.instituto_id)
     const { data, error } = await q
     if (error) console.error('[lista_espera cargar]', error.message)
