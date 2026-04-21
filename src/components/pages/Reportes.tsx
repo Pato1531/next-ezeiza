@@ -104,13 +104,24 @@ export default function Reportes() {
         const sb = createClient()
         const inicioMes = `${anioActual}-${String(new Date().getMonth()+1).padStart(2,'0')}-01`
         const finMes = new Date(anioActual, new Date().getMonth()+1, 0).toISOString().split('T')[0]
+        const institutoId = usuario?.instituto_id
         const [altasRes, bajasRes] = await Promise.all([
-          sb.from('alumnos').select('nombre, apellido, nivel, cuota_mensual, fecha_alta, color')
-            .gte('fecha_alta', inicioMes).lte('fecha_alta', finMes).eq('activo', true)
-            .order('fecha_alta', { ascending: false }),
-          sb.from('bajas_alumnos').select('alumno_nombre, alumno_apellido, nivel, cuota_mensual, fecha_baja, motivo')
-            .gte('fecha_baja', inicioMes).lte('fecha_baja', finMes)
-            .order('fecha_baja', { ascending: false })
+          (institutoId
+            ? sb.from('alumnos').select('nombre, apellido, nivel, cuota_mensual, fecha_alta, color')
+                .gte('fecha_alta', inicioMes).lte('fecha_alta', finMes).eq('activo', true)
+                .eq('instituto_id', institutoId).order('fecha_alta', { ascending: false })
+            : sb.from('alumnos').select('nombre, apellido, nivel, cuota_mensual, fecha_alta, color')
+                .gte('fecha_alta', inicioMes).lte('fecha_alta', finMes).eq('activo', true)
+                .order('fecha_alta', { ascending: false })
+          ),
+          (institutoId
+            ? sb.from('bajas_alumnos').select('alumno_nombre, alumno_apellido, nivel, cuota_mensual, fecha_baja, motivo')
+                .gte('fecha_baja', inicioMes).lte('fecha_baja', finMes)
+                .eq('instituto_id', institutoId).order('fecha_baja', { ascending: false })
+            : sb.from('bajas_alumnos').select('alumno_nombre, alumno_apellido, nivel, cuota_mensual, fecha_baja, motivo')
+                .gte('fecha_baja', inicioMes).lte('fecha_baja', finMes)
+                .order('fecha_baja', { ascending: false })
+          )
         ])
         setAltasDelMes(altasRes.data || [])
         setBajasDelMes(bajasRes.data || [])
