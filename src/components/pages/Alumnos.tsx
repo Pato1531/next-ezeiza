@@ -85,6 +85,7 @@ export default function Alumnos() {
   const [soloSinCuota, setSoloSinCuota] = useState(false)
   const [soloSinTel, setSoloSinTel] = useState(false)
   const [soloSinDni, setSoloSinDni] = useState(false)
+  const [soloSinFecha, setSoloSinFecha] = useState(false)
   const [filtroPago, setFiltroPago] = useState<'todos'|'pagaron'|'no_pagaron'>('todos')
   const [mesFiltro, setMesFiltro] = useState(new Date().getMonth())
   const [alumnosSinCurso, setAlumnosSinCurso] = useState<Set<string>>(new Set())
@@ -127,7 +128,7 @@ export default function Alumnos() {
   const [guardandoBaja, setGuardandoBaja] = useState(false)
   const [bajas, setBajas] = useState<any[]>([])
   const [loadingBajas, setLoadingBajas] = useState(false)
-  const [pago, setPago] = useState({ mes: MESES[new Date().getMonth()], anio: new Date().getFullYear(), monto: 0, metodo:'Efectivo', fecha_pago: new Date().toISOString().split('T')[0], observaciones:'' })
+  const [pago, setPago] = useState({ mes: MESES[new Date().getMonth()], anio: new Date().getFullYear(), monto: 0, metodo:'Efectivo', fecha_pago: new Date().toISOString().split('T')[0], observaciones:'', tipo:'cuota' })
 
   const [renovacionMes, setRenovacionMes] = useState(new Date().getMonth())
   const [renovacionAnio, setRenovacionAnio] = useState(new Date().getFullYear())
@@ -231,12 +232,20 @@ export default function Alumnos() {
     setGuardandoBaja(true)
     const sb = createClient()
     try {
+      // Obtener el curso actual del alumno ANTES de borrarlo
+      const { data: cursoData } = await sb
+        .from('cursos_alumnos')
+        .select('cursos(nombre)')
+        .eq('alumno_id', sel.id)
+        .maybeSingle()
+      const cursoNombre = (cursoData as any)?.cursos?.nombre || '—'
+
       const [bajasRes, , alumnoRes] = await Promise.all([
         sb.from('bajas_alumnos').insert({
           alumno_id: sel.id,
           alumno_nombre: sel.nombre,
           alumno_apellido: sel.apellido,
-          curso_nombre: '—',
+          curso_nombre: cursoNombre,
           nivel: sel.nivel,
           cuota_mensual: sel.cuota_mensual,
           motivo: motivoBaja === 'Otro' ? motivoLibre : motivoBaja,
@@ -273,10 +282,11 @@ export default function Alumnos() {
     const matchSinCuota = !soloSinCuota || !a.cuota_mensual || a.cuota_mensual === 0
     const matchSinTel = !soloSinTel || (!a.telefono && !a.padre_telefono)
     const matchSinDni = !soloSinDni || (!a.dni)
+    const matchSinFecha = !soloSinFecha || (!a.fecha_nacimiento)
     const matchPago = filtroPago === 'todos' ? true
       : filtroPago === 'pagaron' ? alumnosConPagoMes.has(a.id)
       : !alumnosConPagoMes.has(a.id)
-    return matchBusq && matchSinCurso && matchSinCuota && matchSinTel && matchSinDni && matchPago
+    return matchBusq && matchSinCurso && matchSinCuota && matchSinTel && matchSinDni && matchSinFecha && matchPago
   })
 
   // No bloquear con loading — mostrar contenido aunque esté cargando
@@ -378,8 +388,17 @@ export default function Alumnos() {
             </span>
           )}
         </button>
-        {(soloSinCurso || soloSinCuota || soloSinTel || soloSinDni) && (
-          <button onClick={() => { setSoloSinCurso(false); setSoloSinCuota(false); setSoloSinTel(false); setSoloSinDni(false) }} style={{fontSize:'12px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}}>✕ Limpiar</button>
+        <button onClick={() => setSoloSinFecha(!soloSinFecha)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'7px 14px',borderRadius:'20px',fontSize:'12.5px',fontWeight:600,cursor:'pointer',border:'1.5px solid',borderColor:soloSinFecha?'#1a6b8a':'var(--border)',background:soloSinFecha?'#e0f0f7':'var(--white)',color:soloSinFecha?'#1a6b8a':'var(--text2)',transition:'all .15s'}}>
+          <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M7 2v3M13 2v3M3 9h14"/></svg>
+          Sin fecha de nac.
+          {alumnos.filter((a:any) => !a.fecha_nacimiento).length > 0 && (
+            <span style={{background:soloSinFecha?'#1a6b8a':'var(--border)',color:soloSinFecha?'#fff':'var(--text2)',borderRadius:'20px',padding:'1px 7px',fontSize:'11px',fontWeight:700}}>
+              {alumnos.filter((a:any) => !a.fecha_nacimiento).length}
+            </span>
+          )}
+        </button>
+        {(soloSinCurso || soloSinCuota || soloSinTel || soloSinDni || soloSinFecha) && (
+          <button onClick={() => { setSoloSinCurso(false); setSoloSinCuota(false); setSoloSinTel(false); setSoloSinDni(false); setSoloSinFecha(false) }} style={{fontSize:'12px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}}>✕ Limpiar</button>
         )}
       </div>
       {filtrados.map(a => {
@@ -1061,11 +1080,15 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
 
     // Fallback: pago sin id todavía → HTML local con print automático
     const num = Math.floor(Math.random()*900000)+100000
+    const conceptoLabel = (p.tipo === 'proporcional') ? 'Monto proporcional'
+      : (p.tipo === 'recargo') ? 'Cuota con recargo'
+      : (p.tipo === 'matricula') ? 'Matrícula'
+      : 'Cuota mensual'
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo ${a.nombre} ${a.apellido}</title>
     <style>body{font-family:Arial,sans-serif;padding:0;margin:0;background:#f5f0fa}.wrap{max-width:400px;margin:20px auto;background:white;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(101,47,141,.15)}.hdr{background:#652f8d;padding:24px;color:white}.logo{font-size:20px;font-weight:900}.logo span{opacity:.7;font-weight:400}.rec-num{font-size:12px;opacity:.7;margin-top:2px}.monto-sec{background:#f2e8f9;padding:20px;text-align:center;border-bottom:2px dashed #d4a8e8}.monto-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}.monto{font-size:44px;font-weight:900;color:#652f8d;letter-spacing:-2px}.monto-mes{font-size:13px;color:#9b8eaa;margin-top:4px}.body{padding:20px}.fila{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0edf5}.fila:last-child{border-bottom:none}.fila-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.04em}.fila-val{font-size:13px;color:#1a1020;font-weight:700;text-align:right;max-width:60%}.badge{background:#e6f4ec;color:#2d7a4f;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}.footer{background:#faf7fd;padding:14px 20px;text-align:center;font-size:11px;color:#9b8eaa}@media print{body{background:white}.wrap{box-shadow:none;margin:0;border-radius:0}}</style></head><body>
     <div class="wrap"><div class="hdr"><div class="logo">${a.instituto_nombre || 'Instituto'}</div><div class="rec-num">Comprobante #${num} · ${fecha}</div></div>
-    <div class="monto-sec"><div class="monto-lab">Total abonado</div><div class="monto">$${monto}</div><div class="monto-mes">Cuota ${p.mes} ${p.anio}</div></div>
-    <div class="body"><div class="fila"><div class="fila-lab">Alumno</div><div class="fila-val">${a.nombre} ${a.apellido}</div></div><div class="fila"><div class="fila-lab">Método</div><div class="fila-val">${p.metodo||'Efectivo'}</div></div><div class="fila"><div class="fila-lab">Fecha</div><div class="fila-val">${fecha}</div></div><div class="fila"><div class="fila-lab">Estado</div><div class="fila-val"><span class="badge">✓ Pagado</span></div></div></div>
+    <div class="monto-sec"><div class="monto-lab">Total abonado</div><div class="monto">$${monto}</div><div class="monto-mes">${conceptoLabel} · ${p.mes} ${p.anio}</div></div>
+    <div class="body"><div class="fila"><div class="fila-lab">Alumno</div><div class="fila-val">${a.nombre} ${a.apellido}</div></div><div class="fila"><div class="fila-lab">Concepto</div><div class="fila-val">${conceptoLabel}</div></div><div class="fila"><div class="fila-lab">Método</div><div class="fila-val">${p.metodo||'Efectivo'}</div></div><div class="fila"><div class="fila-lab">Fecha</div><div class="fila-val">${fecha}</div></div><div class="fila"><div class="fila-lab">Estado</div><div class="fila-val"><span class="badge">✓ Pagado</span></div></div></div>
     <div class="footer">${a.instituto_nombre || 'Instituto de Inglés'}</div></div>
     <script>setTimeout(function(){window.print()},400)</script></body></html>`
     const blob = new Blob([html], {type:'text/html;charset=utf-8'})
@@ -1394,6 +1417,14 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
         <Field2 label="Mes">
           <select style={IS} value={pago.mes} onChange={e=>setPago({...pago,mes:e.target.value})}>
             {MESES.map(m=><option key={m}>{m}</option>)}
+          </select>
+        </Field2>
+        <Field2 label="Concepto">
+          <select style={IS} value={(pago as any).tipo||'cuota'} onChange={e=>setPago({...pago,tipo:e.target.value} as any)}>
+            <option value="cuota">Cuota mensual</option>
+            <option value="proporcional">Monto proporcional</option>
+            <option value="recargo">Cuota con recargo</option>
+            <option value="matricula">Matrícula</option>
           </select>
         </Field2>
         <Field2 label="Monto ($)"><Input type="number" value={pago.monto||''} onChange={(v:string)=>setPago({...pago,monto:+v})} /></Field2>
