@@ -71,6 +71,8 @@ export default function Pagos() {
   const [cobrarRecargo, setCobrarRecargo] = useState(false)
   const [montoRecargo, setMontoRecargo] = useState('')
   const [cobrarMatricula, setCobrarMatricula] = useState(false)
+  const [cobrarProporcional, setCobrarProporcional] = useState(false)
+  const [montoProporcional, setMontoProporcional] = useState('')
 
   // ── Cargar reporte ────────────────────────────────────────────────────────
   const cargarReporte = async () => {
@@ -157,6 +159,7 @@ export default function Pagos() {
     if (cobrarCuota) t += (a.cuota_mensual || 0)
     if (cobrarRecargo) t += (parseFloat(montoRecargo) || 0)
     if (cobrarMatricula) t += (a.matricula || 0)
+    if (cobrarProporcional) t += (parseFloat(montoProporcional) || 0)
     return sum + t
   }, 0)
 
@@ -179,7 +182,8 @@ export default function Pagos() {
   // ── Guardar pagos ─────────────────────────────────────────────────────────
   const guardar = async () => {
     if (seleccionados.size === 0) return alert('Seleccioná al menos un alumno')
-    if (!cobrarCuota && !cobrarRecargo && !cobrarMatricula) return alert('Seleccioná al menos un concepto')
+    if (!cobrarCuota && !cobrarRecargo && !cobrarMatricula && !cobrarProporcional) return alert('Seleccioná al menos un concepto')
+    if (cobrarProporcional && (!montoProporcional || parseFloat(montoProporcional) <= 0)) return alert('Ingresá el monto proporcional')
     if (cobrarRecargo && (!montoRecargo || parseFloat(montoRecargo) <= 0)) return alert('Ingresá el monto del recargo')
 
     setGuardando(true)
@@ -202,6 +206,11 @@ export default function Pagos() {
         alumno_id: a.id, mes, anio: anioActual, metodo, fecha_pago: fecha,
         monto: a.matricula || 0,
         tipo: 'matricula', observaciones: 'Matrícula',
+      })
+      if (cobrarProporcional) inserts.push({
+        alumno_id: a.id, mes, anio: anioActual, metodo, fecha_pago: fecha,
+        monto: parseFloat(montoProporcional) || 0,
+        tipo: 'proporcional', observaciones: `Monto proporcional ${mes} ${anioActual}`,
       })
     }
 
@@ -635,7 +644,7 @@ export default function Pagos() {
             {/* Matrícula */}
             <div
               onClick={() => setCobrarMatricula(!cobrarMatricula)}
-              style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'10px', cursor:'pointer',
+              style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'10px', marginBottom:'8px', cursor:'pointer',
                 border: `1.5px solid ${cobrarMatricula ? '#1a6b8a' : 'var(--border)'}`,
                 background: cobrarMatricula ? '#e0f0f7' : 'var(--white)' }}>
               <div style={{ width:18, height:18, borderRadius:5, border: `2px solid ${cobrarMatricula ? '#1a6b8a' : 'var(--border)'}`, background: cobrarMatricula ? '#1a6b8a' : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
@@ -645,6 +654,33 @@ export default function Pagos() {
                 <div style={{ fontSize:'13px', fontWeight:600 }}>Matrícula</div>
                 <div style={{ fontSize:'11px', color:'var(--text3)', marginTop:'1px' }}>{anioActual} · monto individual de cada alumno</div>
               </div>
+            </div>
+
+            {/* Monto proporcional */}
+            <div style={{ borderRadius:'10px', border: `1.5px solid ${cobrarProporcional ? 'var(--green)' : 'var(--border)'}`, background: cobrarProporcional ? 'var(--greenl)' : 'var(--white)' }}>
+              <div onClick={() => setCobrarProporcional(!cobrarProporcional)} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', cursor:'pointer' }}>
+                <div style={{ width:18, height:18, borderRadius:5, border: `2px solid ${cobrarProporcional ? 'var(--green)' : 'var(--border)'}`, background: cobrarProporcional ? 'var(--green)' : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  {cobrarProporcional && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2.5"><path d="M2 5l2 2 4-4"/></svg>}
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:'13px', fontWeight:600 }}>Monto proporcional</div>
+                  <div style={{ fontSize:'11px', color:'var(--text3)', marginTop:'1px' }}>Monto fijo igual para todos</div>
+                </div>
+                {cobrarProporcional && montoProporcional && (
+                  <div style={{ fontSize:'14px', fontWeight:700, color:'var(--green)' }}>${parseFloat(montoProporcional || '0').toLocaleString('es-AR')}</div>
+                )}
+              </div>
+              {cobrarProporcional && (
+                <div style={{ padding:'0 12px 10px' }}>
+                  <input
+                    type="number"
+                    style={{ ...IS, borderColor:'var(--green)' }}
+                    placeholder="Monto proporcional para todos..."
+                    value={montoProporcional}
+                    onChange={e => setMontoProporcional(e.target.value)}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -676,6 +712,7 @@ export default function Pagos() {
                 if (cobrarCuota) monto += (a.cuota_mensual || 0)
                 if (cobrarRecargo) monto += (parseFloat(montoRecargo) || 0)
                 if (cobrarMatricula) monto += (a.matricula || 0)
+                if (cobrarProporcional) monto += (parseFloat(montoProporcional) || 0)
                 const yaPago = alumnosPagadosMes.has(a.id)
                 return (
                   <div
