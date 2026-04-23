@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
-import { useProfesoras } from '@/lib/hooks'
+import { useProfesoras, apiHeaders } from '@/lib/hooks'
 
 const TIPOS = [
   { value: 'reunion', label: 'Reunión', color: '#652f8d', bg: '#f2e8f9', emoji: '👥' },
@@ -47,7 +47,7 @@ export default function Agenda() {
     try {
       const res = await fetch('/api/guardar-evento', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: apiHeaders(),
         body: JSON.stringify({ ...form, creado_por: usuario?.nombre })
       })
       const json = await res.json()
