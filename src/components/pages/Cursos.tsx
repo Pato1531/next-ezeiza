@@ -1031,6 +1031,9 @@ function ExamenesTab({ cursoId, alumnosCurso, puedeEditar, puedeCrearExamen }: a
   const [selExamen, setSelExamen] = useState<any|null>(null)
   const [confirmDelExamen, setConfirmDelExamen] = useState<string|null>(null)
   const [creando, setCreando] = useState(false)
+  const [modalTest, setModalTest] = useState<{modo:'nuevo'}|{modo:'editar',id:string,nombre:string,fecha:string}|null>(null)
+  const [formTest, setFormTest] = useState({ nombre: '', fecha: hoy() })
+  const [guardandoTest, setGuardandoTest] = useState(false)
 
   // Auto-crear Midterm y Final si no existen
   useEffect(() => {
@@ -1046,13 +1049,27 @@ function ExamenesTab({ cursoId, alumnosCurso, puedeEditar, puedeCrearExamen }: a
     if (row) setSelExamen(row)
   }
 
-  const crearLibre = async () => {
-    const nombre = prompt('Nombre del examen:')
-    if (!nombre) return
-    setCreando(true)
-    const row = await agregar({ curso_id: cursoId, nombre, fecha: hoy(), nota_maxima: 100, tipo: 'libre' })
-    setCreando(false)
+  const crearLibre = () => {
+    setFormTest({ nombre: '', fecha: hoy() })
+    setModalTest({ modo: 'nuevo' })
+  }
+
+  const guardarNuevoTest = async () => {
+    if (!formTest.nombre.trim()) return alert('Ingresá un nombre para el test')
+    setGuardandoTest(true)
+    const row = await agregar({ curso_id: cursoId, nombre: formTest.nombre.trim(), fecha: formTest.fecha || hoy(), nota_maxima: 100, tipo: 'libre' })
+    setGuardandoTest(false)
+    setModalTest(null)
     if (row) setSelExamen(row)
+  }
+
+  const guardarEdicionTest = async () => {
+    if (!formTest.nombre.trim() || modalTest?.modo !== 'editar') return
+    setGuardandoTest(true)
+    await sb.from('examenes').update({ nombre: formTest.nombre.trim(), fecha: formTest.fecha || hoy() }).eq('id', modalTest.id)
+    setGuardandoTest(false)
+    setModalTest(null)
+    recargar()
   }
 
   if (selExamen) {
@@ -1142,12 +1159,9 @@ function ExamenesTab({ cursoId, alumnosCurso, puedeEditar, puedeCrearExamen }: a
           </div>
           {puedeCrearExamen && (
             <div style={{display:'flex',gap:'6px',flexShrink:0}}>
-              <button onClick={async () => {
-                const nuevoNombre = prompt('Nuevo nombre del test:', ex.nombre)
-                if (!nuevoNombre || nuevoNombre === ex.nombre) return
-                const { error: updErr } = await sb.from('examenes').update({ nombre: nuevoNombre }).eq('id', ex.id)
-      if (updErr) { console.error('[renombrar examen]', updErr.message); alert('❌ No se pudo guardar el nombre.'); return }
-                recargar()
+              <button onClick={() => {
+                setFormTest({ nombre: ex.nombre, fecha: ex.fecha || hoy() })
+                setModalTest({ modo: 'editar', id: ex.id, nombre: ex.nombre, fecha: ex.fecha || hoy() })
               }} style={{padding:'5px 10px',background:'var(--vl)',color:'var(--v)',border:'1px solid var(--v)',borderRadius:'7px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
                 Editar
               </button>
@@ -1160,6 +1174,43 @@ function ExamenesTab({ cursoId, alumnosCurso, puedeEditar, puedeCrearExamen }: a
           {!puedeCrearExamen && <Chevron />}
         </div>
       ))}
+
+      {modalTest && (
+        <ModalSheet
+          title={modalTest.modo === 'nuevo' ? 'Nuevo test' : 'Editar test'}
+          onClose={() => setModalTest(null)}
+        >
+          <div style={{marginBottom:'11px'}}>
+            <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Nombre del test *</div>
+            <input
+              style={{width:'100%',padding:'10px 12px',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontFamily:'Inter,sans-serif',outline:'none',color:'var(--text)',background:'var(--white)'}}
+              value={formTest.nombre}
+              onChange={e => setFormTest({...formTest, nombre: e.target.value})}
+              placeholder="Ej: Test unit 5, Quiz gramática..."
+              autoFocus
+            />
+          </div>
+          <div style={{marginBottom:'16px'}}>
+            <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Fecha del examen</div>
+            <input
+              type="date"
+              style={{width:'100%',padding:'10px 12px',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontFamily:'Inter,sans-serif',outline:'none',color:'var(--text)',background:'var(--white)'}}
+              value={formTest.fecha}
+              onChange={e => setFormTest({...formTest, fecha: e.target.value})}
+            />
+          </div>
+          <div style={{display:'flex',gap:'10px'}}>
+            <button onClick={() => setModalTest(null)} style={{flex:1,padding:'12px',background:'transparent',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>Cancelar</button>
+            <button
+              onClick={modalTest.modo === 'nuevo' ? guardarNuevoTest : guardarEdicionTest}
+              disabled={guardandoTest}
+              style={{flex:2,padding:'12px',background:guardandoTest?'#aaa':'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:700,cursor:guardandoTest?'not-allowed':'pointer'}}
+            >
+              {guardandoTest ? 'Guardando...' : modalTest.modo === 'nuevo' ? 'Crear test' : 'Guardar cambios'}
+            </button>
+          </div>
+        </ModalSheet>
+      )}
 
       {confirmDelExamen && <ModalSheet title="¿Eliminar examen?" onClose={() => setConfirmDelExamen(null)}>
         <p style={{fontSize:'14px',color:'var(--text2)',marginBottom:'20px'}}>Se eliminarán el examen y todas las notas.</p>
