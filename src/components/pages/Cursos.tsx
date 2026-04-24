@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { useCursos, useProfesoras, useAlumnos, useCursoAlumnos, useClases, useMiProfesora, useExamenes, useNotasExamen, store, storeTs } from '@/lib/hooks'
+import { useCursos, useProfesoras, useAlumnos, useCursoAlumnos, useClases, useMiProfesora, useExamenes, useNotasExamen, store, storeTs, apiHeaders } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 
@@ -1658,33 +1658,39 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
   const guardar = async () => {
     if (!form.titulo.trim()) return alert('El título es obligatorio')
     setGuardando(true)
-    const sb = createClient()
-    if (editando) {
-      const { error } = await sb.from('planificacion_cursos')
-        .update({ titulo: form.titulo, descripcion: form.descripcion, estado: form.estado,
-                  fecha_inicio: form.fecha_inicio || null, fecha_cierre: form.fecha_cierre || null })
-        .eq('id', editando.id)
-      if (!error) {
+    try {
+      if (editando) {
+        const res = await fetch('/api/planificacion', {
+          method: 'PUT',
+          headers: apiHeaders(),
+          body: JSON.stringify({
+            id: editando.id,
+            titulo: form.titulo, descripcion: form.descripcion, estado: form.estado,
+            fecha_inicio: form.fecha_inicio || null, fecha_cierre: form.fecha_cierre || null,
+          }),
+        })
+        const json = await res.json()
+        if (json.error) throw new Error(json.error)
         setUnidades(prev => prev.map(u => u.id === editando.id ? { ...u, ...form } : u))
         setModal(false)
       } else {
-        console.error('[PlanificacionTab guardar editar]', error.message)
-        alert('❌ Error al guardar los cambios. Intentá de nuevo.')
-      }
-    } else {
-      const orden = unidades.length
-      const { data, error } = await sb.from('planificacion_cursos')
-        .insert({ curso_id: cursoId, titulo: form.titulo, descripcion: form.descripcion,
-                  estado: form.estado, orden,
-                  fecha_inicio: form.fecha_inicio || null, fecha_cierre: form.fecha_cierre || null })
-        .select().single()
-      if (!error && data) {
-        setUnidades(prev => [...prev, data])
+        const res = await fetch('/api/planificacion', {
+          method: 'POST',
+          headers: apiHeaders(),
+          body: JSON.stringify({
+            curso_id: cursoId, titulo: form.titulo, descripcion: form.descripcion,
+            estado: form.estado, orden: unidades.length,
+            fecha_inicio: form.fecha_inicio || null, fecha_cierre: form.fecha_cierre || null,
+          }),
+        })
+        const json = await res.json()
+        if (json.error) throw new Error(json.error)
+        setUnidades(prev => [...prev, json.data])
         setModal(false)
-      } else {
-        console.error('[PlanificacionTab guardar insertar]', error?.message)
-        alert('❌ No se pudo guardar la unidad. Revisá la conexión e intentá de nuevo.')
       }
+    } catch (e: any) {
+      console.error('[PlanificacionTab guardar]', e.message)
+      alert('⚠ Error al guardar: ' + e.message)
     }
     setGuardando(false)
     setForm(formVacio)
@@ -1692,34 +1698,40 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
   }
 
   const cambiarEstado = async (id: string, nuevoEstado: string) => {
-    const sb = createClient()
-    await sb.from('planificacion_cursos').update({ estado: nuevoEstado }).eq('id', id)
     setUnidades(prev => prev.map(u => u.id === id ? { ...u, estado: nuevoEstado } : u))
+    await fetch('/api/planificacion', {
+      method: 'PUT',
+      headers: apiHeaders(),
+      body: JSON.stringify({ id, estado: nuevoEstado }),
+    })
   }
 
   const eliminar = async (id: string) => {
-    const sb = createClient()
-    const { error } = await sb.from('planificacion_cursos').delete().eq('id', id)
-    if (!error) {
-      setUnidades(prev => prev.filter(u => u.id !== id))
-    } else {
-      console.error('[PlanificacionTab eliminar]', error.message)
-      alert('❌ No se pudo eliminar la unidad.')
-    }
+    setUnidades(prev => prev.filter(u => u.id !== id))
     setConfirmDel(null)
+    const res = await fetch('/api/planificacion', {
+      method: 'DELETE',
+      headers: apiHeaders(),
+      body: JSON.stringify({ id }),
+    })
+    const json = await res.json()
+    if (json.error) {
+      console.error('[PlanificacionTab eliminar]', json.error)
+      alert('❌ No se pudo eliminar la unidad.')
+      cargar() // revertir el estado local
+    }
   }
 
   const moverArriba = async (idx: number) => {
     if (idx === 0) return
-    const sb = createClient()
     const arr = [...unidades]
     const [a, b] = [arr[idx-1], arr[idx]]
     arr[idx-1] = { ...b, orden: idx-1 }
     arr[idx]   = { ...a, orden: idx }
     setUnidades(arr)
     await Promise.all([
-      sb.from('planificacion_cursos').update({ orden: idx-1 }).eq('id', b.id),
-      sb.from('planificacion_cursos').update({ orden: idx   }).eq('id', a.id),
+      fetch('/api/planificacion', { method:'PUT', headers:apiHeaders(), body:JSON.stringify({ id: b.id, orden: idx-1 }) }),
+      fetch('/api/planificacion', { method:'PUT', headers:apiHeaders(), body:JSON.stringify({ id: a.id, orden: idx   }) }),
     ])
   }
 
@@ -1799,9 +1811,14 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
         fecha_cierre: u.fecha_cierre || null,
         orden: unidades.length + i,
       }))
-      const { data, error } = await sb.from('planificacion_cursos').insert(inserts).select()
-      if (error) { setImportError('Error al guardar: ' + error.message); setImportando(false); return }
-      setUnidades(prev => [...prev, ...(data || [])])
+      const res = await fetch('/api/planificacion', {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({ bulk: inserts }),
+      })
+      const json = await res.json()
+      if (json.error) { setImportError('Error al guardar: ' + json.error); setImportando(false); return }
+      setUnidades(prev => [...prev, ...(json.data || [])])
       setImportPreview(null)
       setImportError('')
     } catch (e: any) {
