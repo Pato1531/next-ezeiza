@@ -47,7 +47,7 @@ export default function Profesoras() {
   }
   const irALista = () => { setSelId(null); setVista('lista') }
   const irAFormNuevo = () => {
-    setForm({ nombre:'', apellido:'', email:'', edad:0, telefono:'', tipo_colaborador:'docente', tarifa_hora:0, horas_semana:0, color: COLORES[profesoras.length % COLORES.length] })
+    setForm({ nombre:'', apellido:'', email:'', fecha_nacimiento:'', telefono:'', tipo_colaborador:'docente', tarifa_hora:0, horas_semana:0, color: COLORES[profesoras.length % COLORES.length] })
     setVista('form')
   }
   const irAFormEditar = () => {
@@ -160,7 +160,7 @@ export default function Profesoras() {
             <div style={{fontSize:'15px',fontWeight:600}}>{p.nombre} {p.apellido} {p.tipo_colaborador && p.tipo_colaborador !== 'docente' && <span style={{fontSize:'10px',fontWeight:600,padding:'1px 6px',borderRadius:'8px',background:'var(--bluel)',color:'var(--blue)',marginLeft:'6px'}}>{p.tipo_colaborador}</span>}</div>
             <div style={{fontSize:'12.5px',color:'var(--text2)',marginTop:'2px'}}>{p.horas_semana}hs/sem</div>
           </div>
-          <Badge cls="b-green">95%</Badge>
+
           <Chevron />
         </ListItem>
       ))}
@@ -179,7 +179,9 @@ export default function Profesoras() {
         </Row2>
         <Field2 label="Email"><Input type="email" value={form?.email||''} onChange={(v:string)=>setForm({...form,email:v})} /></Field2>
         <Row2>
-          <Field2 label="Edad"><Input type="number" value={form?.edad||''} onChange={(v:string)=>setForm({...form,edad:+v})} /></Field2>
+          <Field2 label="Fecha de nacimiento">
+              <input style={IS} type="date" value={form?.fecha_nacimiento||''} onChange={e=>setForm({...form,fecha_nacimiento:e.target.value})} />
+            </Field2>
           <Field2 label="Teléfono"><Input value={form?.telefono||''} onChange={(v:string)=>setForm({...form,telefono:v})} /></Field2>
         </Row2>
         <Row2>
@@ -228,7 +230,10 @@ export default function Profesoras() {
           </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'1px',background:'var(--border)',borderRadius:'12px',overflow:'hidden'}}>
             <Kpi val={`${sel.horas_semana}hs`} label="Semanal" color="var(--v)" />
-            {!soloLectura ? <Kpi val={`$${Math.round(liq/1000)}k`} label="Liquidación" color="var(--v)" /> : <Kpi val={sel.edad} label="Años" />}
+            {!soloLectura ? <Kpi val={`$${Math.round(liq/1000)}k`} label="Liquidación" color="var(--v)" /> : (() => {
+              const edad = sel.fecha_nacimiento ? Math.floor((Date.now() - new Date(sel.fecha_nacimiento+'T12:00:00').getTime()) / (365.25*24*3600*1000)) : null
+              return <Kpi val={edad !== null ? `${edad} años` : '—'} label="Edad" />
+            })()}
             <Kpi val={licencias.length} label="Licencias" />
           </div>
         </div>
@@ -249,7 +254,11 @@ export default function Profesoras() {
           <FieldRO label="Nombre" value={`${sel.nombre} ${sel.apellido}`} />
           <FieldRO label="Email" value={sel.email||'—'} />
           <Row2>
-            <FieldRO label="Edad" value={`${sel.edad} años`} />
+            <FieldRO label="Fecha de nacimiento" value={sel.fecha_nacimiento ? new Date(sel.fecha_nacimiento+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—'} />
+            {sel.fecha_nacimiento && (() => {
+              const edad = Math.floor((Date.now() - new Date(sel.fecha_nacimiento+'T12:00:00').getTime()) / (365.25*24*3600*1000))
+              return <FieldRO label="Edad" value={`${edad} años`} />
+            })()}
             <FieldRO label="Teléfono" value={sel.telefono||'—'} />
           </Row2>
           <Row2>
@@ -417,6 +426,7 @@ function LiquidacionTab({ prof, licencias }: any) {
   // ── Estados internos ──────────────────────────────────────────────────
   const [guardandoLiq, setGuardandoLiq] = useState(false)
   const [liqGuardada, setLiqGuardada] = useState(false)
+  const [estadoLiq, setEstadoLiq] = useState<'borrador'|'confirmada'>('confirmada')
   const [liqEditando, setLiqEditando] = useState<any>(null)
   const [guardandoEdit, setGuardandoEdit] = useState(false)
   const [confirmDelLiq, setConfirmDelLiq] = useState<any>(null)
@@ -439,7 +449,14 @@ function LiquidacionTab({ prof, licencias }: any) {
     ? (prof.horas_semana || 0) * semanasLiq * (prof.tarifa_hora || 0)
     : sueldoFijo
 
-  const totalReemplazos = licComoReemplazo.reduce((s:number, l:any) =>
+  // Filtrar reemplazos solo del mes seleccionado
+  const licReemplazoMes = licComoReemplazo.filter((l: any) => {
+    if (!l.fecha_desde) return false
+    const [anioL, mesL] = l.fecha_desde.split('-').map(Number)
+    const mesIdx = MESES.indexOf(mesLiq)
+    return anioL === anioLiq && mesL === mesIdx + 1
+  })
+  const totalReemplazos = licReemplazoMes.reduce((s:number, l:any) =>
     s + (l.reemplazo_horas || 0) * (prof.tarifa_hora || 0), 0)
 
   const totalConceptos = conceptos.reduce((s, c) =>
@@ -479,7 +496,7 @@ function LiquidacionTab({ prof, licencias }: any) {
       descuento_licencias: descuentoLicencias,
       descuento_concepto: diasAusente > 0 ? `${diasAusente} días ausente` : '',
       total,
-      estado: 'confirmada',
+      estado: estadoLiq,
     })
     setGuardandoLiq(false)
     setLiqGuardada(true)
@@ -672,7 +689,7 @@ function LiquidacionTab({ prof, licencias }: any) {
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
             <div>
               <div style={{fontSize:'13px',fontWeight:700,color:'var(--green)'}}>+ Reemplazos realizados</div>
-              {licComoReemplazo.map((l:any,i:number) => (
+              {licReemplazoMes.map((l:any,i:number) => (
                 <div key={i} style={{fontSize:'11px',color:'var(--text2)',marginTop:'3px'}}>
                   {(l.profesoras as any)?.nombre} · {l.fecha_desde} · {l.reemplazo_horas}hs
                 </div>
@@ -772,6 +789,24 @@ function LiquidacionTab({ prof, licencias }: any) {
         </div>
       </div>
 
+      {/* ── SWITCH BORRADOR / CONFIRMAR ── */}
+      <div style={{background:'var(--bg)',borderRadius:'12px',border:'1.5px solid var(--border)',padding:'14px',marginBottom:'12px'}}>
+        <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'10px'}}>Estado de liquidación</div>
+        <div style={{display:'flex',gap:'6px',marginBottom:'12px'}}>
+          {(['borrador','confirmada'] as const).map(est => (
+            <button key={est} onClick={() => setEstadoLiq(est)}
+              style={{flex:1,padding:'10px',borderRadius:'10px',border:'1.5px solid',fontSize:'13px',fontWeight:700,cursor:'pointer',transition:'all .2s',
+                borderColor: estadoLiq===est ? (est==='confirmada'?'var(--green)':'var(--amber)') : 'var(--border)',
+                background: estadoLiq===est ? (est==='confirmada'?'var(--greenl)':'var(--amberl)') : 'var(--white)',
+                color: estadoLiq===est ? (est==='confirmada'?'var(--green)':'var(--amber)') : 'var(--text3)'}}>
+              {est === 'borrador' ? '📝 Borrador' : '✓ Confirmada'}
+            </button>
+          ))}
+        </div>
+        {estadoLiq === 'borrador' && <div style={{fontSize:'11px',color:'var(--amber)'}}>Borrador: guardado pero no confirmado — podés modificarlo</div>}
+        {estadoLiq === 'confirmada' && <div style={{fontSize:'11px',color:'var(--green)'}}>Confirmada: queda registrada como liquidación del mes</div>}
+      </div>
+
       {/* ── ACCIONES ── */}
       <div style={{display:'flex',gap:'10px'}}>
         <button onClick={descargarPDF}
@@ -779,8 +814,12 @@ function LiquidacionTab({ prof, licencias }: any) {
           Descargar PDF
         </button>
         <button onClick={confirmarLiquidacion} disabled={guardandoLiq}
-          style={{flex:1,padding:'11px',background:liqGuardada?'var(--greenl)':guardandoLiq?'#aaa':'var(--v)',color:liqGuardada?'var(--green)':'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:guardandoLiq?'not-allowed':'pointer',transition:'all .2s'}}>
-          {liqGuardada ? '✓ Confirmada' : guardandoLiq ? 'Guardando...' : 'Confirmar'}
+          style={{flex:1,padding:'11px',
+            background: guardandoLiq ? '#aaa' : liqGuardada ? 'var(--greenl)' : estadoLiq==='confirmada' ? 'var(--v)' : 'var(--amber)',
+            color: liqGuardada ? 'var(--green)' : '#fff',
+            border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,
+            cursor:guardandoLiq?'not-allowed':'pointer',transition:'all .2s'}}>
+          {guardandoLiq ? 'Guardando...' : liqGuardada ? '✓ Guardada' : estadoLiq==='confirmada' ? 'Confirmar liquidación' : 'Guardar borrador'}
         </button>
       </div>
 
