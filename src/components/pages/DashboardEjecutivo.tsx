@@ -109,13 +109,12 @@ export default function DashboardEjecutivo() {
         .order('anio', { ascending: true })
       setHistorico(histData || [])
 
-      // Alumnos en riesgo: asistencia reciente con ausencias
+      // Alumnos en riesgo: traer últimas clases por alumno para detectar ausencias consecutivas
       const { data: riesgoData } = await sb
         .from('asistencia_clases')
-        .select('alumno_id, presente, clase_id, clases(fecha, curso_id, cursos(nombre)), alumnos(nombre, apellido, nivel, cuota_mensual)')
-        .eq('presente', 'A')
+        .select('alumno_id, presente, clases(id, fecha, curso_id, cursos(nombre)), alumnos(nombre, apellido, nivel, cuota_mensual)')
         .order('clase_id', { ascending: false })
-        .limit(500)
+        .limit(2000)
       setAsistenciaRiesgo(riesgoData || [])
 
       setLoading(false)
@@ -307,34 +306,67 @@ export default function DashboardEjecutivo() {
   const proxMesNombre = MESES[proxMesIdx]
   const liqProxMes = rentabilidadCursos.reduce((s: number, c: any) => s + (c.costo || 0), 0)
 
-  // D) Alumnos en riesgo de deserción
+  // D) Alumnos en riesgo de deserción — detecta ausencias consecutivas al final del historial
   const alumnosEnRiesgo = (() => {
-    // Agrupar ausencias por alumno
-    const ausenciasPorAlumno: Record<string, { nombre: string; apellido: string; nivel: string; cuota: number; ausencias: number; curso: string }> = {}
+    // 1. Agrupar registros por alumno, ordenados por fecha descendente
+    const porAlumno: Record<string, { info: any; registros: Array<{fecha: string; presente: string; curso: string}> }> = {}
     asistenciaRiesgo.forEach((r: any) => {
       const id = r.alumno_id
-      if (!id) return
-      if (!ausenciasPorAlumno[id]) {
-        ausenciasPorAlumno[id] = {
-          nombre: r.alumnos?.nombre || '',
-          apellido: r.alumnos?.apellido || '',
-          nivel: r.alumnos?.nivel || '',
-          cuota: r.alumnos?.cuota_mensual || 0,
-          ausencias: 0,
-          curso: r.clases?.cursos?.nombre || '—',
+      if (!id || !r.clases) return
+      if (!porAlumno[id]) {
+        porAlumno[id] = {
+          info: r.alumnos,
+          registros: [],
         }
       }
-      ausenciasPorAlumno[id].ausencias++
-    })
-    return Object.entries(ausenciasPorAlumno)
-      .map(([id, d]) => ({ id, ...d, noPago: !alumnosPagaron.has(id) }))
-      .filter(a => a.ausencias >= 2 || (a.ausencias >= 1 && a.noPago))
-      .sort((a, b) => {
-        // Score: ausencias + no pagó = más riesgo arriba
-        const sa = a.ausencias * 2 + (a.noPago ? 3 : 0)
-        const sb = b.ausencias * 2 + (b.noPago ? 3 : 0)
-        return sb - sa
+      porAlumno[id].registros.push({
+        fecha: r.clases.fecha || '',
+        presente: r.presente || '',
+        curso: r.clases.cursos?.nombre || '—',
       })
+    })
+
+    const resultado: any[] = []
+    Object.entries(porAlumno).forEach(([id, { info, registros }]) => {
+      if (!info) return
+      // Ordenar por fecha descendente (más reciente primero)
+      const ordenados = [...registros].sort((a, b) => b.fecha.localeCompare(a.fecha))
+
+      // Contar ausencias consecutivas desde la última clase
+      let ausenciasConsecutivas = 0
+      let ultimasFechas: string[] = []
+      let cursoPrincipal = '—'
+      for (const reg of ordenados) {
+        if (reg.presente === 'A') {
+          ausenciasConsecutivas++
+          ultimasFechas.push(reg.fecha)
+          if (cursoPrincipal === '—') cursoPrincipal = reg.curso
+        } else {
+          break // Se rompe la racha al encontrar una presencia
+        }
+      }
+
+      const noPago = !alumnosPagaron.has(id)
+      // Incluir si tiene 2+ ausencias consecutivas, o 1 ausencia + no pagó
+      if (ausenciasConsecutivas >= 2 || (ausenciasConsecutivas >= 1 && noPago)) {
+        const score = ausenciasConsecutivas * 2 + (noPago ? 3 : 0)
+        resultado.push({
+          id,
+          nombre: info.nombre || '',
+          apellido: info.apellido || '',
+          nivel: info.nivel || '',
+          cuota: info.cuota_mensual || 0,
+          ausencias: ausenciasConsecutivas,
+          ultimasFechas: ultimasFechas.slice(0, 2),
+          curso: cursoPrincipal,
+          noPago,
+          score,
+        })
+      }
+    })
+
+    return resultado
+      .sort((a, b) => b.score - a.score)
       .slice(0, 10)
   })()
 
@@ -707,7 +739,7 @@ export default function DashboardEjecutivo() {
                   <div style={{background:'var(--redl)',borderRadius:'12px',padding:'14px',textAlign:'center'}}>
                     <div style={{fontSize:'11px',color:'var(--red)',fontWeight:700,marginBottom:'4px'}}>Total a liquidar</div>
                     <div style={{fontSize:'24px',fontWeight:800,color:'var(--red)'}}>{fmt$(liqProxMes)}</div>
-                    <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'3px'}}>{rentabilidadCursos.length} docente{rentabilidadCursos.length!==1?'s':''}</div>
+                    <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'3px'}}>{rentabilidadCursos.length} curso{rentabilidadCursos.length!==1?'s':''} · {new Set(rentabilidadCursos.map((c:any)=>c.profesora)).size} docente{new Set(rentabilidadCursos.map((c:any)=>c.profesora)).size!==1?'s':''}</div>
                   </div>
                   <div style={{background:'var(--greenl)',borderRadius:'12px',padding:'14px',textAlign:'center'}}>
                     <div style={{fontSize:'11px',color:'var(--green)',fontWeight:700,marginBottom:'4px'}}>Margen proyectado</div>
@@ -767,8 +799,13 @@ export default function DashboardEjecutivo() {
                         <div style={{fontSize:'11px',color:'var(--text3)'}}>{a.curso} · {a.nivel}</div>
                         <div style={{display:'flex',gap:'6px',marginTop:'3px',flexWrap:'wrap'}}>
                           <span style={{fontSize:'10px',fontWeight:600,background:'var(--redl)',color:'var(--red)',padding:'1px 7px',borderRadius:'10px'}}>
-                            {a.ausencias} ausencia{a.ausencias!==1?'s':''}
+                            {a.ausencias} ausencia{a.ausencias!==1?'s':''} consecutiva{a.ausencias!==1?'s':''}
                           </span>
+                          {a.ultimasFechas?.length > 0 && (
+                            <span style={{fontSize:'10px',color:'var(--text3)',padding:'1px 7px',borderRadius:'10px',background:'var(--bg)'}}>
+                              Últimas: {a.ultimasFechas.map((f: string) => new Date(f+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})).join(' y ')}
+                            </span>
+                          )}
                           {a.noPago && (
                             <span style={{fontSize:'10px',fontWeight:600,background:'var(--amberl)',color:'var(--amber)',padding:'1px 7px',borderRadius:'10px'}}>
                               Sin pago {mesNombre}
