@@ -522,7 +522,7 @@ function LiquidacionTab({ prof, licencias }: any) {
     s + (l.reemplazo_horas || 0) * (prof.tarifa_hora || 0), 0)
 
   const totalConceptos = conceptos.reduce((s, c) =>
-    s + (c.signo === '+' ? (c.monto || 0) : -(c.monto || 0)), 0)
+    s + (c.signo === '+' ? Math.abs(c.monto || 0) : -Math.abs(c.monto || 0)), 0)
 
   // Descuento por días ausentes: proporcional al base (base / 22 días hábiles × días)
   const descuentoLicencias = diasAusente > 0 ? Math.round(base / 22 * diasAusente) : 0
@@ -543,7 +543,7 @@ function LiquidacionTab({ prof, licencias }: any) {
   const confirmarLiquidacion = async () => {
     setGuardandoLiq(true)
     // Serializamos los conceptos libres en ajuste_concepto (JSON) para no cambiar la DB
-    const conceptosJson = JSON.stringify(conceptos.filter(c => c.monto > 0 && c.label))
+    const conceptosJson = JSON.stringify(conceptos.filter(c => Math.abs(c.monto || 0) > 0 && c.label))
     await guardarLiq({
       profesora_id: prof.id,
       profesora_nombre: `${prof.nombre} ${prof.apellido}`,
@@ -622,8 +622,8 @@ function LiquidacionTab({ prof, licencias }: any) {
     const anioLiqPDF = liqGuardadaData ? (liqGuardadaData.anio || anioLiq) : anioLiq
 
     const filasConceptos = conceptosParaPDF
-      .filter((c: any) => c.monto > 0 && c.label)
-      .map((c: any) => `<tr><td style="color:${c.signo==='+'?'#2d7a4f':'#c0392b'}">${c.label}</td><td style="text-align:right;color:${c.signo==='+'?'#2d7a4f':'#c0392b'};font-weight:600">${c.signo==='+'?'+':'-'}$${(c.monto||0).toLocaleString('es-AR')}</td></tr>`)
+      .filter((c: any) => Math.abs(c.monto || 0) > 0 && c.label)
+      .map((c: any) => `<tr><td style="color:${c.signo==='+'?'#2d7a4f':'#c0392b'}">${c.label}</td><td style="text-align:right;color:${c.signo==='+'?'#2d7a4f':'#c0392b'};font-weight:600">${c.signo==='+'?'+':'-'}$${Math.abs(c.monto||0).toLocaleString('es-AR')}</td></tr>`)
       .join('')
 
     const filaBase = tipoContrato === 'hora'
@@ -796,11 +796,21 @@ function LiquidacionTab({ prof, licencias }: any) {
               placeholder="Concepto (ej: bono, plus, material...)"
               style={{flex:1,padding:'7px 10px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',fontFamily:'Inter,sans-serif',outline:'none',color:'var(--text)',background:'var(--white)'}}
             />
-            <input type="number" min="0" step="100"
+            <input type="number" step="100"
               value={c.monto||''}
-              onChange={e => updateConcepto(c.id, 'monto', parseFloat(e.target.value)||0)}
+              onChange={e => {
+                const val = parseFloat(e.target.value)
+                if (isNaN(val)) { updateConcepto(c.id, 'monto', 0); return }
+                // Si el usuario escribió negativo, auto-cambiar signo a '-' y guardar positivo
+                if (val < 0) {
+                  updateConcepto(c.id, 'signo', '-')
+                  updateConcepto(c.id, 'monto', Math.abs(val))
+                } else {
+                  updateConcepto(c.id, 'monto', val)
+                }
+              }}
               placeholder="$0"
-              style={{width:'90px',padding:'7px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',fontFamily:'Inter,sans-serif',outline:'none',color:'var(--text)',background:'var(--white)',textAlign:'right'}}
+              style={{width:'90px',padding:'7px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',fontFamily:'Inter,sans-serif',outline:'none',color:c.signo==='-'?'var(--red)':'var(--text)',background:'var(--white)',textAlign:'right'}}
             />
             <button onClick={() => removeConcepto(c.id)}
               style={{width:'30px',height:'30px',display:'flex',alignItems:'center',justifyContent:'center',background:'var(--redl)',color:'var(--red)',border:'none',borderRadius:'7px',cursor:'pointer',fontSize:'16px',flexShrink:0}}>
@@ -848,10 +858,10 @@ function LiquidacionTab({ prof, licencias }: any) {
               <span>Reemplazos</span><span>+${totalReemplazos.toLocaleString('es-AR')}</span>
             </div>
           )}
-          {conceptos.filter(c => c.monto > 0 && c.label).map(c => (
+          {conceptos.filter(c => Math.abs(c.monto || 0) > 0 && c.label).map(c => (
             <div key={c.id} style={{display:'flex',justifyContent:'space-between',fontSize:'13px',color:c.signo==='+'?'var(--green)':'var(--red)',marginBottom:'4px'}}>
               <span>{c.label}</span>
-              <span>{c.signo==='+'?'+':'-'}${c.monto.toLocaleString('es-AR')}</span>
+              <span>{c.signo==='+'?'+':'-'}${Math.abs(c.monto||0).toLocaleString('es-AR')}</span>
             </div>
           ))}
           {descuentoLicencias > 0 && (
