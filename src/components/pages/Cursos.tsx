@@ -1828,9 +1828,10 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
   }
 
   const ESTADO_CFG: Record<string,{label:string,bg:string,color:string,next:string}> = {
-    pendiente:  { label:'Atrasada',  bg:'var(--redl)',  color:'var(--red)',   next:'en_curso'  },
+    pendiente:  { label:'Pendiente', bg:'var(--bg)',     color:'var(--text3)', next:'en_curso'  },
     en_curso:   { label:'Al día',    bg:'#f4eefb',      color:'#652f8d',      next:'dictada'   },
-    dictada:    { label:'Dictada',   bg:'var(--greenl)', color:'var(--green)', next:'pendiente' },
+    dictada:    { label:'Dictada',   bg:'var(--greenl)', color:'var(--green)', next:'atrasada'  },
+    atrasada:   { label:'Atrasada',  bg:'var(--redl)',   color:'var(--red)',   next:'pendiente' },
   }
 
   const dictadas  = unidades.filter(u => u.estado === 'dictada').length
@@ -2124,12 +2125,43 @@ function ProgresoTab({ cursoId, clasesDictadas }: { cursoId: string; clasesDicta
     </div>
   )
 
-  const total = unidades.length
-  const completadas = unidades.filter(u => u.estado === 'completado').length
-  const enCurso = unidades.filter(u => u.estado === 'en_curso').length
-  const pendientes = unidades.filter(u => u.estado === 'pendiente').length
+  const hoy = new Date()
+  hoy.setHours(0, 0, 0, 0)
+
+  // Calcular estado efectivo cruzando fechas con el estado manual
+  // Si fecha_cierre < hoy → completada automáticamente
+  // Si fecha_inicio <= hoy <= fecha_cierre → en curso automáticamente
+  // El estado manual 'dictada' o 'completado' siempre se respeta
+  const unidadesConEstado = unidades.map(u => {
+    const estadoManual = u.estado
+    // Estados manuales que siempre se respetan — no los sobreescribe la automatización
+    if (estadoManual === 'dictada' || estadoManual === 'completado') {
+      return { ...u, estadoEfectivo: 'completado' }
+    }
+    if (estadoManual === 'atrasada') {
+      return { ...u, estadoEfectivo: 'atrasada' }  // marcado manualmente como atrasado
+    }
+    // Calcular por fechas automáticamente
+    const fechaCierre = u.fecha_cierre ? new Date(u.fecha_cierre + 'T23:59:00') : null
+    const fechaInicio = u.fecha_inicio ? new Date(u.fecha_inicio + 'T00:00:00') : null
+    if (fechaCierre && fechaCierre < hoy) {
+      return { ...u, estadoEfectivo: 'completado' }
+    }
+    if (fechaInicio && fechaInicio <= hoy && (!fechaCierre || fechaCierre >= hoy)) {
+      return { ...u, estadoEfectivo: 'en_curso' }
+    }
+    if (estadoManual === 'en_curso') return { ...u, estadoEfectivo: 'en_curso' }
+    return { ...u, estadoEfectivo: 'pendiente' }
+  })
+
+  const total = unidadesConEstado.length
+  const completadas = unidadesConEstado.filter(u => u.estadoEfectivo === 'completado').length
+  const enCurso = unidadesConEstado.filter(u => u.estadoEfectivo === 'en_curso').length
+  const atrasadas = unidadesConEstado.filter(u => u.estadoEfectivo === 'atrasada').length
+  const pendientes = unidadesConEstado.filter(u => u.estadoEfectivo === 'pendiente').length
   const pctCompleto = Math.round((completadas / total) * 100)
   const pctEnCurso = Math.round((enCurso / total) * 100)
+  const pctAtrasada = Math.round((atrasadas / total) * 100)
 
   return (
     <div className="fade-in">
@@ -2139,6 +2171,7 @@ function ProgresoTab({ cursoId, clasesDictadas }: { cursoId: string; clasesDicta
           { label:'Total unidades', val: total,        color:'var(--v)' },
           { label:'Completadas',    val: completadas,   color:'var(--green)' },
           { label:'En curso',       val: enCurso,       color:'var(--amber)' },
+          { label:'Atrasadas',      val: atrasadas,     color:'var(--red)' },
           { label:'Pendientes',     val: pendientes,    color:'var(--text3)' },
         ].map(k => (
           <div key={k.label} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
@@ -2155,12 +2188,14 @@ function ProgresoTab({ cursoId, clasesDictadas }: { cursoId: string; clasesDicta
           <div style={{fontSize:'20px',fontWeight:800,color: pctCompleto >= 75 ? 'var(--green)' : pctCompleto >= 40 ? 'var(--amber)' : 'var(--v)'}}>{pctCompleto}%</div>
         </div>
         <div style={{height:'12px',background:'var(--border)',borderRadius:'10px',overflow:'hidden',marginBottom:'6px',position:'relative'}}>
-          <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${pctCompleto + pctEnCurso}%`,background:'var(--amberl)',borderRadius:'10px'}} />
+          <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${pctCompleto + pctEnCurso + pctAtrasada}%`,background:'var(--amberl)',borderRadius:'10px'}} />
+          <div style={{position:'absolute',left:`${pctCompleto}%`,top:0,height:'100%',width:`${pctAtrasada}%`,background:'var(--red)',borderRadius:'0'}} />
           <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${pctCompleto}%`,background:'var(--green)',borderRadius:'10px',transition:'width .5s'}} />
         </div>
-        <div style={{display:'flex',gap:'14px',fontSize:'11px',color:'var(--text3)'}}>
+        <div style={{display:'flex',gap:'14px',fontSize:'11px',color:'var(--text3)',flexWrap:'wrap'}}>
           <span>■ <span style={{color:'var(--green)'}}>Completado ({pctCompleto}%)</span></span>
           <span>■ <span style={{color:'var(--amber)'}}>En curso ({pctEnCurso}%)</span></span>
+          {atrasadas > 0 && <span>■ <span style={{color:'var(--red)'}}>Atrasada ({pctAtrasada}%)</span></span>}
           <span>■ <span style={{color:'var(--border)'}}>Pendiente</span></span>
         </div>
         {clasesDictadas > 0 && (
@@ -2175,11 +2210,11 @@ function ProgresoTab({ cursoId, clasesDictadas }: { cursoId: string; clasesDicta
         <div style={{padding:'12px 16px',borderBottom:'1.5px solid var(--border)',fontSize:'10.5px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em'}}>
           Unidades del programa
         </div>
-        {unidades.map((u, i) => {
-          const estadoColor = u.estado === 'completado' ? 'var(--green)' : u.estado === 'en_curso' ? 'var(--amber)' : 'var(--text3)'
-          const estadoBg = u.estado === 'completado' ? 'var(--greenl)' : u.estado === 'en_curso' ? 'var(--amberl)' : 'var(--bg)'
-          const estadoLabel = u.estado === 'completado' ? 'Completada' : u.estado === 'en_curso' ? 'En curso' : 'Pendiente'
-          const estadoIcon = u.estado === 'completado' ? '✓' : u.estado === 'en_curso' ? '▶' : '○'
+        {unidadesConEstado.map((u, i) => {
+          const estadoColor = u.estadoEfectivo === 'completado' ? 'var(--green)' : u.estadoEfectivo === 'en_curso' ? 'var(--amber)' : u.estadoEfectivo === 'atrasada' ? 'var(--red)' : 'var(--text3)'
+          const estadoBg = u.estadoEfectivo === 'completado' ? 'var(--greenl)' : u.estadoEfectivo === 'en_curso' ? 'var(--amberl)' : u.estadoEfectivo === 'atrasada' ? 'var(--redl)' : 'var(--bg)'
+          const estadoLabel = u.estadoEfectivo === 'completado' ? 'Completada' : u.estadoEfectivo === 'en_curso' ? 'En curso' : u.estadoEfectivo === 'atrasada' ? 'Atrasada ⚠' : 'Pendiente'
+          const estadoIcon = u.estadoEfectivo === 'completado' ? '✓' : u.estadoEfectivo === 'en_curso' ? '▶' : u.estadoEfectivo === 'atrasada' ? '!' : '○'
           return (
             <div key={u.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'12px 16px',borderBottom: i < unidades.length-1 ? '1px solid var(--border)' : 'none'}}>
               <div style={{width:28,height:28,borderRadius:'50%',background:estadoBg,border:`2px solid ${estadoColor}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:estadoColor,flexShrink:0}}>
