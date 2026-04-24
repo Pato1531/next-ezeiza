@@ -1136,6 +1136,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
         <TabBtn active={tab==='datos'} onClick={() => setTab('datos')}>Datos</TabBtn>
         {puedeVerPagos && <TabBtn active={tab==='pagos'} onClick={() => setTab('pagos')}>Pagos ({pagos.length})</TabBtn>}
         <TabBtn active={tab==='progreso'} onClick={() => setTab('progreso')}>Progreso</TabBtn>
+        <TabBtn active={tab==='notas'} onClick={() => setTab('notas')}>Notas internas</TabBtn>
       </div>
 
       {tab === 'datos' && <Card>
@@ -1213,6 +1214,8 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
           </div>
         )}
       </Card>}
+
+      {tab === 'notas' && <NotasInternaTab alumnoId={a.id} autor={usuario?.nombre || 'Sistema'} />}
 
       {tab === 'pagos' && puedeVerPagos && <Card>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px'}}>
@@ -1430,3 +1433,141 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
   )
 }
 
+// ── NOTAS INTERNAS DEL ALUMNO ────────────────────────────────────────────────
+function NotasInternaTab({ alumnoId, autor }: { alumnoId: string; autor: string }) {
+  const [notas, setNotas] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [texto, setTexto] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const [editando, setEditando] = useState<any>(null)
+  const [confirmDel, setConfirmDel] = useState<string|null>(null)
+
+  useEffect(() => { cargar() }, [alumnoId])
+
+  const cargar = async () => {
+    setLoading(true)
+    const sb = createClient()
+    const { data } = await sb.from('notas_alumnos')
+      .select('*').eq('alumno_id', alumnoId).order('created_at', { ascending: false })
+    setNotas(data || [])
+    setLoading(false)
+  }
+
+  const guardar = async () => {
+    if (!texto.trim()) return
+    setGuardando(true)
+    const sb = createClient()
+    if (editando) {
+      const { error } = await sb.from('notas_alumnos').update({ texto: texto.trim() }).eq('id', editando.id)
+      if (!error) {
+        setNotas(prev => prev.map(n => n.id === editando.id ? { ...n, texto: texto.trim() } : n))
+        setEditando(null)
+        setTexto('')
+      }
+    } else {
+      const { data, error } = await sb.from('notas_alumnos')
+        .insert({ alumno_id: alumnoId, texto: texto.trim(), autor })
+        .select().single()
+      if (!error && data) {
+        setNotas(prev => [data, ...prev])
+        setTexto('')
+      }
+    }
+    setGuardando(false)
+  }
+
+  const eliminar = async (id: string) => {
+    const sb = createClient()
+    const { error } = await sb.from('notas_alumnos').delete().eq('id', id)
+    if (!error) setNotas(prev => prev.filter(n => n.id !== id))
+    setConfirmDel(null)
+  }
+
+  const IS2 = { width:'100%', padding:'10px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'14px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)', resize:'vertical' as const, minHeight:'80px' }
+
+  return (
+    <div>
+      {/* Input nueva nota */}
+      <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
+        <div style={{fontSize:'10.5px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'8px'}}>
+          {editando ? 'Editar nota' : 'Nueva nota interna'}
+        </div>
+        <textarea
+          style={IS2}
+          value={texto}
+          onChange={e => setTexto(e.target.value)}
+          placeholder="Escribí una observación interna sobre este alumno..."
+        />
+        <div style={{display:'flex',gap:'8px',marginTop:'10px'}}>
+          {editando && (
+            <button onClick={() => { setEditando(null); setTexto('') }}
+              style={{flex:1,padding:'10px',background:'transparent',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
+              Cancelar
+            </button>
+          )}
+          <button onClick={guardar} disabled={guardando || !texto.trim()}
+            style={{flex:2,padding:'10px',background:guardando||!texto.trim()?'#aaa':'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:700,cursor:guardando||!texto.trim()?'not-allowed':'pointer'}}>
+            {guardando ? 'Guardando...' : editando ? 'Guardar cambios' : 'Agregar nota'}
+          </button>
+        </div>
+      </div>
+
+      {/* Lista de notas */}
+      {loading ? (
+        <div style={{textAlign:'center',padding:'24px',color:'var(--text3)'}}>Cargando...</div>
+      ) : notas.length === 0 ? (
+        <div style={{textAlign:'center',padding:'40px 24px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',color:'var(--text3)'}}>
+          <div style={{fontSize:'28px',marginBottom:'8px'}}>📝</div>
+          <div style={{fontWeight:600,marginBottom:'4px'}}>Sin notas internas</div>
+          <div style={{fontSize:'13px'}}>Las notas son visibles solo para el equipo del instituto</div>
+        </div>
+      ) : (
+        <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+          {notas.map(n => (
+            <div key={n.id} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'14px 16px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}}>
+                <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                  <div style={{width:28,height:28,borderRadius:'8px',background:'var(--v)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'#fff',flexShrink:0}}>
+                    {n.autor?.[0] || '?'}
+                  </div>
+                  <div>
+                    <div style={{fontSize:'12px',fontWeight:700}}>{n.autor || 'Sistema'}</div>
+                    <div style={{fontSize:'10px',color:'var(--text3)'}}>
+                      {new Date(n.created_at).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'})} · {new Date(n.created_at).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}
+                    </div>
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:'6px'}}>
+                  <button onClick={() => { setEditando(n); setTexto(n.texto) }}
+                    style={{padding:'5px 10px',background:'var(--vl)',color:'var(--v)',border:'1px solid var(--v)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer'}}>
+                    Editar
+                  </button>
+                  <button onClick={() => setConfirmDel(n.id)}
+                    style={{padding:'5px 10px',background:'var(--redl)',color:'var(--red)',border:'1px solid #f5c5c5',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer'}}>
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <div style={{fontSize:'13.5px',color:'var(--text)',lineHeight:1.5,whiteSpace:'pre-wrap'}}>{n.texto}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Confirmar eliminación */}
+      {confirmDel && (
+        <div style={{position:'fixed',inset:0,background:'rgba(20,0,40,.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:300}}>
+          <div style={{background:'var(--white)',borderRadius:'16px',padding:'24px',maxWidth:'320px',width:'90%',textAlign:'center'}}>
+            <div style={{fontSize:'28px',marginBottom:'8px'}}>🗑️</div>
+            <div style={{fontSize:'15px',fontWeight:700,marginBottom:'8px'}}>¿Eliminar esta nota?</div>
+            <div style={{fontSize:'13px',color:'var(--text3)',marginBottom:'20px'}}>Esta acción no se puede deshacer</div>
+            <div style={{display:'flex',gap:'10px'}}>
+              <button onClick={() => setConfirmDel(null)} style={{flex:1,padding:'11px',background:'transparent',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>Cancelar</button>
+              <button onClick={() => eliminar(confirmDel)} style={{flex:1,padding:'11px',background:'var(--red)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:700,cursor:'pointer'}}>Eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
