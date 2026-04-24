@@ -25,16 +25,18 @@ export default function DashboardEjecutivo() {
   const [liquidaciones, setLiquidaciones] = useState<any[]>([])
   const [altasMes,      setAltasMes]      = useState<any[]>([])
   const [bajasMes,      setBajasMes]      = useState<any[]>([])
-  const [loading,       setLoading]       = useState(true)
-  const [alumnosMesAnt, setAlumnosMesAnt] = useState<Set<string>>(new Set())
-  const [rentabilidad,  setRentabilidad]  = useState<any[]>([])
+  const [loading,          setLoading]          = useState(true)
+  const [alumnosMesAnt,    setAlumnosMesAnt]    = useState<Set<string>>(new Set())
+  const [rentabilidadData, setRentabilidadData] = useState<any[]>([])
+  const [historico,        setHistorico]        = useState<any[]>([])
+  const [asistenciaRiesgo, setAsistenciaRiesgo] = useState<any[]>([])
 
   // ── Estado de resultado ───────────────────────────────────────────────────
   const [erData,    setErData]    = useState<any[]>([])
   const [erIngresos, setErIngresos] = useState(0)
   const [erEditing,  setErEditing]  = useState<Record<string,number>>({})
   const [erGuardando, setErGuardando] = useState<Record<string,boolean>>({})
-  const [erTab, setErTab] = useState<'resumen'|'estado'|'cierre'>('resumen')
+  const [erTab, setErTab] = useState<'resumen'|'estado'|'cierre'|'proyecciones'>('resumen')
   const erDebounceRef = useRef<Record<string,ReturnType<typeof setTimeout>>>({})
 
   const mesNombre    = MESES[mes]
@@ -52,7 +54,7 @@ export default function DashboardEjecutivo() {
       const [pagosRes, pagosAntRes, liqRes, altasRes, bajasRes] = await Promise.all([
         // metodo incluido — era el campo que faltaba
         sb.from('pagos_alumnos')
-          .select('monto, metodo, observaciones, alumno_id')
+          .select('monto, metodo, observaciones, alumno_id, fecha_pago')
           .eq('mes', mesNombre).eq('anio', anio),
         sb.from('pagos_alumnos')
           .select('monto, alumno_id')
@@ -78,15 +80,33 @@ export default function DashboardEjecutivo() {
       setAltasMes(altasRes.data || [])
       setBajasMes(bajasRes.data || [])
 
-      // Retención: IDs de alumnos que pagaron el mes anterior
+      // Retención: IDs del mes anterior
       const idsAnt = new Set<string>((pagosAntRes.data || []).map((p: any) => p.alumno_id))
       setAlumnosMesAnt(idsAnt)
 
-      // Rentabilidad por curso: ingresos de cuotas vs costo docente estimado
-      const { data: cursosAlumnos } = await sb
-        .from('cursos_alumnos')
-        .select('curso_id, alumnos(cuota_mensual)')
-      setRentabilidad(cursosAlumnos || [])
+      // Rentabilidad: query directa con join a profesoras y cuotas
+      const { data: rentData } = await sb
+        .from('cursos')
+        .select('id, nombre, nivel, profesora_id, profesoras(nombre, tarifa_hora, horas_semana), cursos_alumnos(alumnos(cuota_mensual))')
+        .eq('activo', true)
+      setRentabilidadData(rentData || [])
+
+      // Histórico 12 meses: pagos agrupados por mes/anio
+      const { data: histData } = await sb
+        .from('pagos_alumnos')
+        .select('mes, anio, monto')
+        .gte('anio', anio - 1)
+        .order('anio', { ascending: true })
+      setHistorico(histData || [])
+
+      // Alumnos en riesgo: asistencia reciente con ausencias
+      const { data: riesgoData } = await sb
+        .from('asistencia_clases')
+        .select('alumno_id, presente, clase_id, clases(fecha, curso_id, cursos(nombre)), alumnos(nombre, apellido, nivel, cuota_mensual)')
+        .eq('presente', 'A')
+        .order('clase_id', { ascending: false })
+        .limit(500)
+      setAsistenciaRiesgo(riesgoData || [])
 
       setLoading(false)
     }
@@ -168,19 +188,110 @@ export default function DashboardEjecutivo() {
   const alumnosPerdidos = alumnosMesAnt.size - alumnosQueRetuvimos
 
   // ── Rentabilidad por curso ────────────────────────────────────────────────
-  const rentabilidadCursos = cursos.map((c: any) => {
-    const prof = profesoras.find((p: any) => p.id === c.profesora_id)
-    const ingresosCurso = rentabilidad
-      .filter((r: any) => r.curso_id === c.id)
-      .reduce((s: number, r: any) => s + (r.alumnos?.cuota_mensual || 0), 0)
-    const cantAlumnos = rentabilidad.filter((r: any) => r.curso_id === c.id).length
-    const costoPorMes = prof ? (prof.tarifa_hora || 0) * (prof.horas_semanales || 0) * 4 : 0
+  const rentabilidadCursos = rentabilidadData.map((c: any) => {
+    const prof = c.profesoras
+    const inscriptos: any[] = c.cursos_alumnos || []
+    const cantAlumnos = inscriptos.length
+    const ingresosCurso = inscriptos.reduce((s: number, r: any) => s + (r.alumnos?.cuota_mensual || 0), 0)
+    const costoPorMes = prof ? (prof.tarifa_hora || 0) * (prof.horas_semana || 0) * 4 : 0
     const margen = ingresosCurso - costoPorMes
     const pctMargen = ingresosCurso > 0 ? Math.round((margen / ingresosCurso) * 100) : 0
     return { id: c.id, nombre: c.nombre, nivel: c.nivel,
       profesora: prof ? prof.nombre : '—', cantAlumnos,
       ingresos: ingresosCurso, costo: costoPorMes, margen, pctMargen }
   }).filter((c: any) => c.cantAlumnos > 0).sort((a: any, b: any) => b.margen - a.margen)
+
+  // ── Días con más pagos ────────────────────────────────────────────────────
+  const diasConteo: Record<number, number> = {}
+  pagos.forEach((p: any) => {
+    if (!p.fecha_pago) return
+    const dia = new Date(p.fecha_pago + 'T12:00:00').getDate()
+    diasConteo[dia] = (diasConteo[dia] || 0) + 1
+  })
+  const diasSorted = Object.entries(diasConteo)
+    .map(([dia, cant]) => ({ dia: parseInt(dia), cant }))
+    .sort((a, b) => b.cant - a.cant)
+  const maxDiaCant = diasSorted[0]?.cant || 1
+  const diasTop5 = diasSorted.slice(0, 5)
+
+  // ── Proyecciones ─────────────────────────────────────────────────────────
+
+  // A) Evolución histórica 12 meses
+  const historicoMeses = (() => {
+    const mapa: Record<string, number> = {}
+    historico.forEach((p: any) => {
+      const key = `${p.mes}-${p.anio}`
+      mapa[key] = (mapa[key] || 0) + (p.monto || 0)
+    })
+    // Últimos 12 meses ordenados
+    const lista = []
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(anio, mes - i, 1)
+      const m = MESES[d.getMonth()]
+      const a = d.getFullYear()
+      const key = `${m}-${a}`
+      lista.push({ mes: m, anio: a, total: mapa[key] || 0, label: `${m.slice(0,3)} ${a}` })
+    }
+    return lista
+  })()
+  const maxHistorico = Math.max(...historicoMeses.map(h => h.total), 1)
+  const totalCostoDocente = rentabilidadCursos.reduce((s: number, c: any) => s + (c.costo || 0), 0)
+
+  // B) Proyección mes en curso
+  const hoyDia = new Date().getDate()
+  const diasEnMes = new Date(anio, mes + 1, 0).getDate()
+  const esMesActual = mes === new Date().getMonth() && anio === new Date().getFullYear()
+  const proyeccionMes = (() => {
+    if (!esMesActual || hoyDia === 0) return null
+    // Ritmo actual: cobrado / días transcurridos
+    const ritmoDiario = hoyDia > 0 ? totalCobrado / hoyDia : 0
+    const proyectado = Math.round(ritmoDiario * diasEnMes)
+    const objetivo = proyeccion // suma de cuotas activos
+    const pctAvance = pct(totalCobrado, objetivo)
+    const pctDias = pct(hoyDia, diasEnMes)
+    // Optimista: si el ritmo se mantiene + 10%
+    const optimista = Math.round(proyectado * 1.1)
+    // Pesimista: si el ritmo baja 20%
+    const pesimista = Math.round(proyectado * 0.8)
+    return { proyectado, objetivo, optimista, pesimista, pctAvance, pctDias, ritmoDiario }
+  })()
+
+  // C) Proyección liquidaciones próximo mes
+  const proxMesIdx = mes === 11 ? 0 : mes + 1
+  const proxAnio = mes === 11 ? anio + 1 : anio
+  const proxMesNombre = MESES[proxMesIdx]
+  const liqProxMes = rentabilidadCursos.reduce((s: number, c: any) => s + (c.costo || 0), 0)
+
+  // D) Alumnos en riesgo de deserción
+  const alumnosEnRiesgo = (() => {
+    // Agrupar ausencias por alumno
+    const ausenciasPorAlumno: Record<string, { nombre: string; apellido: string; nivel: string; cuota: number; ausencias: number; curso: string }> = {}
+    asistenciaRiesgo.forEach((r: any) => {
+      const id = r.alumno_id
+      if (!id) return
+      if (!ausenciasPorAlumno[id]) {
+        ausenciasPorAlumno[id] = {
+          nombre: r.alumnos?.nombre || '',
+          apellido: r.alumnos?.apellido || '',
+          nivel: r.alumnos?.nivel || '',
+          cuota: r.alumnos?.cuota_mensual || 0,
+          ausencias: 0,
+          curso: r.clases?.cursos?.nombre || '—',
+        }
+      }
+      ausenciasPorAlumno[id].ausencias++
+    })
+    return Object.entries(ausenciasPorAlumno)
+      .map(([id, d]) => ({ id, ...d, noPago: !alumnosPagaron.has(id) }))
+      .filter(a => a.ausencias >= 2 || (a.ausencias >= 1 && a.noPago))
+      .sort((a, b) => {
+        // Score: ausencias + no pagó = más riesgo arriba
+        const sa = a.ausencias * 2 + (a.noPago ? 3 : 0)
+        const sb = b.ausencias * 2 + (b.noPago ? 3 : 0)
+        return sb - sa
+      })
+      .slice(0, 10)
+  })()
 
   // ── Exportar PDF ──────────────────────────────────────────────────────────
   const exportarPDF = () => {
@@ -301,15 +412,15 @@ export default function DashboardEjecutivo() {
 
       {/* Tabs */}
       <div style={{display:'flex',gap:'8px',marginBottom:'16px'}}>
-        {(['resumen','estado'] as const).map(t => (
-          <button key={t} onClick={() => setErTab(t)} style={{
+        {(['resumen','estado','proyecciones'] as const).map(t => (
+          <button key={t} onClick={() => setErTab(t as any)} style={{
             padding:'9px 18px', borderRadius:'20px', fontSize:'13px', fontWeight:600,
             cursor:'pointer', border:'1.5px solid',
             borderColor: erTab===t ? 'var(--v)' : 'var(--border)',
             background: erTab===t ? 'var(--v)' : 'var(--white)',
             color: erTab===t ? '#fff' : 'var(--text2)'
           }}>
-            {t === 'resumen' ? 'Resumen' : t === 'estado' ? 'Est. Resultado' : '📊 Cierre de mes'}
+            {t === 'resumen' ? 'Resumen' : t === 'estado' ? 'Est. Resultado' : '📈 Proyecciones'}
           </button>
         ))}
       </div>
@@ -419,6 +530,220 @@ export default function DashboardEjecutivo() {
               <div style={{fontSize:'28px',fontWeight:800,color:totalMes >= 0 ? 'var(--green)' : 'var(--red)'}}>{fmt$(totalMes)}</div>
             </div>
           </div>
+        </div>
+      ) : erTab === 'proyecciones' ? (
+        /* ── PROYECCIONES ── */
+        <div>
+
+          {/* A) Evolución histórica 12 meses */}
+          <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
+            <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'4px'}}>
+              Evolución de ingresos — últimos 12 meses
+            </div>
+            <div style={{fontSize:'12px',color:'var(--text3)',marginBottom:'14px'}}>
+              Línea punteada = costo docente estimado mensual
+            </div>
+            <div style={{display:'flex',alignItems:'flex-end',gap:'4px',height:'120px',marginBottom:'8px'}}>
+              {historicoMeses.map((h, i) => {
+                const altura = maxHistorico > 0 ? Math.round((h.total / maxHistorico) * 100) : 0
+                const esMesSelec = h.mes === mesNombre && h.anio === anio
+                const costoPct = maxHistorico > 0 ? Math.round((totalCostoDocente / maxHistorico) * 100) : 0
+                return (
+                  <div key={i} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:'3px',height:'100%',justifyContent:'flex-end'}}>
+                    <div style={{fontSize:'9px',color:esMesSelec?'var(--v)':'var(--text3)',fontWeight:esMesSelec?800:400,textAlign:'center',whiteSpace:'nowrap'}}>
+                      {h.total > 0 ? `$${Math.round(h.total/1000)}k` : ''}
+                    </div>
+                    <div style={{
+                      width:'100%', borderRadius:'4px 4px 0 0',
+                      height:`${Math.max(altura,2)}%`,
+                      background: esMesSelec ? 'var(--v)' : h.total >= totalCostoDocente && totalCostoDocente > 0 ? 'var(--green)' : h.total > 0 ? '#c4a8e0' : 'var(--border)',
+                      transition:'height .3s',
+                      position:'relative',
+                    }} title={`${h.label}: ${fmt$(h.total)}`} />
+                  </div>
+                )
+              })}
+            </div>
+            {/* Eje X */}
+            <div style={{display:'flex',gap:'4px'}}>
+              {historicoMeses.map((h, i) => (
+                <div key={i} style={{flex:1,fontSize:'8px',color: h.mes===mesNombre&&h.anio===anio?'var(--v)':'var(--text3)',textAlign:'center',fontWeight:h.mes===mesNombre&&h.anio===anio?700:400}}>
+                  {h.mes.slice(0,3)}
+                </div>
+              ))}
+            </div>
+            {totalCostoDocente > 0 && (
+              <div style={{marginTop:'10px',fontSize:'11px',color:'var(--text3)',display:'flex',gap:'14px'}}>
+                <span>■ <span style={{color:'var(--green)'}}>Sobre punto de equilibrio</span></span>
+                <span>■ <span style={{color:'#c4a8e0'}}>Por debajo</span></span>
+                <span>■ <span style={{color:'var(--v)'}}>Mes seleccionado</span></span>
+              </div>
+            )}
+          </div>
+
+          {/* B) Proyección mes en curso */}
+          <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
+            <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'12px'}}>
+              Proyección del mes en curso — {mesNombre} {anio}
+            </div>
+            {!esMesActual ? (
+              <div style={{textAlign:'center',padding:'16px',color:'var(--text3)',fontSize:'13px'}}>
+                Seleccioná el mes actual para ver la proyección en tiempo real
+              </div>
+            ) : proyeccionMes ? (
+              <>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'14px'}}>
+                  <div style={{background:'var(--vl)',borderRadius:'12px',padding:'14px',textAlign:'center'}}>
+                    <div style={{fontSize:'11px',color:'var(--v)',fontWeight:700,marginBottom:'4px'}}>Cobrado hoy (día {hoyDia})</div>
+                    <div style={{fontSize:'22px',fontWeight:800,color:'var(--v)'}}>{fmt$(totalCobrado)}</div>
+                    <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'3px'}}>{proyeccionMes.pctAvance}% del objetivo</div>
+                  </div>
+                  <div style={{background:'#f0f7ff',border:'1.5px solid #bdd7f5',borderRadius:'12px',padding:'14px',textAlign:'center'}}>
+                    <div style={{fontSize:'11px',color:'#1a6b8a',fontWeight:700,marginBottom:'4px'}}>Proyectado al día {diasEnMes}</div>
+                    <div style={{fontSize:'22px',fontWeight:800,color:'#1a6b8a'}}>{fmt$(proyeccionMes.proyectado)}</div>
+                    <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'3px'}}>al ritmo actual</div>
+                  </div>
+                </div>
+                {/* Barra de progreso del mes */}
+                <div style={{marginBottom:'10px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:'11px',color:'var(--text3)',marginBottom:'4px'}}>
+                    <span>Avance del mes: día {hoyDia} de {diasEnMes}</span>
+                    <span>{proyeccionMes.pctDias}% del tiempo</span>
+                  </div>
+                  <div style={{height:'8px',background:'var(--border)',borderRadius:'10px',overflow:'hidden',marginBottom:'6px'}}>
+                    <div style={{height:'100%',width:`${proyeccionMes.pctDias}%`,background:'var(--text3)',borderRadius:'10px',opacity:.4}} />
+                  </div>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:'11px',color:'var(--text3)',marginBottom:'4px'}}>
+                    <span>Cobranza: {fmt$(totalCobrado)} de {fmt$(proyeccionMes.objetivo)}</span>
+                    <span>{proyeccionMes.pctAvance}%</span>
+                  </div>
+                  <div style={{height:'8px',background:'var(--border)',borderRadius:'10px',overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${Math.min(proyeccionMes.pctAvance,100)}%`,
+                      background: proyeccionMes.pctAvance >= proyeccionMes.pctDias ? 'var(--green)' : 'var(--amber)',
+                      borderRadius:'10px',transition:'width .4s'}} />
+                  </div>
+                </div>
+                {/* Escenarios */}
+                <div style={{fontSize:'10.5px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'8px',marginTop:'6px'}}>Escenarios</div>
+                <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                  {[
+                    {label:'Optimista (+10%)',  val:proyeccionMes.optimista,  color:'var(--green)',  bg:'var(--greenl)'},
+                    {label:'Base (ritmo actual)',val:proyeccionMes.proyectado, color:'#1a6b8a',       bg:'#e0f0f7'},
+                    {label:'Pesimista (-20%)',   val:proyeccionMes.pesimista,  color:'var(--amber)',  bg:'var(--amberl)'},
+                    {label:'Objetivo (cuotas)',  val:proyeccionMes.objetivo,   color:'var(--text2)', bg:'var(--bg)'},
+                  ].map(e => (
+                    <div key={e.label} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',background:e.bg,borderRadius:'8px'}}>
+                      <div style={{fontSize:'12px',color:e.color,fontWeight:600}}>{e.label}</div>
+                      <div style={{fontSize:'14px',fontWeight:800,color:e.color}}>{fmt$(e.val)}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'10px'}}>
+                  {proyeccionMes.pctAvance >= proyeccionMes.pctDias
+                    ? '✓ La cobranza va adelantada respecto al tiempo transcurrido del mes'
+                    : '⚠ La cobranza está retrasada — quedan ' + (diasEnMes - hoyDia) + ' días para cerrar el mes'}
+                </div>
+              </>
+            ) : null}
+          </div>
+
+          {/* C) Proyección liquidaciones próximo mes */}
+          <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
+            <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'12px'}}>
+              Proyección de liquidaciones — {proxMesNombre} {proxAnio}
+            </div>
+            {rentabilidadCursos.length === 0 ? (
+              <div style={{textAlign:'center',padding:'16px',color:'var(--text3)',fontSize:'13px'}}>
+                Sin datos de cursos con docente y tarifa asignada
+              </div>
+            ) : (
+              <>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'14px'}}>
+                  <div style={{background:'var(--redl)',borderRadius:'12px',padding:'14px',textAlign:'center'}}>
+                    <div style={{fontSize:'11px',color:'var(--red)',fontWeight:700,marginBottom:'4px'}}>Total a liquidar</div>
+                    <div style={{fontSize:'24px',fontWeight:800,color:'var(--red)'}}>{fmt$(liqProxMes)}</div>
+                    <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'3px'}}>{rentabilidadCursos.length} docente{rentabilidadCursos.length!==1?'s':''}</div>
+                  </div>
+                  <div style={{background:'var(--greenl)',borderRadius:'12px',padding:'14px',textAlign:'center'}}>
+                    <div style={{fontSize:'11px',color:'var(--green)',fontWeight:700,marginBottom:'4px'}}>Margen proyectado</div>
+                    <div style={{fontSize:'24px',fontWeight:800,color:'var(--green)'}}>{fmt$(proyeccionMes?.objetivo ? proyeccionMes.objetivo - liqProxMes : proyeccion - liqProxMes)}</div>
+                    <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'3px'}}>ingresos − liquidaciones</div>
+                  </div>
+                </div>
+                <div style={{fontSize:'10.5px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'8px'}}>Detalle por docente</div>
+                <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                  {rentabilidadCursos.map((c: any) => (
+                    <div key={c.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',background:'var(--bg)',borderRadius:'8px'}}>
+                      <div>
+                        <div style={{fontSize:'13px',fontWeight:600}}>{c.profesora}</div>
+                        <div style={{fontSize:'11px',color:'var(--text3)'}}>{c.nombre}</div>
+                      </div>
+                      <div style={{fontSize:'14px',fontWeight:700,color:'var(--red)'}}>{fmt$(c.costo)}</div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* D) Alumnos en riesgo de deserción */}
+          <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
+              <div>
+                <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em'}}>
+                  Alumnos en riesgo de deserción
+                </div>
+                <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}}>2+ ausencias recientes o ausencia + cuota impaga</div>
+              </div>
+              {alumnosEnRiesgo.length > 0 && (
+                <span style={{background:'var(--redl)',color:'var(--red)',padding:'3px 12px',borderRadius:'20px',fontSize:'12px',fontWeight:700}}>
+                  {alumnosEnRiesgo.length} alumnos
+                </span>
+              )}
+            </div>
+            {alumnosEnRiesgo.length === 0 ? (
+              <div style={{textAlign:'center',padding:'24px',color:'var(--green)',fontSize:'13px',fontWeight:600}}>
+                ✓ Sin alumnos en riesgo detectado este mes
+              </div>
+            ) : (
+              <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+                {alumnosEnRiesgo.map((a: any) => {
+                  const score = a.ausencias * 2 + (a.noPago ? 3 : 0)
+                  const riesgoLabel = score >= 7 ? 'Alto' : score >= 4 ? 'Medio' : 'Bajo'
+                  const riesgoColor = score >= 7 ? 'var(--red)' : score >= 4 ? 'var(--amber)' : '#1a6b8a'
+                  const riesgoBg = score >= 7 ? 'var(--redl)' : score >= 4 ? 'var(--amberl)' : '#e0f0f7'
+                  return (
+                    <div key={a.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',background:'var(--bg)',borderRadius:'10px'}}>
+                      <div style={{width:34,height:34,borderRadius:'10px',background:'var(--v)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}}>
+                        {a.nombre[0]}{a.apellido[0]}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:'13px',fontWeight:700}}>{a.nombre} {a.apellido}</div>
+                        <div style={{fontSize:'11px',color:'var(--text3)'}}>{a.curso} · {a.nivel}</div>
+                        <div style={{display:'flex',gap:'6px',marginTop:'3px',flexWrap:'wrap'}}>
+                          <span style={{fontSize:'10px',fontWeight:600,background:'var(--redl)',color:'var(--red)',padding:'1px 7px',borderRadius:'10px'}}>
+                            {a.ausencias} ausencia{a.ausencias!==1?'s':''}
+                          </span>
+                          {a.noPago && (
+                            <span style={{fontSize:'10px',fontWeight:600,background:'var(--amberl)',color:'var(--amber)',padding:'1px 7px',borderRadius:'10px'}}>
+                              Sin pago {mesNombre}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{flexShrink:0,textAlign:'center'}}>
+                        <span style={{fontSize:'11px',fontWeight:700,background:riesgoBg,color:riesgoColor,padding:'3px 10px',borderRadius:'20px'}}>
+                          {riesgoLabel}
+                        </span>
+                        <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>{fmt$(a.cuota)}/mes</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
         </div>
       ) : erTab === 'cierre' ? (
         <CierreDeMes
@@ -573,6 +898,51 @@ export default function DashboardEjecutivo() {
             </div>
           )}
 
+          {/* ── Días con más pagos ── */}
+          {erTab === 'resumen' && (
+            <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
+              <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'12px'}}>
+                Días con más pagos — {mesNombre}
+              </div>
+              {diasSorted.length === 0 ? (
+                <div style={{textAlign:'center',padding:'16px',color:'var(--text3)',fontSize:'13px'}}>Sin datos de fecha de pago</div>
+              ) : (
+                <>
+                  <div style={{display:'flex',flexWrap:'wrap',gap:'4px',marginBottom:'14px'}}>
+                    {Array.from({length:31},(_,i)=>i+1).map(dia => {
+                      const cant = diasConteo[dia] || 0
+                      const intensidad = cant === 0 ? 0 : Math.max(0.12, cant / maxDiaCant)
+                      const esPico = diasTop5.some(d => d.dia === dia)
+                      return (
+                        <div key={dia} title={`Día ${dia}: ${cant} pago${cant!==1?'s':''}`}
+                          style={{width:26,height:26,borderRadius:6,
+                            background: cant===0?'var(--border)':`rgba(101,47,141,${intensidad})`,
+                            display:'flex',alignItems:'center',justifyContent:'center',
+                            fontSize:'10px',fontWeight:esPico?800:500,
+                            color:cant===0?'var(--text3)':intensidad>0.5?'#fff':'var(--v)',
+                            border:esPico?'1.5px solid var(--v)':'1.5px solid transparent',cursor:'default'}}>
+                          {dia}
+                        </div>
+                      )
+                    })}
+                  </div>
+                  <div style={{fontSize:'10.5px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'8px'}}>Picos de cobranza</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                    {diasTop5.map(({dia,cant}) => (
+                      <div key={dia} style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                        <div style={{width:28,fontSize:'12px',fontWeight:700,color:'var(--v)',textAlign:'right',flexShrink:0}}>{dia}</div>
+                        <div style={{flex:1,height:'8px',background:'var(--border)',borderRadius:'10px',overflow:'hidden'}}>
+                          <div style={{height:'100%',width:`${(cant/maxDiaCant)*100}%`,background:'var(--v)',borderRadius:'10px',transition:'width .4s'}} />
+                        </div>
+                        <div style={{fontSize:'12px',fontWeight:600,color:'var(--text2)',flexShrink:0,minWidth:60}}>{cant} pago{cant!==1?'s':''}</div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
           {/* ── Tasa de retención ── */}
           {erTab === 'resumen' && (
             <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
@@ -580,39 +950,26 @@ export default function DashboardEjecutivo() {
                 Retención mensual — {mesNombre}
               </div>
               {tasaRetencion === null ? (
-                <div style={{textAlign:'center',padding:'12px',color:'var(--text3)',fontSize:'13px'}}>
-                  Sin datos del mes anterior para comparar
-                </div>
+                <div style={{textAlign:'center',padding:'12px',color:'var(--text3)',fontSize:'13px'}}>Sin datos del mes anterior para comparar</div>
               ) : (
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'10px',marginBottom:'14px'}}>
-                  {[
-                    { label:'Retuvimos', val: alumnosQueRetuvimos, color:'var(--green)', bg:'var(--greenl)', icon:'✓' },
-                    { label:'No pagaron este mes', val: alumnosPerdidos, color:'var(--red)', bg:'var(--redl)', icon:'✗' },
-                    { label:'Tasa de retención', val: `${tasaRetencion}%`, color: tasaRetencion >= 80 ? 'var(--green)' : tasaRetencion >= 60 ? 'var(--amber)' : 'var(--red)', bg: tasaRetencion >= 80 ? 'var(--greenl)' : tasaRetencion >= 60 ? 'var(--amberl)' : 'var(--redl)', icon:'%' },
-                  ].map(k => (
-                    <div key={k.label} style={{background:k.bg,borderRadius:'12px',padding:'14px',textAlign:'center'}}>
-                      <div style={{fontSize:'22px',fontWeight:800,color:k.color}}>{k.val}</div>
-                      <div style={{fontSize:'10px',fontWeight:600,color:k.color,marginTop:'3px',opacity:.8}}>{k.label}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              {tasaRetencion !== null && (
                 <>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'10px',marginBottom:'14px'}}>
+                    {[
+                      {label:'Retuvimos',            val:alumnosQueRetuvimos, color:'var(--green)', bg:'var(--greenl)'},
+                      {label:'No pagaron este mes',  val:alumnosPerdidos,     color:'var(--red)',   bg:'var(--redl)'},
+                      {label:'Tasa de retención',    val:`${tasaRetencion}%`, color:tasaRetencion>=80?'var(--green)':tasaRetencion>=60?'var(--amber)':'var(--red)', bg:tasaRetencion>=80?'var(--greenl)':tasaRetencion>=60?'var(--amberl)':'var(--redl)'},
+                    ].map(k => (
+                      <div key={k.label} style={{background:k.bg,borderRadius:'12px',padding:'14px',textAlign:'center'}}>
+                        <div style={{fontSize:'22px',fontWeight:800,color:k.color}}>{k.val}</div>
+                        <div style={{fontSize:'10px',fontWeight:600,color:k.color,marginTop:'3px',opacity:.8}}>{k.label}</div>
+                      </div>
+                    ))}
+                  </div>
                   <div style={{height:'10px',background:'var(--border)',borderRadius:'10px',overflow:'hidden',marginBottom:'6px'}}>
-                    <div style={{
-                      height:'100%',
-                      width:`${tasaRetencion}%`,
-                      background: tasaRetencion >= 80 ? 'var(--green)' : tasaRetencion >= 60 ? 'var(--amber)' : 'var(--red)',
-                      borderRadius:'10px',transition:'width .5s'
-                    }} />
+                    <div style={{height:'100%',width:`${tasaRetencion}%`,background:tasaRetencion>=80?'var(--green)':tasaRetencion>=60?'var(--amber)':'var(--red)',borderRadius:'10px',transition:'width .5s'}} />
                   </div>
                   <div style={{fontSize:'11px',color:'var(--text3)'}}>
-                    {tasaRetencion >= 80
-                      ? '✓ Retención saludable — más del 80% de los alumnos del mes anterior pagaron este mes'
-                      : tasaRetencion >= 60
-                      ? '⚠ Retención moderada — revisar alumnos que no pagaron'
-                      : '✗ Retención baja — más del 40% de alumnos no repitió el pago este mes'}
+                    {tasaRetencion>=80?'✓ Retención saludable — más del 80% de los alumnos del mes anterior pagaron este mes':tasaRetencion>=60?'⚠ Retención moderada — revisar alumnos que no pagaron':'✗ Retención baja — más del 40% de alumnos no repitió el pago este mes'}
                   </div>
                 </>
               )}
@@ -623,17 +980,15 @@ export default function DashboardEjecutivo() {
           {erTab === 'resumen' && rentabilidadCursos.length > 0 && (
             <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
-                <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em'}}>
-                  Costo docente vs. ingresos por curso
-                </div>
+                <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em'}}>Costo docente vs. ingresos por curso</div>
                 <div style={{fontSize:'10px',color:'var(--text3)'}}>tarifa × hs/sem × 4 sem</div>
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
                 {rentabilidadCursos.map((c: any) => {
                   const esPositivo = c.margen >= 0
-                  const color = esPositivo ? 'var(--green)' : 'var(--red)'
-                  const bg = esPositivo ? 'var(--greenl)' : 'var(--redl)'
-                  const maxIngreso = Math.max(...rentabilidadCursos.map((x: any) => x.ingresos), 1)
+                  const color = esPositivo?'var(--green)':'var(--red)'
+                  const bg = esPositivo?'var(--greenl)':'var(--redl)'
+                  const maxIngreso = Math.max(...rentabilidadCursos.map((x:any)=>x.ingresos),1)
                   return (
                     <div key={c.id} style={{borderBottom:'1px solid var(--border)',paddingBottom:'10px'}}>
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'5px'}}>
@@ -643,20 +998,20 @@ export default function DashboardEjecutivo() {
                         </div>
                         <div style={{textAlign:'right',flexShrink:0,marginLeft:'12px'}}>
                           <span style={{fontSize:'12px',fontWeight:700,background:bg,color,padding:'2px 10px',borderRadius:'20px'}}>
-                            {esPositivo ? '+' : ''}{fmt$(c.margen)}
+                            {esPositivo?'+':''}{fmt$(c.margen)}
                           </span>
                           <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>{c.pctMargen}% margen</div>
                         </div>
                       </div>
                       <div style={{display:'flex',gap:'4px',alignItems:'center',marginBottom:'4px'}}>
                         <div style={{flex:1,height:'6px',background:'var(--greenl)',borderRadius:'10px',overflow:'hidden'}}>
-                          <div style={{height:'100%',width:`${pct(c.ingresos, maxIngreso)}%`,background:'var(--green)',borderRadius:'10px'}} />
+                          <div style={{height:'100%',width:`${pct(c.ingresos,maxIngreso)}%`,background:'var(--green)',borderRadius:'10px'}} />
                         </div>
                         <div style={{fontSize:'11px',color:'var(--green)',fontWeight:600,minWidth:70,textAlign:'right'}}>{fmt$(c.ingresos)}</div>
                       </div>
                       <div style={{display:'flex',gap:'4px',alignItems:'center'}}>
                         <div style={{flex:1,height:'6px',background:'var(--redl)',borderRadius:'10px',overflow:'hidden'}}>
-                          <div style={{height:'100%',width:`${pct(c.costo, maxIngreso)}%`,background:'var(--red)',borderRadius:'10px'}} />
+                          <div style={{height:'100%',width:`${pct(c.costo,maxIngreso)}%`,background:'var(--red)',borderRadius:'10px'}} />
                         </div>
                         <div style={{fontSize:'11px',color:'var(--red)',fontWeight:600,minWidth:70,textAlign:'right'}}>{fmt$(c.costo)}</div>
                       </div>
