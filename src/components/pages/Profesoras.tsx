@@ -472,6 +472,40 @@ function LiquidacionTab({ prof, licencias }: any) {
       .catch(() => {})
   }, [prof.id])
 
+  // ── Pre-cargar conceptos y datos de liquidación existente del mes ─────
+  useEffect(() => {
+    if (!liquidaciones.length) return
+    const liqExistente = liquidaciones.find((l: any) => l.mes === mesLiq && l.anio === anioLiq)
+    if (liqExistente) {
+      // Cargar conceptos guardados
+      try {
+        const conceptosCargados = JSON.parse(liqExistente.ajuste_concepto || '[]')
+        if (Array.isArray(conceptosCargados) && conceptosCargados.length > 0) {
+          setConceptos(conceptosCargados.map((c: any) => ({ ...c, id: c.id || Date.now() + Math.random() })))
+        } else {
+          setConceptos([])
+        }
+      } catch { setConceptos([]) }
+      // Cargar días ausentes
+      const diasMatch = liqExistente.descuento_concepto?.match(/(\d+)\s*días?/i)
+      if (diasMatch) setDiasAusente(parseInt(diasMatch[1]))
+      // Cargar estado
+      if (liqExistente.estado === 'borrador' || liqExistente.estado === 'confirmada') {
+        setEstadoLiq(liqExistente.estado)
+      }
+      // Cargar semanas si aplica
+      if (liqExistente.horas_mes && liqExistente.horas_semana) {
+        const sems = Math.round(liqExistente.horas_mes / liqExistente.horas_semana)
+        if (sems === 4 || sems === 5) setSemanasLiq(sems)
+      }
+    } else {
+      // Sin liquidación para este mes — resetear a valores limpios
+      setConceptos([])
+      setDiasAusente(0)
+      setEstadoLiq('confirmada')
+    }
+  }, [mesLiq, anioLiq, liquidaciones.length])
+
   // ── Cálculos ─────────────────────────────────────────────────────────
   const base = tipoContrato === 'hora'
     ? (prof.horas_semana || 0) * semanasLiq * (prof.tarifa_hora || 0)
