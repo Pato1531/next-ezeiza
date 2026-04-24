@@ -47,7 +47,7 @@ export default function Profesoras() {
   }
   const irALista = () => { setSelId(null); setVista('lista') }
   const irAFormNuevo = () => {
-    setForm({ nombre:'', apellido:'', email:'', fecha_nacimiento:'', telefono:'', tipo_colaborador:'docente', tarifa_hora:0, horas_semana:0, color: COLORES[profesoras.length % COLORES.length] })
+    setForm({ nombre:'', apellido:'', email:'', fecha_nacimiento:'', telefono:'', tipo_colaborador:'docente', tarifa_hora:0, horas_semana:0, sueldo_fijo:0, tipo_contrato:'hora', color: COLORES[profesoras.length % COLORES.length] })
     setVista('form')
   }
   const irAFormEditar = () => {
@@ -158,7 +158,11 @@ export default function Profesoras() {
           <Av color={p.color} size={44}>{p.initials||`${p.nombre[0]}${p.apellido[0]}`}</Av>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:'15px',fontWeight:600}}>{p.nombre} {p.apellido} {p.tipo_colaborador && p.tipo_colaborador !== 'docente' && <span style={{fontSize:'10px',fontWeight:600,padding:'1px 6px',borderRadius:'8px',background:'var(--bluel)',color:'var(--blue)',marginLeft:'6px'}}>{p.tipo_colaborador}</span>}</div>
-            <div style={{fontSize:'12.5px',color:'var(--text2)',marginTop:'2px'}}>{p.horas_semana}hs/sem</div>
+            <div style={{fontSize:'12.5px',color:'var(--text2)',marginTop:'2px'}}>
+              {p.tipo_contrato === 'fijo'
+                ? `$${(p.sueldo_fijo||0).toLocaleString('es-AR')}/mes`
+                : `${p.horas_semana}hs/sem`}
+            </div>
           </div>
 
           <Chevron />
@@ -192,9 +196,21 @@ export default function Profesoras() {
               <option value="coordinadora">Coordinadora</option>
             </select>
           </Field2>
-          <Field2 label="Tarifa/hora ($)"><Input type="number" value={form?.tarifa_hora||''} onChange={(v:string)=>setForm({...form,tarifa_hora:+v})} /></Field2>
+          <Field2 label="Tipo de contrato">
+            <select style={IS} value={form?.tipo_contrato||'hora'} onChange={e=>setForm({...form,tipo_contrato:e.target.value})}>
+              <option value="hora">Por hora</option>
+              <option value="fijo">Sueldo fijo mensual</option>
+            </select>
+          </Field2>
         </Row2>
-        <Field2 label="Horas por semana"><input type="number" step="0.5" min="0" value={form?.horas_semana||''} onChange={e=>setForm({...form,horas_semana:parseFloat(e.target.value)||0})} style={IS} /></Field2>
+        {(form?.tipo_contrato||'hora') === 'hora' ? (
+          <Row2>
+            <Field2 label="Tarifa/hora ($)"><Input type="number" value={form?.tarifa_hora||''} onChange={(v:string)=>setForm({...form,tarifa_hora:+v})} /></Field2>
+            <Field2 label="Horas por semana"><input type="number" step="0.5" min="0" value={form?.horas_semana||''} onChange={e=>setForm({...form,horas_semana:parseFloat(e.target.value)||0})} style={IS} /></Field2>
+          </Row2>
+        ) : (
+          <Field2 label="Sueldo mensual ($)"><Input type="number" value={form?.sueldo_fijo||''} onChange={(v:string)=>setForm({...form,sueldo_fijo:+v})} /></Field2>
+        )}
       </Card>
       <div style={{display:'flex',gap:'10px',marginTop:'4px'}}>
         <BtnG style={{flex:1}} onClick={() => form?.id ? irADetalle(form.id) : irALista()}>Cancelar</BtnG>
@@ -208,7 +224,9 @@ export default function Profesoras() {
   // ── DETALLE ──
   if (vista === 'detalle') {
     if (!sel) return <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>
-    const liq = sel.horas_semana * 4 * sel.tarifa_hora
+    const liq = sel.tipo_contrato === 'fijo'
+    ? (sel.sueldo_fijo || 0)
+    : (sel.horas_semana || 0) * 4 * (sel.tarifa_hora || 0)
     return (
       <div className="fade-in">
         <div style={{display:'flex',gap:'8px',marginBottom:'16px',flexWrap:'wrap'}}>
@@ -224,12 +242,16 @@ export default function Profesoras() {
               <div style={{fontSize:'20px',fontWeight:700}}>{sel.nombre} {sel.apellido}</div>
               <div style={{fontSize:'13px',color:'var(--text2)',marginTop:'3px'}}>{sel.email}</div>
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'8px'}}>
-                {!soloLectura && <Badge cls="b-green">${sel.tarifa_hora?.toLocaleString('es-AR')}/h</Badge>}
+                {!soloLectura && (
+                  sel.tipo_contrato === 'fijo'
+                    ? <Badge cls="b-green">${(sel.sueldo_fijo||0).toLocaleString('es-AR')}/mes</Badge>
+                    : <Badge cls="b-green">${sel.tarifa_hora?.toLocaleString('es-AR')}/h</Badge>
+                )}
               </div>
             </div>
           </div>
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'1px',background:'var(--border)',borderRadius:'12px',overflow:'hidden'}}>
-            <Kpi val={`${sel.horas_semana}hs`} label="Semanal" color="var(--v)" />
+            <Kpi val={sel.tipo_contrato==='fijo' ? `$${(sel.sueldo_fijo||0).toLocaleString('es-AR')}` : `${sel.horas_semana}hs`} label={sel.tipo_contrato==='fijo' ? 'Sueldo fijo' : 'Semanal'} color="var(--v)" />
             {!soloLectura ? <Kpi val={`$${Math.round(liq/1000)}k`} label="Liquidación" color="var(--v)" /> : (() => {
               const edad = sel.fecha_nacimiento ? Math.floor((Date.now() - new Date(sel.fecha_nacimiento+'T12:00:00').getTime()) / (365.25*24*3600*1000)) : null
               return <Kpi val={edad !== null ? `${edad} años` : '—'} label="Edad" />
@@ -262,9 +284,14 @@ export default function Profesoras() {
             <FieldRO label="Teléfono" value={sel.telefono||'—'} />
           </Row2>
           <Row2>
-            {!soloLectura && <FieldRO label="Tarifa/hora" value={`$${sel.tarifa_hora?.toLocaleString('es-AR')}`} />}
+            {!soloLectura && (
+              sel.tipo_contrato === 'fijo'
+                ? <FieldRO label="Sueldo mensual" value={`$${(sel.sueldo_fijo||0).toLocaleString('es-AR')}`} />
+                : <FieldRO label="Tarifa/hora" value={`$${sel.tarifa_hora?.toLocaleString('es-AR')}`} />
+            )}
           </Row2>
-          <FieldRO label="Horas por semana" value={`${sel.horas_semana}hs`} />
+          {sel.tipo_contrato !== 'fijo' && <FieldRO label="Horas por semana" value={`${sel.horas_semana}hs`} />}
+          <FieldRO label="Tipo de contrato" value={sel.tipo_contrato === 'fijo' ? 'Sueldo fijo mensual' : 'Por hora'} />
         </Card>}
 
         
@@ -411,10 +438,11 @@ function LiquidacionTab({ prof, licencias }: any) {
   // ── Tipo de contrato ─────────────────────────────────────────────────
   // 'hora' = horas/semana × semanas × tarifa | 'fijo' = monto fijo mensual
   const [tipoContrato, setTipoContrato] = useState<'hora'|'fijo'>(
-    (prof.horas_semana && prof.horas_semana > 0) ? 'hora' : 'fijo'
+    prof.tipo_contrato === 'fijo' ? 'fijo' : (prof.horas_semana && prof.horas_semana > 0) ? 'hora' : 'fijo'
   )
   const [semanasLiq, setSemanasLiq] = useState(4)
-  const [sueldoFijo, setSueldoFijo] = useState<number>(0)
+  // Pre-cargar sueldo fijo del perfil
+  const [sueldoFijo, setSueldoFijo] = useState<number>(prof.sueldo_fijo || 0)
 
   // ── Conceptos libres ──────────────────────────────────────────────────
   // Cada ítem: { id, label, monto, signo: '+' | '-' }
@@ -447,7 +475,7 @@ function LiquidacionTab({ prof, licencias }: any) {
   // ── Cálculos ─────────────────────────────────────────────────────────
   const base = tipoContrato === 'hora'
     ? (prof.horas_semana || 0) * semanasLiq * (prof.tarifa_hora || 0)
-    : sueldoFijo
+    : (sueldoFijo || prof.sueldo_fijo || 0)
 
   // Filtrar reemplazos solo del mes seleccionado
   const licReemplazoMes = licComoReemplazo.filter((l: any) => {
@@ -543,10 +571,25 @@ function LiquidacionTab({ prof, licencias }: any) {
   }
 
   // ── Generar PDF ───────────────────────────────────────────────────────
-  const descargarPDF = () => {
-    const filasConceptos = conceptos
-      .filter(c => c.monto > 0 && c.label)
-      .map(c => `<tr><td style="color:${c.signo==='+'?'#2d7a4f':'#c0392b'}">${c.label}</td><td style="text-align:right;color:${c.signo==='+'?'#2d7a4f':'#c0392b'};font-weight:600">${c.signo==='+'?'+':'-'}$${c.monto.toLocaleString('es-AR')}</td></tr>`)
+  const descargarPDF = (liqGuardadaData?: any) => {
+    // Si se pasa una liquidación guardada, usar sus datos; sino usar el estado actual
+    const conceptosParaPDF = liqGuardadaData
+      ? (() => {
+          try { return JSON.parse(liqGuardadaData.ajuste_concepto || '[]') } catch { return [] }
+        })()
+      : conceptos
+
+    const basePDF = liqGuardadaData ? (liqGuardadaData.subtotal || 0) : base
+    const totalReemplazosPDF = liqGuardadaData ? 0 : totalReemplazos // reemplazos ya en subtotal si es guardada
+    const descuentoLicenciasPDF = liqGuardadaData ? (liqGuardadaData.descuento_licencias || 0) : descuentoLicencias
+    const diasAusentePDF = liqGuardadaData ? (parseInt(liqGuardadaData.descuento_concepto?.match(/\d+/)?.[0] || '0')) : diasAusente
+    const totalPDF = liqGuardadaData ? (liqGuardadaData.total || 0) : total
+    const mesLiqPDF = liqGuardadaData ? (liqGuardadaData.mes || mesLiq) : mesLiq
+    const anioLiqPDF = liqGuardadaData ? (liqGuardadaData.anio || anioLiq) : anioLiq
+
+    const filasConceptos = conceptosParaPDF
+      .filter((c: any) => c.monto > 0 && c.label)
+      .map((c: any) => `<tr><td style="color:${c.signo==='+'?'#2d7a4f':'#c0392b'}">${c.label}</td><td style="text-align:right;color:${c.signo==='+'?'#2d7a4f':'#c0392b'};font-weight:600">${c.signo==='+'?'+':'-'}$${(c.monto||0).toLocaleString('es-AR')}</td></tr>`)
       .join('')
 
     const filaBase = tipoContrato === 'hora'
@@ -555,7 +598,7 @@ function LiquidacionTab({ prof, licencias }: any) {
          <tr><td style="color:#888">Tarifa/hora</td><td style="text-align:right">$${prof.tarifa_hora?.toLocaleString('es-AR')}</td></tr>`
       : `<tr><td style="color:#888">Modalidad</td><td style="text-align:right">Sueldo fijo</td></tr>`
 
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Liquidacion ${prof.nombre} ${prof.apellido}</title><style>
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Liquidacion ${prof.nombre} ${prof.apellido} ${mesLiqPDF} ${anioLiqPDF}</title><style>
       body{font-family:Arial,sans-serif;padding:32px;font-size:14px;color:#333}
       h1{color:#652f8d;font-size:20px;margin:0 0 4px}
       .sub{color:#888;font-size:13px;margin-bottom:20px}
@@ -572,18 +615,18 @@ function LiquidacionTab({ prof, licencias }: any) {
       <div class="logo"><span>Edu</span>Gest</div>
       <div style="color:#888;font-size:12px">${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
     </div>
-    <h1>Liquidación — ${mesLiq} ${anioLiq}</h1>
+    <h1>Liquidación — ${mesLiqPDF} ${anioLiqPDF}</h1>
     <div class="sub">${prof.nombre} ${prof.apellido}</div>
     <table>
       ${filaBase}
-      <tr><td style="color:#888;font-weight:600">Subtotal base</td><td style="text-align:right;font-weight:700">$${base.toLocaleString('es-AR')}</td></tr>
-      ${totalReemplazos > 0 ? `<tr><td style="color:#2d7a4f">Reemplazos realizados</td><td style="text-align:right;color:#2d7a4f;font-weight:600">+$${totalReemplazos.toLocaleString('es-AR')}</td></tr>` : ''}
+      <tr><td style="color:#888;font-weight:600">Subtotal base</td><td style="text-align:right;font-weight:700">$${basePDF.toLocaleString('es-AR')}</td></tr>
+      ${totalReemplazosPDF > 0 ? `<tr><td style="color:#2d7a4f">Reemplazos realizados</td><td style="text-align:right;color:#2d7a4f;font-weight:600">+$${totalReemplazosPDF.toLocaleString('es-AR')}</td></tr>` : ''}
       ${filasConceptos}
-      ${descuentoLicencias > 0 ? `<tr><td style="color:#c0392b">Descuento ausencias (${diasAusente} días)</td><td style="text-align:right;color:#c0392b;font-weight:600">-$${descuentoLicencias.toLocaleString('es-AR')}</td></tr>` : ''}
+      ${descuentoLicenciasPDF > 0 ? `<tr><td style="color:#c0392b">Descuento ausencias (${diasAusentePDF} días)</td><td style="text-align:right;color:#c0392b;font-weight:600">-$${descuentoLicenciasPDF.toLocaleString('es-AR')}</td></tr>` : ''}
     </table>
     <div class="total">
       <span class="total-label">Total a liquidar</span>
-      <span class="total-value">$${total.toLocaleString('es-AR')}</span>
+      <span class="total-value">$${totalPDF.toLocaleString('es-AR')}</span>
     </div>
     <script>setTimeout(function(){window.print()},500)</script>
     </body></html>`
@@ -670,7 +713,7 @@ function LiquidacionTab({ prof, licencias }: any) {
               <input type="number" min="0" step="1000"
                 value={sueldoFijo||''}
                 onChange={e => setSueldoFijo(parseFloat(e.target.value)||0)}
-                placeholder="0"
+                placeholder={String(prof.sueldo_fijo || 0)}
                 style={{width:'110px',padding:'6px 10px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'14px',fontWeight:600,textAlign:'right',fontFamily:'Inter,sans-serif',outline:'none',color:'var(--text)',background:'var(--white)'}}
               />
             </div>
@@ -844,6 +887,10 @@ function LiquidacionTab({ prof, licencias }: any) {
                     {l.estado}
                   </span>
                 </div>
+                <button onClick={() => descargarPDF(l)}
+                  style={{padding:'5px 9px',background:'var(--bg)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                  PDF
+                </button>
                 <button onClick={() => setLiqEditando({...l})}
                   style={{padding:'5px 9px',background:'var(--vl)',color:'var(--v)',border:'1px solid #d4a8e8',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
                   Editar
