@@ -50,7 +50,7 @@ export default function DashboardEjecutivo() {
       const [pagosRes, pagosAntRes, liqRes, altasRes, bajasRes] = await Promise.all([
         // metodo incluido — era el campo que faltaba
         sb.from('pagos_alumnos')
-          .select('monto, metodo, observaciones, alumno_id')
+          .select('monto, metodo, observaciones, alumno_id, fecha_pago')
           .eq('mes', mesNombre).eq('anio', anio),
         sb.from('pagos_alumnos')
           .select('monto')
@@ -144,6 +144,20 @@ export default function DashboardEjecutivo() {
     metodos[m] = (metodos[m] || 0) + (p.monto || 0)
   })
   const metodosSorted = Object.entries(metodos).sort((a, b) => b[1] - a[1])
+
+  // ── Días con más pagos ────────────────────────────────────────────────────
+  const diasConteo: Record<number, number> = {}
+  pagos.forEach((p: any) => {
+    if (!p.fecha_pago) return
+    const dia = new Date(p.fecha_pago + 'T12:00:00').getDate()
+    diasConteo[dia] = (diasConteo[dia] || 0) + 1
+  })
+  const diasSorted = Object.entries(diasConteo)
+    .map(([dia, cant]) => ({ dia: parseInt(dia), cant }))
+    .sort((a, b) => b.cant - a.cant)
+  const maxDiaCant = diasSorted[0]?.cant || 1
+  // Agrupar por semana para el heatmap (días 1-31)
+  const diasTop5 = diasSorted.slice(0, 5)
 
   // ── Exportar PDF ──────────────────────────────────────────────────────────
   const exportarPDF = () => {
@@ -493,6 +507,60 @@ export default function DashboardEjecutivo() {
                 ))}
               </div>
             </div>
+          </div>
+
+          {/* Días de pago */}
+          <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
+            <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'12px'}}>
+              Días con más pagos — {mesNombre}
+            </div>
+            {diasSorted.length === 0 ? (
+              <div style={{textAlign:'center',padding:'16px',color:'var(--text3)',fontSize:'13px'}}>Sin datos de fecha de pago</div>
+            ) : (
+              <>
+                {/* Heatmap días 1–31 */}
+                <div style={{display:'flex',flexWrap:'wrap',gap:'4px',marginBottom:'14px'}}>
+                  {Array.from({length:31},(_,i)=>i+1).map(dia => {
+                    const cant = diasConteo[dia] || 0
+                    const intensidad = cant === 0 ? 0 : Math.max(0.12, cant / maxDiaCant)
+                    const esPico = diasTop5.some(d => d.dia === dia)
+                    return (
+                      <div key={dia} title={`Día ${dia}: ${cant} pago${cant!==1?'s':''}`}
+                        style={{
+                          width:26, height:26, borderRadius:6,
+                          background: cant === 0 ? 'var(--border)' : `rgba(101,47,141,${intensidad})`,
+                          display:'flex', alignItems:'center', justifyContent:'center',
+                          fontSize:'10px', fontWeight: esPico ? 800 : 500,
+                          color: cant === 0 ? 'var(--text3)' : intensidad > 0.5 ? '#fff' : 'var(--v)',
+                          border: esPico ? '1.5px solid var(--v)' : '1.5px solid transparent',
+                          cursor:'default',
+                        }}>
+                        {dia}
+                      </div>
+                    )
+                  })}
+                </div>
+                {/* Top 5 días */}
+                <div style={{fontSize:'10.5px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'8px'}}>
+                  Picos de cobranza
+                </div>
+                <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                  {diasTop5.map(({dia, cant}) => (
+                    <div key={dia} style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                      <div style={{width:28,fontSize:'12px',fontWeight:700,color:'var(--v)',textAlign:'right',flexShrink:0}}>
+                        {dia}
+                      </div>
+                      <div style={{flex:1,height:'8px',background:'var(--border)',borderRadius:'10px',overflow:'hidden'}}>
+                        <div style={{height:'100%',width:`${(cant/maxDiaCant)*100}%`,background:'var(--v)',borderRadius:'10px',transition:'width .4s'}} />
+                      </div>
+                      <div style={{fontSize:'12px',fontWeight:600,color:'var(--text2)',flexShrink:0,minWidth:60}}>
+                        {cant} pago{cant!==1?'s':''}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           {/* Movimientos del mes */}
