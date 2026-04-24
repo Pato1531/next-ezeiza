@@ -31,7 +31,7 @@ export default function Cursos() {
     : todosCursos
   const [vista, setVista] = useState<Vista>('lista')
   const [selId, setSelId] = useState<string|null>(null)
-  const [tab, setTab] = useState<'info'|'alumnos'|'planilla'|'examenes'|'planificacion'>('info')
+  const [tab, setTab] = useState<'info'|'alumnos'|'planilla'|'examenes'|'planificacion'|'estadisticas'|'progreso'>('info')
   const [form, setForm] = useState<any>(null)
   const [guardando, setGuardando] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
@@ -770,6 +770,8 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
         <TabBtn active={tab==='planilla'} onClick={() => setTab('planilla')}>Planilla</TabBtn>
         <TabBtn active={tab==='examenes'} onClick={() => setTab('examenes')}>Exámenes</TabBtn>
         <TabBtn active={tab==='planificacion'} onClick={() => setTab('planificacion')}>Planificación</TabBtn>
+        <TabBtn active={tab==='progreso'} onClick={() => setTab('progreso')}>Progreso</TabBtn>
+        <TabBtn active={tab==='estadisticas'} onClick={() => setTab('estadisticas')}>Estadísticas</TabBtn>
       </div>
 
       {/* RESUMEN RÁPIDO — última clase */}
@@ -957,6 +959,10 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
       {tab === 'examenes' && <ExamenesTab cursoId={c.id} alumnosCurso={alumnosCurso} puedeEditar={puedeEditar} puedeCrearExamen={true} />}
 
       {tab === 'planificacion' && <PlanificacionTab cursoId={c.id} puedeEditar={puedeEditar} clasesDictadas={clasesLocal.length} />}
+
+      {tab === 'progreso' && <ProgresoTab cursoId={c.id} clasesDictadas={clasesLocal.length} />}
+
+      {tab === 'estadisticas' && <EstadisticasTab cursoId={c.id} alumnosCurso={alumnosCurso} asistencias={asistencias} clasesLocal={clasesLocal} />}
 
       {confirmDelete && <ModalSheet title="¿Eliminar curso?" onClose={onCancelDelete}>
         <p style={{fontSize:'14px',color:'var(--text2)',marginBottom:'20px'}}>Esta acción desactiva el curso y lo elimina del horario.</p>
@@ -2074,3 +2080,308 @@ const ModalSheet = ({title,children,onClose}:any) => (
     </div>
   </div>
 )
+
+// ── PROGRESO DEL PROGRAMA ────────────────────────────────────────────────────
+function ProgresoTab({ cursoId, clasesDictadas }: { cursoId: string; clasesDictadas: number }) {
+  const [unidades, setUnidades] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const cargar = async () => {
+      const sb = createClient()
+      const { data } = await sb.from('planificacion_cursos')
+        .select('*').eq('curso_id', cursoId).order('orden').order('created_at')
+      setUnidades(data || [])
+      setLoading(false)
+    }
+    cargar()
+  }, [cursoId])
+
+  if (loading) return <Loader />
+
+  if (unidades.length === 0) return (
+    <div style={{textAlign:'center',padding:'48px 24px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',color:'var(--text3)'}}>
+      <div style={{fontSize:'28px',marginBottom:'8px'}}>📋</div>
+      <div style={{fontWeight:600,marginBottom:'4px'}}>Sin planificación cargada</div>
+      <div style={{fontSize:'13px'}}>Cargá las unidades en la tab Planificación para ver el progreso</div>
+    </div>
+  )
+
+  const total = unidades.length
+  const completadas = unidades.filter(u => u.estado === 'completado').length
+  const enCurso = unidades.filter(u => u.estado === 'en_curso').length
+  const pendientes = unidades.filter(u => u.estado === 'pendiente').length
+  const pctCompleto = Math.round((completadas / total) * 100)
+  const pctEnCurso = Math.round((enCurso / total) * 100)
+
+  return (
+    <div className="fade-in">
+      {/* KPIs */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px',marginBottom:'16px'}}>
+        {[
+          { label:'Total unidades', val: total,        color:'var(--v)' },
+          { label:'Completadas',    val: completadas,   color:'var(--green)' },
+          { label:'En curso',       val: enCurso,       color:'var(--amber)' },
+          { label:'Pendientes',     val: pendientes,    color:'var(--text3)' },
+        ].map(k => (
+          <div key={k.label} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+            <div style={{fontSize:'22px',fontWeight:800,color:k.color}}>{k.val}</div>
+            <div style={{fontSize:'10px',color:'var(--text3)',fontWeight:600,marginTop:'2px'}}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Barra de progreso general */}
+      <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
+          <div style={{fontSize:'13px',fontWeight:700}}>Progreso del programa</div>
+          <div style={{fontSize:'20px',fontWeight:800,color: pctCompleto >= 75 ? 'var(--green)' : pctCompleto >= 40 ? 'var(--amber)' : 'var(--v)'}}>{pctCompleto}%</div>
+        </div>
+        <div style={{height:'12px',background:'var(--border)',borderRadius:'10px',overflow:'hidden',marginBottom:'6px',position:'relative'}}>
+          <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${pctCompleto + pctEnCurso}%`,background:'var(--amberl)',borderRadius:'10px'}} />
+          <div style={{position:'absolute',left:0,top:0,height:'100%',width:`${pctCompleto}%`,background:'var(--green)',borderRadius:'10px',transition:'width .5s'}} />
+        </div>
+        <div style={{display:'flex',gap:'14px',fontSize:'11px',color:'var(--text3)'}}>
+          <span>■ <span style={{color:'var(--green)'}}>Completado ({pctCompleto}%)</span></span>
+          <span>■ <span style={{color:'var(--amber)'}}>En curso ({pctEnCurso}%)</span></span>
+          <span>■ <span style={{color:'var(--border)'}}>Pendiente</span></span>
+        </div>
+        {clasesDictadas > 0 && (
+          <div style={{marginTop:'10px',fontSize:'12px',color:'var(--text3)',padding:'8px 12px',background:'var(--bg)',borderRadius:'8px'}}>
+            📚 {clasesDictadas} clase{clasesDictadas !== 1 ? 's' : ''} dictada{clasesDictadas !== 1 ? 's' : ''} en total
+          </div>
+        )}
+      </div>
+
+      {/* Lista de unidades con estado visual */}
+      <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',overflow:'hidden'}}>
+        <div style={{padding:'12px 16px',borderBottom:'1.5px solid var(--border)',fontSize:'10.5px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em'}}>
+          Unidades del programa
+        </div>
+        {unidades.map((u, i) => {
+          const estadoColor = u.estado === 'completado' ? 'var(--green)' : u.estado === 'en_curso' ? 'var(--amber)' : 'var(--text3)'
+          const estadoBg = u.estado === 'completado' ? 'var(--greenl)' : u.estado === 'en_curso' ? 'var(--amberl)' : 'var(--bg)'
+          const estadoLabel = u.estado === 'completado' ? 'Completada' : u.estado === 'en_curso' ? 'En curso' : 'Pendiente'
+          const estadoIcon = u.estado === 'completado' ? '✓' : u.estado === 'en_curso' ? '▶' : '○'
+          return (
+            <div key={u.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'12px 16px',borderBottom: i < unidades.length-1 ? '1px solid var(--border)' : 'none'}}>
+              <div style={{width:28,height:28,borderRadius:'50%',background:estadoBg,border:`2px solid ${estadoColor}`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:estadoColor,flexShrink:0}}>
+                {estadoIcon}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:'13.5px',fontWeight:600}}>{u.titulo}</div>
+                {u.descripcion && <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'1px',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.descripcion}</div>}
+                {(u.fecha_inicio || u.fecha_cierre) && (
+                  <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>
+                    {u.fecha_inicio && `Inicio: ${new Date(u.fecha_inicio+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})}`}
+                    {u.fecha_inicio && u.fecha_cierre && ' → '}
+                    {u.fecha_cierre && `Cierre: ${new Date(u.fecha_cierre+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})}`}
+                  </div>
+                )}
+              </div>
+              <span style={{fontSize:'11px',fontWeight:700,background:estadoBg,color:estadoColor,padding:'3px 10px',borderRadius:'20px',flexShrink:0}}>
+                {estadoLabel}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// ── ESTADÍSTICAS DEL CURSO ───────────────────────────────────────────────────
+function EstadisticasTab({ cursoId, alumnosCurso, asistencias, clasesLocal }: {
+  cursoId: string; alumnosCurso: any[]; asistencias: Record<string,Record<string,string>>; clasesLocal: any[]
+}) {
+  const [notas, setNotas] = useState<any[]>([])
+  const [examenes, setExamenes] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const cargar = async () => {
+      const sb = createClient()
+      const { data: exs } = await sb.from('examenes').select('id, nombre, tipo, fecha').eq('curso_id', cursoId)
+      const { data: nts } = await sb.from('notas_examenes').select('alumno_id, examen_id, nota, ausente')
+        .in('examen_id', (exs || []).map((e: any) => e.id))
+      setExamenes(exs || [])
+      setNotas(nts || [])
+      setLoading(false)
+    }
+    cargar()
+  }, [cursoId])
+
+  if (loading) return <Loader />
+
+  const totalClases = clasesLocal.length
+
+  // ── Asistencia por alumno ────────────────────────────────────────────────
+  const asistPorAlumno = alumnosCurso.map((al: any) => {
+    let presentes = 0, ausentes = 0, tardes = 0
+    Object.values(asistencias).forEach((reg: any) => {
+      const est = reg[al.id]
+      if (est === 'P') presentes++
+      else if (est === 'A') ausentes++
+      else if (est === 'T') tardes++
+    })
+    const clasesRegistradas = presentes + ausentes + tardes
+    const pct = clasesRegistradas > 0 ? Math.round((presentes / clasesRegistradas) * 100) : null
+    return { ...al, presentes, ausentes, tardes, clasesRegistradas, pct }
+  }).sort((a: any, b: any) => (b.pct ?? -1) - (a.pct ?? -1))
+
+  const promAsistencia = asistPorAlumno.filter((a: any) => a.pct !== null).length > 0
+    ? Math.round(asistPorAlumno.filter((a: any) => a.pct !== null).reduce((s: number, a: any) => s + (a.pct ?? 0), 0) / asistPorAlumno.filter((a: any) => a.pct !== null).length)
+    : null
+
+  // ── Promedio de notas por alumno ─────────────────────────────────────────
+  const notasPorAlumno: Record<string, number[]> = {}
+  notas.forEach((n: any) => {
+    if (n.ausente || n.nota === null) return
+    if (!notasPorAlumno[n.alumno_id]) notasPorAlumno[n.alumno_id] = []
+    notasPorAlumno[n.alumno_id].push(n.nota)
+  })
+  const promediosPorAlumno = alumnosCurso.map((al: any) => {
+    const ns = notasPorAlumno[al.id] || []
+    const prom = ns.length > 0 ? Math.round(ns.reduce((s: number, n: number) => s + n, 0) / ns.length) : null
+    return { ...al, promedio: prom, cantExamenes: ns.length }
+  }).filter((a: any) => a.promedio !== null).sort((a: any, b: any) => b.promedio - a.promedio)
+
+  const promGeneralNotas = promediosPorAlumno.length > 0
+    ? Math.round(promediosPorAlumno.reduce((s: number, a: any) => s + a.promedio, 0) / promediosPorAlumno.length)
+    : null
+
+  // ── Promedio por examen ──────────────────────────────────────────────────
+  const promPorExamen = examenes.map((ex: any) => {
+    const ns = notas.filter((n: any) => n.examen_id === ex.id && !n.ausente && n.nota !== null).map((n: any) => n.nota)
+    const ausentes = notas.filter((n: any) => n.examen_id === ex.id && n.ausente).length
+    const prom = ns.length > 0 ? Math.round(ns.reduce((s: number, n: number) => s + n, 0) / ns.length) : null
+    const aprobados = ns.filter((n: number) => n >= 60).length
+    return { ...ex, prom, aprobados, total: ns.length, ausentes }
+  })
+
+  return (
+    <div className="fade-in">
+
+      {/* KPIs generales */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px',marginBottom:'16px'}}>
+        {[
+          { label:'Asistencia prom.',  val: promAsistencia !== null ? `${promAsistencia}%` : '—', color: promAsistencia !== null ? (promAsistencia >= 75 ? 'var(--green)' : promAsistencia >= 50 ? 'var(--amber)' : 'var(--red)') : 'var(--text3)' },
+          { label:'Promedio notas',    val: promGeneralNotas !== null ? `${promGeneralNotas}` : '—', color: promGeneralNotas !== null ? (promGeneralNotas >= 70 ? 'var(--green)' : promGeneralNotas >= 50 ? 'var(--amber)' : 'var(--red)') : 'var(--text3)' },
+          { label:'Clases dictadas',   val: totalClases, color:'var(--v)' },
+        ].map(k => (
+          <div key={k.label} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'14px',textAlign:'center'}}>
+            <div style={{fontSize:'24px',fontWeight:800,color:k.color}}>{k.val}</div>
+            <div style={{fontSize:'10px',color:'var(--text3)',fontWeight:600,marginTop:'3px'}}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Asistencia por alumno */}
+      {totalClases > 0 && (
+        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
+          <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'12px'}}>
+            Asistencia por alumno
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+            {asistPorAlumno.map((al: any) => (
+              <div key={al.id}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'3px'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                    <div style={{width:28,height:28,borderRadius:'8px',background:al.color||'var(--v)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'#fff',flexShrink:0}}>
+                      {al.nombre?.[0]}{al.apellido?.[0]}
+                    </div>
+                    <div style={{fontSize:'13px',fontWeight:600}}>{al.nombre} {al.apellido}</div>
+                  </div>
+                  <div style={{display:'flex',gap:'10px',alignItems:'center'}}>
+                    <span style={{fontSize:'10px',color:'var(--green)'}}>✓{al.presentes}</span>
+                    <span style={{fontSize:'10px',color:'var(--red)'}}>✗{al.ausentes}</span>
+                    <span style={{fontSize:'10px',color:'var(--amber)'}}>T{al.tardes}</span>
+                    <span style={{fontSize:'13px',fontWeight:800,color: al.pct === null ? 'var(--text3)' : al.pct >= 75 ? 'var(--green)' : al.pct >= 50 ? 'var(--amber)' : 'var(--red)',minWidth:36,textAlign:'right'}}>
+                      {al.pct !== null ? `${al.pct}%` : '—'}
+                    </span>
+                  </div>
+                </div>
+                {al.pct !== null && (
+                  <div style={{height:'5px',background:'var(--border)',borderRadius:'10px',overflow:'hidden',marginLeft:36}}>
+                    <div style={{height:'100%',width:`${al.pct}%`,background: al.pct >= 75 ? 'var(--green)' : al.pct >= 50 ? 'var(--amber)' : 'var(--red)',borderRadius:'10px',transition:'width .4s'}} />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Promedio por examen */}
+      {promPorExamen.length > 0 && (
+        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
+          <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'12px'}}>
+            Resultados por examen
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+            {promPorExamen.map((ex: any) => (
+              <div key={ex.id} style={{borderBottom:'1px solid var(--border)',paddingBottom:'10px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'6px'}}>
+                  <div>
+                    <div style={{fontSize:'13px',fontWeight:700}}>{ex.nombre}</div>
+                    <div style={{fontSize:'11px',color:'var(--text3)'}}>
+                      {ex.total} nota{ex.total!==1?'s':''} · {ex.ausentes} ausente{ex.ausentes!==1?'s':''} · {ex.aprobados} aprobado{ex.aprobados!==1?'s':''}
+                    </div>
+                  </div>
+                  <div style={{textAlign:'right',flexShrink:0,marginLeft:'12px'}}>
+                    <div style={{fontSize:'22px',fontWeight:800,color: ex.prom === null ? 'var(--text3)' : ex.prom >= 70 ? 'var(--green)' : ex.prom >= 50 ? 'var(--amber)' : 'var(--red)'}}>
+                      {ex.prom !== null ? ex.prom : '—'}
+                    </div>
+                    <div style={{fontSize:'10px',color:'var(--text3)'}}>promedio</div>
+                  </div>
+                </div>
+                {ex.total > 0 && (
+                  <div style={{height:'6px',background:'var(--border)',borderRadius:'10px',overflow:'hidden'}}>
+                    <div style={{height:'100%',width:`${(ex.aprobados/ex.total)*100}%`,background:'var(--green)',borderRadius:'10px',transition:'width .4s'}} />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Ranking de notas */}
+      {promediosPorAlumno.length > 0 && (
+        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
+          <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'12px'}}>
+            Ranking de notas del grupo
+          </div>
+          <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+            {promediosPorAlumno.map((al: any, i: number) => (
+              <div key={al.id} style={{display:'flex',alignItems:'center',gap:'10px'}}>
+                <div style={{width:20,fontSize:'11px',fontWeight:700,color: i===0?'#c9a227':i===1?'#9ea0a3':i===2?'#cd7f32':'var(--text3)',textAlign:'center',flexShrink:0}}>
+                  {i===0?'🥇':i===1?'🥈':i===2?'🥉':`${i+1}°`}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'13px',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{al.nombre} {al.apellido}</div>
+                  <div style={{fontSize:'10px',color:'var(--text3)'}}>{al.cantExamenes} evaluacion{al.cantExamenes!==1?'es':''}</div>
+                </div>
+                <div style={{flex:2,height:'6px',background:'var(--border)',borderRadius:'10px',overflow:'hidden'}}>
+                  <div style={{height:'100%',width:`${al.promedio}%`,background: al.promedio >= 70 ? 'var(--green)' : al.promedio >= 50 ? 'var(--amber)' : 'var(--red)',borderRadius:'10px',transition:'width .4s'}} />
+                </div>
+                <div style={{fontSize:'14px',fontWeight:800,color: al.promedio >= 70 ? 'var(--green)' : al.promedio >= 50 ? 'var(--amber)' : 'var(--red)',minWidth:30,textAlign:'right',flexShrink:0}}>
+                  {al.promedio}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {examenes.length === 0 && totalClases === 0 && (
+        <div style={{textAlign:'center',padding:'48px 24px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',color:'var(--text3)'}}>
+          <div style={{fontSize:'28px',marginBottom:'8px'}}>📊</div>
+          <div style={{fontWeight:600,marginBottom:'4px'}}>Sin datos todavía</div>
+          <div style={{fontSize:'13px'}}>Las estadísticas aparecen cuando hay clases registradas o exámenes cargados</div>
+        </div>
+      )}
+
+    </div>
+  )
+}
