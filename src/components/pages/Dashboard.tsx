@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/auth-context'
-import { useAlumnos, useProfesoras, useCursos, store } from '@/lib/hooks'
+import { useAlumnos, useProfesoras, useCursos, useMiProfesora, store } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
 import { showToast } from '../Toast'
 import { apiHeaders } from '@/lib/hooks'
@@ -30,6 +30,7 @@ export default function Dashboard() {
   const { alumnos, loading: loadA } = useAlumnos()
   const { profesoras } = useProfesoras()
   const { cursos } = useCursos()
+  const { miProfesora } = useMiProfesora()
 
   const [alumnosSinCurso, setAlumnosSinCurso] = useState(0)
   const [cuotasPendientes, setCuotasPendientes] = useState(0)
@@ -60,7 +61,12 @@ export default function Dashboard() {
 
   const cursosHoy = cursos.filter(c => {
     const d = c.dias || ''
-    return diaVariants.some(v => d.includes(v))
+    const matchDia = diaVariants.some(v => d.includes(v))
+    // Si es profesora, solo mostrar sus propios cursos
+    if (usuario?.rol === 'profesora' && miProfesora) {
+      return matchDia && c.profesora_id === miProfesora.id
+    }
+    return matchDia
   }).sort((a,b) => (a.hora_inicio||'').localeCompare(b.hora_inicio||''))
 
   useEffect(() => {
@@ -93,9 +99,30 @@ export default function Dashboard() {
     const cargarCumpleanos = async () => {
       const sb = createClient()
       const hoy = new Date()
-      const { data: als } = await sb.from('alumnos')
-        .select('id, nombre, apellido, fecha_nacimiento, color')
-        .eq('activo', true).not('fecha_nacimiento', 'is', null)
+      let query
+
+      if (usuario?.rol === 'profesora' && miProfesora?.id) {
+        // Profesora: solo alumnos de sus propios cursos
+        const { data: cursosProf } = await sb
+          .from('cursos').select('id').eq('profesora_id', miProfesora.id)
+        const cursoIds = (cursosProf || []).map((c: any) => c.id)
+        if (cursoIds.length === 0) { setCumpleanos([]); return }
+        const { data: relaciones } = await sb
+          .from('cursos_alumnos').select('alumno_id').in('curso_id', cursoIds)
+        const alumnoIds = [...new Set((relaciones || []).map((r: any) => r.alumno_id))]
+        if (alumnoIds.length === 0) { setCumpleanos([]); return }
+        query = sb.from('alumnos')
+          .select('id, nombre, apellido, fecha_nacimiento, color')
+          .eq('activo', true).not('fecha_nacimiento', 'is', null)
+          .in('id', alumnoIds)
+      } else {
+        // Director/coordinadora/secretaria: todos los alumnos
+        query = sb.from('alumnos')
+          .select('id, nombre, apellido, fecha_nacimiento, color')
+          .eq('activo', true).not('fecha_nacimiento', 'is', null)
+      }
+
+      const { data: als } = await query
       if (!als) return
       const proximos: any[] = []
       als.forEach((a: any) => {
@@ -111,7 +138,7 @@ export default function Dashboard() {
       setCumpleanos(proximos)
     }
     cargarCumpleanos()
-  }, [])
+  }, [miProfesora?.id, usuario?.rol])
 
   const abrirAsistencia = async (curso: any) => {
     const sb = createClient()
