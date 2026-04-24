@@ -112,7 +112,7 @@ export default function DashboardEjecutivo() {
       // Alumnos en riesgo: traer últimas clases por alumno para detectar ausencias consecutivas
       const { data: riesgoData } = await sb
         .from('asistencia_clases')
-        .select('alumno_id, presente, clases(id, fecha, curso_id, cursos(nombre)), alumnos(nombre, apellido, nivel, cuota_mensual)')
+        .select('alumno_id, estado, clase_id, clases(id, fecha, cursos(nombre)), alumnos(nombre, apellido, nivel, cuota_mensual)')
         .order('clase_id', { ascending: false })
         .limit(2000)
       setAsistenciaRiesgo(riesgoData || [])
@@ -321,7 +321,7 @@ export default function DashboardEjecutivo() {
       }
       porAlumno[id].registros.push({
         fecha: r.clases.fecha || '',
-        presente: r.presente || '',
+        presente: r.estado || '',
         curso: r.clases.cursos?.nombre || '—',
       })
     })
