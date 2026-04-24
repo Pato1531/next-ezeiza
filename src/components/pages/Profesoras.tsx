@@ -7,7 +7,6 @@ import { createClient } from '@/lib/supabase'
 function hoy() { return new Date().toISOString().split('T')[0] }
 const IS = { width:'100%', padding:'10px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'14px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
 
-const NIVELES = ['Básico','Intermedio','Advanced','Cambridge']
 const COLORES = ['#652f8d','#2d7a4f','#1a6b8a','#c0392b','#b45309','#1B6B4A','#7d3aab','#2d5016']
 const MESES_S = ['Ene','Feb','Mar','Abr','May','Jun']
 const TIPOS_LIC = ['Licencia médica','Licencia personal','Ausencia justificada','Ausencia injustificada','Vacaciones','Reemplazo docente']
@@ -48,7 +47,7 @@ export default function Profesoras() {
   }
   const irALista = () => { setSelId(null); setVista('lista') }
   const irAFormNuevo = () => {
-    setForm({ nombre:'', apellido:'', email:'', edad:0, telefono:'', nivel:'Básico', tipo_colaborador:'docente', tarifa_hora:0, horas_semana:0, color: COLORES[profesoras.length % COLORES.length] })
+    setForm({ nombre:'', apellido:'', email:'', edad:0, telefono:'', tipo_colaborador:'docente', tarifa_hora:0, horas_semana:0, color: COLORES[profesoras.length % COLORES.length] })
     setVista('form')
   }
   const irAFormEditar = () => {
@@ -159,7 +158,7 @@ export default function Profesoras() {
           <Av color={p.color} size={44}>{p.initials||`${p.nombre[0]}${p.apellido[0]}`}</Av>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:'15px',fontWeight:600}}>{p.nombre} {p.apellido} {p.tipo_colaborador && p.tipo_colaborador !== 'docente' && <span style={{fontSize:'10px',fontWeight:600,padding:'1px 6px',borderRadius:'8px',background:'var(--bluel)',color:'var(--blue)',marginLeft:'6px'}}>{p.tipo_colaborador}</span>}</div>
-            <div style={{fontSize:'12.5px',color:'var(--text2)',marginTop:'2px'}}>{p.nivel} · {p.horas_semana}hs/sem</div>
+            <div style={{fontSize:'12.5px',color:'var(--text2)',marginTop:'2px'}}>{p.horas_semana}hs/sem</div>
           </div>
           <Badge cls="b-green">95%</Badge>
           <Chevron />
@@ -223,7 +222,6 @@ export default function Profesoras() {
               <div style={{fontSize:'20px',fontWeight:700}}>{sel.nombre} {sel.apellido}</div>
               <div style={{fontSize:'13px',color:'var(--text2)',marginTop:'3px'}}>{sel.email}</div>
               <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'8px'}}>
-                <Badge cls="b-purple">{sel.nivel}</Badge>
                 {!soloLectura && <Badge cls="b-green">${sel.tarifa_hora?.toLocaleString('es-AR')}/h</Badge>}
               </div>
             </div>
@@ -255,7 +253,6 @@ export default function Profesoras() {
             <FieldRO label="Teléfono" value={sel.telefono||'—'} />
           </Row2>
           <Row2>
-            <FieldRO label="Nivel" value={sel.nivel} />
             {!soloLectura && <FieldRO label="Tarifa/hora" value={`$${sel.tarifa_hora?.toLocaleString('es-AR')}`} />}
           </Row2>
           <FieldRO label="Horas por semana" value={`${sel.horas_semana}hs`} />
