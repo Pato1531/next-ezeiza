@@ -27,7 +27,7 @@ export default function DashboardEjecutivo() {
   const [bajasMes,      setBajasMes]      = useState<any[]>([])
   const [loading,          setLoading]          = useState(true)
   const [alumnosMesAnt,    setAlumnosMesAnt]    = useState<Set<string>>(new Set())
-  const [rentabilidadData, setRentabilidadData] = useState<any[]>([])
+  const [rentabilidadData, setRentabilidadData] = useState<{cursos:any[], feriados:Set<string>}>({cursos:[], feriados:new Set()})
   const [historico,        setHistorico]        = useState<any[]>([])
   const [asistenciaRiesgo, setAsistenciaRiesgo] = useState<any[]>([])
 
@@ -84,12 +84,22 @@ export default function DashboardEjecutivo() {
       const idsAnt = new Set<string>((pagosAntRes.data || []).map((p: any) => p.alumno_id))
       setAlumnosMesAnt(idsAnt)
 
-      // Rentabilidad: query directa con join a profesoras y cuotas
+      // Rentabilidad: query directa con dias y horario real del curso
       const { data: rentData } = await sb
         .from('cursos')
-        .select('id, nombre, nivel, profesora_id, profesoras(nombre, tarifa_hora, horas_semana), cursos_alumnos(alumnos(cuota_mensual))')
+        .select('id, nombre, nivel, profesora_id, dias, hora_inicio, hora_fin, profesoras(nombre, tarifa_hora), cursos_alumnos(alumnos(cuota_mensual))')
         .eq('activo', true)
-      setRentabilidadData(rentData || [])
+
+      // Feriados del mes desde agenda_eventos
+      const { data: feriadosData } = await sb
+        .from('agenda_eventos')
+        .select('fecha')
+        .eq('tipo', 'Feriado')
+        .gte('fecha', inicioMes)
+        .lte('fecha', finMes)
+
+      const feriadosDates = new Set((feriadosData || []).map((f: any) => f.fecha))
+      setRentabilidadData({ cursos: rentData || [], feriados: feriadosDates })
 
       // Histórico 12 meses: pagos agrupados por mes/anio
       const { data: histData } = await sb
@@ -188,17 +198,52 @@ export default function DashboardEjecutivo() {
   const alumnosPerdidos = alumnosMesAnt.size - alumnosQueRetuvimos
 
   // ── Rentabilidad por curso ────────────────────────────────────────────────
-  const rentabilidadCursos = rentabilidadData.map((c: any) => {
+  // Helper: calcular horas reales de clase en el mes para un curso
+  const calcularHorasCursoMes = (curso: any, feriados: Set<string>): number => {
+    if (!curso.dias || !curso.hora_inicio || !curso.hora_fin) return 0
+    // Duración de la clase en horas
+    const [h1, m1] = curso.hora_inicio.split(':').map(Number)
+    const [h2, m2] = curso.hora_fin.split(':').map(Number)
+    const duracionHoras = ((h2 * 60 + m2) - (h1 * 60 + m1)) / 60
+    if (duracionHoras <= 0) return 0
+
+    // Mapear días del string a números JS (0=Dom, 1=Lun, ..., 6=Sáb)
+    const mapaDias: Record<string, number> = {
+      'Lun': 1, 'Mar': 2, 'Mié': 3, 'Jue': 4, 'Vie': 5, 'Sáb': 6, 'Dom': 0,
+      'lun': 1, 'mar': 2, 'mie': 3, 'jue': 4, 'vie': 5, 'sab': 6, 'dom': 0,
+    }
+    const diasCurso = new Set(
+      curso.dias.split(/[\/,\s]+/).map((d: string) => mapaDias[d.trim()]).filter((n: any) => n !== undefined)
+    )
+    if (diasCurso.size === 0) return 0
+
+    // Contar días de clase en el mes actual, descontando feriados
+    let clasesEnMes = 0
+    const diasEnMes = new Date(anio, mes + 1, 0).getDate()
+    for (let d = 1; d <= diasEnMes; d++) {
+      const fecha = new Date(anio, mes, d)
+      const fechaStr = `${anio}-${String(mes + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      if (diasCurso.has(fecha.getDay()) && !feriados.has(fechaStr)) {
+        clasesEnMes++
+      }
+    }
+    return Math.round(clasesEnMes * duracionHoras * 10) / 10
+  }
+
+  const rentabilidadCursos = rentabilidadData.cursos.map((c: any) => {
     const prof = c.profesoras
     const inscriptos: any[] = c.cursos_alumnos || []
     const cantAlumnos = inscriptos.length
     const ingresosCurso = inscriptos.reduce((s: number, r: any) => s + (r.alumnos?.cuota_mensual || 0), 0)
-    const costoPorMes = prof ? (prof.tarifa_hora || 0) * (prof.horas_semana || 0) * 4 : 0
+    // Costo real: tarifa × horas reales de clase en el mes (contando días y feriados)
+    const horasReales = calcularHorasCursoMes(c, rentabilidadData.feriados)
+    const costoPorMes = prof ? (prof.tarifa_hora || 0) * horasReales : 0
     const margen = ingresosCurso - costoPorMes
     const pctMargen = ingresosCurso > 0 ? Math.round((margen / ingresosCurso) * 100) : 0
     return { id: c.id, nombre: c.nombre, nivel: c.nivel,
       profesora: prof ? prof.nombre : '—', cantAlumnos,
-      ingresos: ingresosCurso, costo: costoPorMes, margen, pctMargen }
+      ingresos: ingresosCurso, costo: costoPorMes, margen, pctMargen,
+      horasReales, detalle: `${horasReales}hs · $${prof?.tarifa_hora?.toLocaleString('es-AR') || 0}/h` }
   }).filter((c: any) => c.cantAlumnos > 0).sort((a: any, b: any) => b.margen - a.margen)
 
   // ── Días con más pagos ────────────────────────────────────────────────────
@@ -994,7 +1039,7 @@ export default function DashboardEjecutivo() {
                       <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'5px'}}>
                         <div>
                           <div style={{fontSize:'13.5px',fontWeight:700}}>{c.nombre}</div>
-                          <div style={{fontSize:'11px',color:'var(--text3)'}}>{c.profesora} · {c.cantAlumnos} alumnos</div>
+                          <div style={{fontSize:'11px',color:'var(--text3)'}}>{c.profesora} · {c.cantAlumnos} alumnos · {c.detalle}</div>
                         </div>
                         <div style={{textAlign:'right',flexShrink:0,marginLeft:'12px'}}>
                           <span style={{fontSize:'12px',fontWeight:700,background:bg,color,padding:'2px 10px',borderRadius:'20px'}}>
