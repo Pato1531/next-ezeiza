@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
-import { useCursos, useAlumnos } from '@/lib/hooks'
+import { useCursos, useAlumnos, store, storeTs } from '@/lib/hooks'
 
 const IS = { width:'100%', padding:'10px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'14px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
 
@@ -82,7 +82,12 @@ export default function CuotasPorCurso() {
     setAlumnosCurso(prev => prev.map(a => idsActualizados.has(a.id) ? { ...a, cuota_mensual: cuota } : a))
     setResultado({ ok, err })
     setAplicando(false)
-    if (ok > 0) setNuevaCuota('')
+    if (ok > 0) {
+      setNuevaCuota('')
+      // Invalidar cache global para que al volver se vean los cambios
+      delete store['alumnos']
+      delete storeTs['alumnos']
+    }
   }
 
   // Aplicar cuota individual
@@ -96,6 +101,9 @@ export default function CuotasPorCurso() {
     })
     await sb.from('alumnos').update({ cuota_mensual: cuotaNueva }).eq('id', alumnoId)
     setAlumnosCurso(prev => prev.map(a => a.id === alumnoId ? { ...a, cuota_mensual: cuotaNueva } : a))
+    // Invalidar cache global
+    delete store['alumnos']
+    delete storeTs['alumnos']
   }
 
   return (
