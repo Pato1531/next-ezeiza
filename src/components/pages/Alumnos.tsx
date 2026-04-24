@@ -85,7 +85,6 @@ export default function Alumnos() {
   const [soloSinCuota, setSoloSinCuota] = useState(false)
   const [soloSinTel, setSoloSinTel] = useState(false)
   const [soloSinDni, setSoloSinDni] = useState(false)
-  const [soloSinFecha, setSoloSinFecha] = useState(false)
   const [filtroPago, setFiltroPago] = useState<'todos'|'pagaron'|'no_pagaron'>('todos')
   const [mesFiltro, setMesFiltro] = useState(new Date().getMonth())
   const [alumnosSinCurso, setAlumnosSinCurso] = useState<Set<string>>(new Set())
@@ -232,20 +231,12 @@ export default function Alumnos() {
     setGuardandoBaja(true)
     const sb = createClient()
     try {
-      // Obtener el curso actual del alumno ANTES de borrarlo
-      const { data: cursoData } = await sb
-        .from('cursos_alumnos')
-        .select('cursos(nombre)')
-        .eq('alumno_id', sel.id)
-        .maybeSingle()
-      const cursoNombre = (cursoData as any)?.cursos?.nombre || '—'
-
       const [bajasRes, , alumnoRes] = await Promise.all([
         sb.from('bajas_alumnos').insert({
           alumno_id: sel.id,
           alumno_nombre: sel.nombre,
           alumno_apellido: sel.apellido,
-          curso_nombre: cursoNombre,
+          curso_nombre: '—',
           nivel: sel.nivel,
           cuota_mensual: sel.cuota_mensual,
           motivo: motivoBaja === 'Otro' ? motivoLibre : motivoBaja,
@@ -282,11 +273,13 @@ export default function Alumnos() {
     const matchSinCuota = !soloSinCuota || !a.cuota_mensual || a.cuota_mensual === 0
     const matchSinTel = !soloSinTel || (!a.telefono && !a.padre_telefono)
     const matchSinDni = !soloSinDni || (!a.dni)
-    const matchSinFecha = !soloSinFecha || (!a.fecha_nacimiento)
     const matchPago = filtroPago === 'todos' ? true
       : filtroPago === 'pagaron' ? alumnosConPagoMes.has(a.id)
       : !alumnosConPagoMes.has(a.id)
-    return matchBusq && matchSinCurso && matchSinCuota && matchSinTel && matchSinDni && matchSinFecha && matchPago
+    // No mostrar alumnos cuya fecha_alta sea posterior al mes visualizado
+    const primerDiaMesFiltro = new Date(new Date().getFullYear(), mesFiltro, 1)
+    const matchFechaAlta = !a.fecha_alta || new Date(a.fecha_alta + 'T12:00:00') <= new Date(primerDiaMesFiltro.getFullYear(), primerDiaMesFiltro.getMonth() + 1, 0)
+    return matchBusq && matchSinCurso && matchSinCuota && matchSinTel && matchSinDni && matchPago && matchFechaAlta
   })
 
   // No bloquear con loading — mostrar contenido aunque esté cargando
@@ -388,17 +381,8 @@ export default function Alumnos() {
             </span>
           )}
         </button>
-        <button onClick={() => setSoloSinFecha(!soloSinFecha)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'7px 14px',borderRadius:'20px',fontSize:'12.5px',fontWeight:600,cursor:'pointer',border:'1.5px solid',borderColor:soloSinFecha?'#1a6b8a':'var(--border)',background:soloSinFecha?'#e0f0f7':'var(--white)',color:soloSinFecha?'#1a6b8a':'var(--text2)',transition:'all .15s'}}>
-          <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M7 2v3M13 2v3M3 9h14"/></svg>
-          Sin fecha de nac.
-          {alumnos.filter((a:any) => !a.fecha_nacimiento).length > 0 && (
-            <span style={{background:soloSinFecha?'#1a6b8a':'var(--border)',color:soloSinFecha?'#fff':'var(--text2)',borderRadius:'20px',padding:'1px 7px',fontSize:'11px',fontWeight:700}}>
-              {alumnos.filter((a:any) => !a.fecha_nacimiento).length}
-            </span>
-          )}
-        </button>
-        {(soloSinCurso || soloSinCuota || soloSinTel || soloSinDni || soloSinFecha) && (
-          <button onClick={() => { setSoloSinCurso(false); setSoloSinCuota(false); setSoloSinTel(false); setSoloSinDni(false); setSoloSinFecha(false) }} style={{fontSize:'12px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}}>✕ Limpiar</button>
+        {(soloSinCurso || soloSinCuota || soloSinTel || soloSinDni) && (
+          <button onClick={() => { setSoloSinCurso(false); setSoloSinCuota(false); setSoloSinTel(false); setSoloSinDni(false) }} style={{fontSize:'12px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}}>✕ Limpiar</button>
         )}
       </div>
       {filtrados.map(a => {
