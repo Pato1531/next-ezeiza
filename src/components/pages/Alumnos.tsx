@@ -158,7 +158,7 @@ export default function Alumnos() {
         <td>${a.nivel || '—'}</td>
         <td>${a.cuota_mensual ? '$' + a.cuota_mensual.toLocaleString('es-AR') : '—'}</td>
         <td style="color:${pagado?'#2d7a4f':'#c0392b'};font-weight:600">${pagado ? '✓ Pagó' : '✗ Debe'}</td>
-        <td>${a.telefono || a.padre_telefono || '—'}</td>
+        <td>${a.dni || '—'}</td>
       </tr>`
     }).join('')
     const filtroLabel = [
@@ -183,7 +183,7 @@ export default function Alumnos() {
     <h1>Lista de alumnos</h1>
     <div class="sub">${fecha}${filtroLabel ? ' · ' + filtroLabel : ''}</div>
     <table>
-      <thead><tr><th>Alumno</th><th>Nivel</th><th>Cuota</th><th>${mesFiltroNombre}</th><th>Teléfono</th></tr></thead>
+      <thead><tr><th>Alumno</th><th>Nivel</th><th>Cuota</th><th>${mesFiltroNombre}</th><th>DNI</th></tr></thead>
       <tbody>${filas}</tbody>
     </table>
     <div class="total">${filtrados.length} alumno${filtrados.length!==1?'s':''} · Generado por EduGest</div>
@@ -192,16 +192,15 @@ export default function Alumnos() {
   }
 
   const exportarExcel = () => {
-    const headers = ['Apellido', 'Nombre', 'Nivel', 'Cuota mensual', mesFiltroNombre, 'Teléfono', 'Email', 'DNI', 'Fecha nacimiento']
+    const headers = ['Apellido', 'Nombre', 'Nivel', 'Cuota mensual', mesFiltroNombre, 'DNI', 'Email', 'Fecha nacimiento']
     const rows = filtrados.map((a:any) => [
       a.apellido,
       a.nombre,
       a.nivel || '',
       a.cuota_mensual || 0,
       alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe',
-      a.telefono || a.padre_telefono || '',
-      a.email || '',
       a.dni || '',
+      a.email || '',
       a.fecha_nacimiento || '',
     ])
     const bom = '\uFEFF'
