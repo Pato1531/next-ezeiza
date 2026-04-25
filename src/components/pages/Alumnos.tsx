@@ -158,7 +158,7 @@ export default function Alumnos() {
         <td>${a.nivel || '—'}</td>
         <td>${a.cuota_mensual ? '$' + a.cuota_mensual.toLocaleString('es-AR') : '—'}</td>
         <td style="color:${pagado?'#2d7a4f':'#c0392b'};font-weight:600">${pagado ? '✓ Pagó' : '✗ Debe'}</td>
-        <td>${a.dni || '—'}</td>
+        <td>${a.es_menor && a.padre_dni ? a.padre_dni + ' (tutor)' : a.dni || '—'}</td>
       </tr>`
     }).join('')
     const filtroLabel = [
@@ -199,7 +199,7 @@ export default function Alumnos() {
       a.nivel || '',
       a.cuota_mensual || 0,
       alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe',
-      a.dni || '',
+      (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '',
       a.email || '',
       a.fecha_nacimiento || '',
     ])
