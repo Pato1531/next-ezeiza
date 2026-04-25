@@ -147,6 +147,75 @@ export default function Alumnos() {
 
   const irADetalle = (id: string) => { setSelId(id); setTab('datos'); setVista('detalle') }
   const irALista = () => { setSelId(null); setVista('lista') }
+
+  // ── Exportar lista de alumnos ────────────────────────────────────────────
+  const exportarPDF = () => {
+    const fecha = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' })
+    const filas = filtrados.map((a:any) => {
+      const pagado = alumnosConPagoMes.has(a.id)
+      return `<tr>
+        <td>${a.apellido}, ${a.nombre}</td>
+        <td>${a.nivel || '—'}</td>
+        <td>${a.cuota_mensual ? '$' + a.cuota_mensual.toLocaleString('es-AR') : '—'}</td>
+        <td style="color:${pagado?'#2d7a4f':'#c0392b'};font-weight:600">${pagado ? '✓ Pagó' : '✗ Debe'}</td>
+        <td>${a.telefono || a.padre_telefono || '—'}</td>
+      </tr>`
+    }).join('')
+    const filtroLabel = [
+      busqueda ? `Búsqueda: "${busqueda}"` : '',
+      soloSinCurso ? 'Sin curso' : '',
+      soloSinCuota ? 'Sin cuota' : '',
+      filtroPago !== 'todos' ? (filtroPago === 'pagaron' ? `Pagaron ${mesFiltroNombre}` : `Deben ${mesFiltroNombre}`) : '',
+    ].filter(Boolean).join(' · ')
+    const win = window.open('', '_blank')!
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Alumnos</title>
+    <style>
+      body{font-family:Arial,sans-serif;padding:32px;color:#1a1020}
+      h1{font-size:22px;font-weight:800;color:#652f8d;margin:0 0 4px}
+      .sub{font-size:13px;color:#888;margin-bottom:24px}
+      table{width:100%;border-collapse:collapse;font-size:13px}
+      th{background:#652f8d;color:#fff;padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+      td{padding:8px 12px;border-bottom:1px solid #f0edf5}
+      tr:nth-child(even) td{background:#faf7fd}
+      .total{margin-top:16px;font-size:13px;color:#888}
+      @media print{body{padding:16px}}
+    </style></head><body>
+    <h1>Lista de alumnos</h1>
+    <div class="sub">${fecha}${filtroLabel ? ' · ' + filtroLabel : ''}</div>
+    <table>
+      <thead><tr><th>Alumno</th><th>Nivel</th><th>Cuota</th><th>${mesFiltroNombre}</th><th>Teléfono</th></tr></thead>
+      <tbody>${filas}</tbody>
+    </table>
+    <div class="total">${filtrados.length} alumno${filtrados.length!==1?'s':''} · Generado por EduGest</div>
+    <script>window.onload=()=>window.print()<\/script></body></html>`)
+    win.document.close()
+  }
+
+  const exportarExcel = () => {
+    const headers = ['Apellido', 'Nombre', 'Nivel', 'Cuota mensual', mesFiltroNombre, 'Teléfono', 'Email', 'DNI', 'Fecha nacimiento']
+    const rows = filtrados.map((a:any) => [
+      a.apellido,
+      a.nombre,
+      a.nivel || '',
+      a.cuota_mensual || 0,
+      alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe',
+      a.telefono || a.padre_telefono || '',
+      a.email || '',
+      a.dni || '',
+      a.fecha_nacimiento || '',
+    ])
+    const bom = '\uFEFF'
+    const csv = bom + [headers, ...rows]
+      .map((row:any[]) => row.map((v:any) => `"${String(v).replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `alumnos-${mesFiltroNombre.toLowerCase()}-${new Date().getFullYear()}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
   const irABaja = () => { setMotivoBaja(''); setMotivoLibre(''); setVista('baja') }
   const irABajasHistoricas = async () => {
     setVista('bajas_historicas')
@@ -396,6 +465,26 @@ export default function Alumnos() {
           <button onClick={() => { setSoloSinCurso(false); setSoloSinCuota(false); setSoloSinTel(false); setSoloSinDni(false); setSoloSinFecha(false) }} style={{fontSize:'12px',color:'var(--text3)',background:'none',border:'none',cursor:'pointer'}}>✕ Limpiar</button>
         )}
       </div>
+      {/* Barra de exportación */}
+      {filtrados.length > 0 && (
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'10px'}}>
+          <div style={{fontSize:'12px',color:'var(--text3)',fontWeight:500}}>
+            {filtrados.length} alumno{filtrados.length!==1?'s':''}
+          </div>
+          <div style={{display:'flex',gap:'6px'}}>
+            <button onClick={exportarExcel}
+              style={{display:'flex',alignItems:'center',gap:'5px',padding:'7px 12px',background:'var(--white)',color:'var(--green)',border:'1.5px solid var(--green)',borderRadius:'8px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
+              <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 16v1a1 1 0 001 1h10a1 1 0 001-1v-1M7 10l3 3 3-3M10 3v10"/></svg>
+              Excel
+            </button>
+            <button onClick={exportarPDF}
+              style={{display:'flex',alignItems:'center',gap:'5px',padding:'7px 12px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'8px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
+              <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 16v1a1 1 0 001 1h10a1 1 0 001-1v-1M7 10l3 3 3-3M10 3v10"/></svg>
+              PDF
+            </button>
+          </div>
+        </div>
+      )}
       {filtrados.map(a => {
         const col = NIVEL_COL[a.nivel]
         const pagado = alumnosConPagoMes.has(a.id)
