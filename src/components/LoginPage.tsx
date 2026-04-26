@@ -1,17 +1,54 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
+
+// ── Lee el instituto desde la DB por slug (NEXT_PUBLIC_INSTITUTO_SLUG).
+// ── Esto hace que el login sea dinámico para cualquier sede sin variables
+// ── de entorno adicionales como NEXT_PUBLIC_INSTITUTO_SIGLA o NOMBRE.
+function useInstitutoInfo() {
+  const [nombre,   setNombre]   = useState<string>('')
+  const [iniciales, setIniciales] = useState<string>('')
+
+  useEffect(() => {
+    const slug = process.env.NEXT_PUBLIC_INSTITUTO_SLUG
+    if (!slug) return
+
+    const sb = createClient()
+    sb.from('institutos')
+      .select('nombre')
+      .eq('slug', slug)
+      .single()
+      .then(({ data }) => {
+        if (!data?.nombre) return
+        setNombre(data.nombre)
+        // Generar iniciales: primeras letras de cada palabra, máximo 2
+        const inis = data.nombre
+          .split(' ')
+          .map((p: string) => p[0]?.toUpperCase() || '')
+          .filter(Boolean)
+          .slice(0, 2)
+          .join('')
+        setIniciales(inis)
+      })
+      .catch(() => {})
+  }, [])
+
+  return {
+    nombre:    nombre    || 'Panel de gestión del instituto',
+    iniciales: iniciales || 'EG',
+  }
+}
 
 export default function LoginPage() {
   const supabase = createClient()
+  const { nombre, iniciales } = useInstitutoInfo()
 
   const [email,    setEmail]    = useState('')
   const [password, setPassword] = useState('')
   const [error,    setError]    = useState('')
   const [loading,  setLoading]  = useState(false)
 
-  // Estado para el flujo de reset de contraseña
   const [showReset,    setShowReset]    = useState(false)
   const [resetEmail,   setResetEmail]   = useState('')
   const [resetSent,    setResetSent]    = useState(false)
@@ -23,8 +60,6 @@ export default function LoginPage() {
     setError('')
     setLoading(true)
 
-    // Solo limpiar el localStorage local — NO llamar signOut()
-    // signOut() sobre el singleton puede dejar el cliente en estado inválido
     try { localStorage.removeItem('ne_session_uid') } catch {}
 
     const { error } = await supabase.auth.signInWithPassword({ email, password })
@@ -36,8 +71,6 @@ export default function LoginPage() {
       )
       setLoading(false)
     }
-    // Si no hay error, el auth-context detecta la sesión y monta AppShell
-    // No seteamos loading(false) para evitar parpadeo — el componente se desmonta
   }
 
   async function handleReset(e: React.FormEvent) {
@@ -65,7 +98,7 @@ export default function LoginPage() {
       <div style={s.page}>
         <div style={s.card}>
           <div style={s.logoWrap}>
-            <div style={s.logoIcon}>{(process.env.NEXT_PUBLIC_INSTITUTO_SIGLA || 'NE')}</div>
+            <div style={s.logoIcon}>{iniciales}</div>
           </div>
           <h1 style={s.title}>Recuperar contraseña</h1>
 
@@ -128,10 +161,10 @@ export default function LoginPage() {
     <div style={s.page}>
       <div style={s.card}>
         <div style={s.logoWrap}>
-          <div style={s.logoIcon}>{(process.env.NEXT_PUBLIC_INSTITUTO_SIGLA || 'NE')}</div>
+          <div style={s.logoIcon}>{iniciales}</div>
         </div>
         <h1 style={s.title}>Iniciar sesión</h1>
-        <p style={s.subtitle}>{process.env.NEXT_PUBLIC_INSTITUTO_NOMBRE || 'Panel de gestión del instituto'}</p>
+        <p style={s.subtitle}>{nombre}</p>
 
         <form onSubmit={handleLogin}>
           <div style={s.field}>
@@ -174,8 +207,6 @@ export default function LoginPage() {
             ¿Olvidaste tu contraseña?
           </button>
         </div>
-
-
       </div>
     </div>
   )
