@@ -103,7 +103,6 @@ class PanelErrorBoundary extends React.Component<
 }
 
 function NavEditor({ allAllowed, navOrdered, MAX_NAV, saveNavCustom, onClose }: any) {
-  // Estado LOCAL — no depende de props entre re-renders del padre
   const [activeIds, setActiveIds] = React.useState<string[]>(
     () => navOrdered.slice(0, MAX_NAV).map((n: any) => n.id)
   )
@@ -113,14 +112,13 @@ function NavEditor({ allAllowed, navOrdered, MAX_NAV, saveNavCustom, onClose }: 
       const estaActivo = prev.includes(id)
       let next: string[]
       if (estaActivo) {
-        if (prev.length <= 3) return prev   // mínimo 3
+        if (prev.length <= 3) return prev
         next = prev.filter(i => i !== id)
       } else {
         next = prev.length < MAX_NAV
           ? [...prev, id]
           : [...prev.slice(0, MAX_NAV - 1), id]
       }
-      // Persistir inmediatamente
       const resto = allAllowed.map((n: any) => n.id).filter((i: string) => !next.includes(i))
       saveNavCustom([...next, ...resto])
       return next
@@ -185,11 +183,9 @@ function NavEditor({ allAllowed, navOrdered, MAX_NAV, saveNavCustom, onClose }: 
 }
 
 export default function AppShell() {
-  const { usuario, puedeVer } = useAuth()
+  // ── instituto agregado al destructuring para leer el nombre desde DB ─────
+  const { usuario, instituto, puedeVer } = useAuth()
 
-  // ── INICIO DE PAGE: sin lazy-initializer con puedeVer (crash SSR) ──────────
-  // Se inicializa en 'dashboard' siempre. El useEffect de abajo ajusta si
-  // el usuario no tiene permiso. Así evitamos llamar puedeVer() durante SSR.
   const [page, setPage] = useState<string>('dashboard')
   const [pageReady, setPageReady] = useState(false)
 
@@ -207,7 +203,6 @@ export default function AppShell() {
   const [busqResultados, setBusqResultados] = useState<{tipo:string;id:string;titulo:string;sub:string;color?:string;nav:string}[]>([])
   const [busqLoading, setBusqLoading] = useState(false)
 
-  // Toast global: escuchar pago-registrado
   useEffect(() => {
     const handler = (e: Event) => {
       const d = (e as CustomEvent).detail
@@ -218,7 +213,6 @@ export default function AppShell() {
     return () => window.removeEventListener('pago-registrado', handler)
   }, [])
 
-  // Búsqueda global con debounce
   useEffect(() => {
     if (!busqGlobalQ.trim() || busqGlobalQ.length < 2) { setBusqResultados([]); return }
     const t = setTimeout(async () => {
@@ -232,11 +226,9 @@ export default function AppShell() {
           sb.from('profesoras').select('id,nombre,apellido,color').eq('activo',true).limit(3),
         ])
         const resultados: any[] = []
-        // Alumnos — filtrar client-side para combinar nombre+apellido
         ;(alRes.data||[]).filter((a:any) => `${a.nombre} ${a.apellido}`.toLowerCase().includes(q)).forEach((a:any) =>
           resultados.push({ tipo:'alumno', id:a.id, titulo:`${a.nombre} ${a.apellido}`, sub:a.nivel||'Alumno', color:a.color, nav:'alumnos' })
         )
-        // También buscar por nombre
         const alRes2 = await sb.from('alumnos').select('id,nombre,apellido,nivel,color').eq('activo',true).ilike('nombre', `%${q}%`).limit(5)
         ;(alRes2.data||[]).filter((a:any) => !resultados.some(r=>r.id===a.id)).forEach((a:any) =>
           resultados.push({ tipo:'alumno', id:a.id, titulo:`${a.nombre} ${a.apellido}`, sub:a.nivel||'Alumno', color:a.color, nav:'alumnos' })
@@ -254,7 +246,6 @@ export default function AppShell() {
     return () => clearTimeout(t)
   }, [busqGlobalQ])
 
-  // Ajustar página inicial según permisos del usuario (solo en cliente)
   useEffect(() => {
     if (!usuario) return
     try {
@@ -330,14 +321,12 @@ export default function AppShell() {
   }
 
   if (!usuario) return null
-  // Mientras se determina la página correcta, mostrar spinner mínimo
   if (!pageReady) return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }} />
   )
 
   const allAllowed = ALL_NAV.filter(n => puedeVer(n.id))
   const MAX_NAV = 5
-  // Nav personalizado: reordenar según preferencia del usuario
   const navOrdered = navCustom
     ? [...navCustom.filter(id => allAllowed.some(n => n.id === id)).map(id => allAllowed.find(n => n.id === id)!),
        ...allAllowed.filter(n => !navCustom.includes(n.id))]
@@ -380,9 +369,10 @@ export default function AppShell() {
               <path d="M16 5v22M5 11l11 10 11-10" />
             </svg>
           </div>
+          {/* ── Nombre del instituto desde DB — dinámico para todas las sedes ── */}
           <div style={{ fontSize: '16px', fontWeight: 700, letterSpacing: '-.2px' }}>
             {(() => {
-              const nombre = process.env.NEXT_PUBLIC_INSTITUTO_NOMBRE || 'Next Ezeiza'
+              const nombre = instituto?.nombre || 'EduGest'
               const partes = nombre.split(' ')
               const primera = partes[0]
               const resto = partes.slice(1).join(' ')
@@ -497,7 +487,6 @@ export default function AppShell() {
         )}
       </nav>
 
-      {/* EDITOR NAV PERSONALIZADO */}
       {/* BUSCADOR GLOBAL */}
       {busqGlobalOpen && (
         <div style={{ position:'fixed', inset:0, zIndex:300, background:'rgba(20,0,40,.5)' }} onClick={() => setBusqGlobalOpen(false)}>
