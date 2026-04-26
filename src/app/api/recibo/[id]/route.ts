@@ -15,10 +15,18 @@ export async function GET(
   try {
     const sb = getSupabase()
 
-    // Cargar el pago principal
+    // ── Un solo query: pago + alumno + instituto en un JOIN ──────────────────
+    // Sin round-trips adicionales. Escala igual para cualquier cantidad de sedes.
     const { data: p, error } = await sb
       .from('pagos_alumnos')
-      .select('*, alumnos(nombre, apellido, dni, nivel, cuota_mensual, padre_nombre, es_menor)')
+      .select(`
+        *,
+        alumnos (
+          nombre, apellido, dni, nivel,
+          cuota_mensual, padre_nombre, es_menor,
+          institutos ( nombre, ciudad )
+        )
+      `)
       .eq('id', params.id)
       .single()
 
@@ -26,7 +34,22 @@ export async function GET(
       return new NextResponse('Recibo no encontrado', { status: 404 })
     }
 
-    // Cargar TODOS los pagos del alumno en el mismo mes/año (cuota + matrícula)
+    const al   = p.alumnos as any
+    const inst = al?.institutos as any
+
+    // ── Datos del instituto — dinámico para cualquier sede ───────────────────
+    const institutoNombre    = inst?.nombre || 'EduGest'
+    const ciudad             = inst?.ciudad || 'Buenos Aires'
+    const institutoSubtitulo = inst?.nombre
+      ? `${inst.nombre} English Institute · ${ciudad}`
+      : 'Instituto de Inglés · Buenos Aires'
+
+    // Partes visuales: primera palabra en bold, resto normal (ej: "Next Prueba")
+    const partesNombre  = institutoNombre.split(' ')
+    const nombrePrimera = partesNombre[0]
+    const nombreResto   = partesNombre.slice(1).join(' ')
+
+    // ── Todos los pagos del alumno en el mismo mes/año ───────────────────────
     const { data: todosPagos } = await sb
       .from('pagos_alumnos')
       .select('id, monto, tipo, metodo, fecha_pago')
@@ -35,22 +58,16 @@ export async function GET(
       .eq('anio', p.anio)
       .order('tipo', { ascending: true })
 
-    const al = p.alumnos
-    const num = params.id.slice(0, 6).toUpperCase()
+    const num   = params.id.slice(0, 6).toUpperCase()
     const fecha = p.fecha_pago
       ? new Date(p.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })
       : new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })
 
-    // Nombre del destinatario (padre si es menor)
-    const destinatario = al?.es_menor && al?.padre_nombre
-      ? al.padre_nombre
-      : `${al?.nombre} ${al?.apellido}`
-
-    // Construir líneas de detalle de pago
     const lineasPago = (todosPagos || [p]).map((pg: any) => {
-      const label = pg.tipo === 'matricula' ? 'Matrícula'
+      const label =
+        pg.tipo === 'matricula'     ? 'Matrícula'
         : pg.tipo === 'proporcional' ? `Monto proporcional ${p.mes} ${p.anio}`
-        : pg.tipo === 'recargo' ? `Cuota con recargo ${p.mes} ${p.anio}`
+        : pg.tipo === 'recargo'      ? `Cuota con recargo ${p.mes} ${p.anio}`
         : `Cuota ${p.mes} ${p.anio}`
       return `
         <div class="linea-pago">
@@ -59,28 +76,36 @@ export async function GET(
         </div>`
     }).join('')
 
-    const totalMonto = (todosPagos || [p]).reduce((acc: number, pg: any) => acc + (pg.monto || 0), 0)
+    const totalMonto   = (todosPagos || [p]).reduce((acc: number, pg: any) => acc + (pg.monto || 0), 0)
     const cuotaMensual = al?.cuota_mensual || 0
-    const ok = totalMonto >= cuotaMensual
+    const ok   = totalMonto >= cuotaMensual
     const parc = totalMonto > 0 && totalMonto < cuotaMensual
     const estadoLabel = ok ? 'Completo' : parc ? 'Parcial' : 'Pendiente'
-    const estadoColor = ok ? '#2d7a4f' : parc ? '#b45309' : '#c0392b'
-    const estadoBg = ok ? '#e6f4ec' : parc ? '#fef3cd' : '#fdeaea'
-    const dniRow = al?.dni ? `<div class="fila"><div class="fila-lab">DNI</div><div class="fila-val">${al.dni}</div></div>` : ''
-    const tieneMatricula = (todosPagos || []).some((pg: any) => pg.tipo === 'matricula')
+    const estadoColor = ok ? '#2d7a4f'  : parc ? '#b45309' : '#c0392b'
+    const estadoBg    = ok ? '#e6f4ec'  : parc ? '#fef3cd' : '#fdeaea'
+
+    const dniRow = al?.dni
+      ? `<div class="fila"><div class="fila-lab">DNI</div><div class="fila-val">${al.dni}</div></div>`
+      : ''
+
+    const tieneMatricula    = (todosPagos || []).some((pg: any) => pg.tipo === 'matricula')
     const tieneProporcional = (todosPagos || []).some((pg: any) => pg.tipo === 'proporcional')
-    const tieneRecargo = (todosPagos || []).some((pg: any) => pg.tipo === 'recargo')
-    const badgeExtra = tieneMatricula ? 'Incluye matrícula' : tieneProporcional ? 'Incluye proporcional' : tieneRecargo ? 'Incluye recargo' : ''
+    const tieneRecargo      = (todosPagos || []).some((pg: any) => pg.tipo === 'recargo')
+    const badgeExtra =
+      tieneMatricula     ? 'Incluye matrícula'
+      : tieneProporcional ? 'Incluye proporcional'
+      : tieneRecargo      ? 'Incluye recargo'
+      : ''
 
     const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta property="og:title" content="Recibo Next Ezeiza — $${totalMonto.toLocaleString('es-AR')}" />
+  <meta property="og:title" content="Recibo ${institutoNombre} — $${totalMonto.toLocaleString('es-AR')}" />
   <meta property="og:description" content="${al?.nombre} ${al?.apellido} · ${p.mes} ${p.anio} · ${p.metodo || 'Efectivo'}" />
-  <meta property="og:site_name" content="Next Ezeiza English Institute" />
-  <title>Recibo ${al?.nombre} ${al?.apellido} — Next Ezeiza</title>
+  <meta property="og:site_name" content="${institutoSubtitulo}" />
+  <title>Recibo ${al?.nombre} ${al?.apellido} — ${institutoNombre}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Arial, Helvetica, sans-serif; background: #f5f0fa; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 24px 16px; }
@@ -113,7 +138,7 @@ export async function GET(
 <body>
   <div class="wrap">
     <div class="hdr">
-      <div class="logo">Next <span>Ezeiza</span></div>
+      <div class="logo">${nombrePrimera}${nombreResto ? ` <span>${nombreResto}</span>` : ''}</div>
       <div class="rec-num">Comprobante #${num} &middot; ${fecha}</div>
     </div>
     <div class="monto-sec">
@@ -134,7 +159,7 @@ export async function GET(
       </div>
     </div>
     <button class="print-btn" onclick="window.print()">Guardar / Imprimir</button>
-    <div class="footer">Next Ezeiza English Institute &middot; Ezeiza, Buenos Aires</div>
+    <div class="footer">${institutoSubtitulo}</div>
   </div>
 </body>
 </html>`
