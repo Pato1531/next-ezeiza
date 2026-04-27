@@ -899,15 +899,9 @@ function abrirPDF(titulo: string, contenido: string) {
 const Av = ({color,size,children}:any) => <div style={{width:size,height:size,borderRadius:Math.round(size*.32)+'px',background:color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:size*.28+'px',fontWeight:700,color:'#fff',flexShrink:0}}>{children}</div>
 const btnStyle = (bg: string) => ({display:'flex',alignItems:'center',gap:'6px',padding:'10px 16px',background:bg,color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}) as const
 
-// ── MÉTODOS DE PAGO ──
-let _firmaCache: string | null = null
-function getFirmaDirector() {
-  if (!_firmaCache) _firmaCache = 'data:image/png;base64,...'
-  return _firmaCache
-}
-
-
-// ── BOLETÍN DIGITAL ──
+// ── BOLETÍN DIGITAL (Opción A) ──
+// El HTML se genera en el servidor (/api/boletin/[alumnoId]) que lee el
+// instituto dinámicamente desde la DB. El frontend solo arma la URL y abre la pestaña.
 function BoletinSection({ alumnos }: any) {
   const [selAlumno, setSelAlumno] = useState('')
   const [periodo, setPeriodo] = useState('2° Trimestre')
@@ -919,138 +913,37 @@ function BoletinSection({ alumnos }: any) {
   const generar = async () => {
     if (!selAlumno) return alert('Seleccioná un alumno')
     setGenerando(true)
-    const sb = createClient()
-    const al = alumnos.find((a: any) => a.id === selAlumno)
-    if (!al) { setGenerando(false); return }
-    const [exRes, cuRes] = await Promise.all([
-      sb.from('notas_examenes').select('*, examenes(nombre,fecha,tipo)').eq('alumno_id', selAlumno),
-      sb.from('cursos_alumnos').select('cursos(id,nombre,nivel)').eq('alumno_id', selAlumno).limit(1)
-    ])
-    const notas = exRes.data || []
-    const cursoData = cuRes.data?.[0]?.cursos as any
-    const curso = cursoData?.nombre || '—'
-    const nivel = nivelManual || cursoData?.nivel || al.nivel || '—'
-    const promedio = notas.length ? Math.round(notas.reduce((s: number, n: any) => s + (n.nota || 0), 0) / notas.length) : null
-    const aprobados = notas.filter((n: any) => (n.nota || 0) >= 60 && !n.ausente).length
-    const hoy = new Date().toLocaleDateString('es-AR', {day:'numeric',month:'long',year:'numeric'})
-    const initials = `${al.nombre[0]}${al.apellido[0]}`
+    try {
+      const sb = createClient()
+      // Obtener el curso del alumno para pasarlo como parámetro
+      const cuRes = await sb
+        .from('cursos_alumnos')
+        .select('cursos(id,nombre,nivel)')
+        .eq('alumno_id', selAlumno)
+        .limit(1)
+      const cursoData = cuRes.data?.[0]?.cursos as any
+      const cursoId = cursoData?.id
 
-    const notaBadge = (n: any) => {
-      if (n.ausente) return { bg:'#fef3cd', color:'#b45309', label:'—' }
-      const v = n.nota ?? 0
-      if (v >= 80) return { bg:'#e6f4ec', color:'#2d7a4f', label: String(v) }
-      if (v >= 60) return { bg:'#e0f0f7', color:'#1a6b8a', label: String(v) }
-      return { bg:'#fdeaea', color:'#c0392b', label: String(v) }
+      if (!cursoId) {
+        alert('El alumno no tiene un curso asignado.')
+        setGenerando(false)
+        return
+      }
+
+      // Armar la URL de la API y abrir en nueva pestaña
+      // La ruta /api/boletin/[alumnoId] lee instituto, firma y director desde la DB
+      const params = new URLSearchParams({
+        curso_id: cursoId,
+        periodo:  `${periodo} ${anio}`,
+        ...(nivelManual ? { nivel: nivelManual } : {}),
+      })
+      window.open(`/api/boletin/${selAlumno}?${params.toString()}`, '_blank')
+    } catch (e) {
+      console.error('[Boletin]', e)
+      alert('Error al generar el boletín.')
+    } finally {
+      setGenerando(false)
     }
-
-    const filasExamenes = notas.length === 0
-      ? `<tr><td colspan="3" style="text-align:center;padding:20px 0;color:#9b8eaa;font-size:13px">Sin exámenes registrados para este período.</td></tr>`
-      : notas.map((n: any) => {
-          const b = notaBadge(n)
-          const estado = n.ausente ? 'Ausente' : (n.nota||0) >= 60 ? 'Aprobado' : 'Desaprobado'
-          const estadoColor = n.ausente ? '#b45309' : (n.nota||0) >= 60 ? '#2d7a4f' : '#c0392b'
-          return `<tr>
-            <td style="padding:11px 0;border-bottom:1px solid #f5f0fa;font-size:14px;color:#1a1020;vertical-align:middle">
-              ${n.examenes?.nombre||'Examen'}
-              ${n.examenes?.tipo ? `<span style="display:inline-block;background:#f5f0fa;color:#9b8eaa;border-radius:10px;font-size:10px;padding:2px 8px;margin-left:8px;font-weight:600;text-transform:uppercase">${n.examenes.tipo}</span>` : ''}
-            </td>
-            <td style="padding:11px 0;border-bottom:1px solid #f5f0fa;font-size:12px;color:#9b8eaa;white-space:nowrap;padding-right:12px">${n.examenes?.fecha ? new Date(n.examenes.fecha+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'}) : '—'}</td>
-            <td style="padding:11px 0;border-bottom:1px solid #f5f0fa;text-align:center">
-              <span style="display:inline-block;min-width:40px;height:30px;border-radius:6px;text-align:center;line-height:30px;font-weight:700;font-size:13px;padding:0 6px;background:${b.bg};color:${b.color}">${b.label}</span>
-            </td>
-          </tr>`
-        }).join('')
-
-    const html = `<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8">
-<title>Boletín — ${al.nombre} ${al.apellido}</title>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Lora:wght@400;600;700&family=Inter:wght@400;500;600&display=swap');
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',Arial,sans-serif;background:#f0eaf8;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px 48px}
-.doc{width:100%;max-width:560px;background:#fff;border-radius:20px;overflow:hidden;box-shadow:0 8px 40px rgba(101,47,141,.18)}
-.head{background:#fff;border-bottom:4px solid #652f8d;padding:28px 36px 22px}
-.head-inner{display:flex;justify-content:space-between;align-items:flex-start}
-.inst-block{display:flex;align-items:center;gap:14px}
-.inst-logo{width:50px;height:50px;background:#652f8d;border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-family:'Lora',Georgia,serif;font-size:18px;font-weight:700;flex-shrink:0}
-.inst-nombre{font-family:'Lora',Georgia,serif;font-size:17px;color:#1a1020}
-.inst-sub{font-size:10px;color:#9b8eaa;text-transform:uppercase;letter-spacing:.1em;margin-top:3px}
-.doc-tipo{text-align:right}
-.doc-titulo{font-family:'Lora',Georgia,serif;font-size:15px;color:#652f8d}
-.doc-periodo{font-size:12px;color:#9b8eaa;margin-top:4px}
-.alumno-strip{background:#f9f5fd;border-bottom:1px solid #ede8f5;padding:16px 36px;display:flex;justify-content:space-between;align-items:center}
-.alumno-nombre{font-family:'Lora',Georgia,serif;font-size:18px;color:#1a1020}
-.alumno-dni{font-size:12px;color:#9b8eaa;margin-top:3px}
-.curso-chip{background:#ede0f7;color:#652f8d;border-radius:20px;padding:5px 14px;font-size:12px;font-weight:600;white-space:nowrap;margin-left:16px}
-.body{padding:28px 36px}
-table{width:100%;border-collapse:collapse}
-th{font-size:10px;font-weight:700;color:#9b8eaa;text-transform:uppercase;letter-spacing:.1em;text-align:left;padding:0 0 12px;border-bottom:1px solid #ede8f5}
-th:last-child{text-align:center}
-tr:last-child td{border-bottom:none}
-.obs-block{margin-top:24px;background:#faf5fd;border-left:3px solid #652f8d;border-radius:0 10px 10px 0;padding:16px 18px}
-.obs-label{font-size:10px;font-weight:700;color:#652f8d;text-transform:uppercase;letter-spacing:.1em;margin-bottom:8px}
-.obs-text{font-size:13px;color:#5a4d6a;line-height:1.6}
-.firma-wrap{margin-top:36px;display:flex;justify-content:flex-end}
-.firma{text-align:center;min-width:180px}
-.firma-linea{border-top:1px solid #1a1020;margin-bottom:8px}
-.firma-nombre{font-size:13px;color:#1a1020;font-weight:600}
-.firma-rol{font-size:11px;color:#9b8eaa;margin-top:3px}
-.footer{background:#652f8d;margin-top:32px;padding:16px 36px;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:rgba(255,255,255,.65)}
-@media print{body{background:white;padding:0}.doc{box-shadow:none;border-radius:0;max-width:100%}}
-</style></head><body>
-<div class="doc">
-  <div class="head">
-    <div class="head-inner">
-      <div class="inst-block">
-        <div class="inst-logo">NE</div>
-        <div>
-          <div class="inst-nombre">Next Ezeiza</div>
-          <div class="inst-sub">Instituto de Inglés · Ezeiza, Buenos Aires</div>
-        </div>
-      </div>
-      <div class="doc-tipo">
-        <div class="doc-titulo">Boletín de Calificaciones</div>
-        <div class="doc-periodo">${periodo} ${anio}</div>
-      </div>
-    </div>
-  </div>
-  <div class="alumno-strip">
-    <div>
-      <div class="alumno-nombre">${al.nombre} ${al.apellido}</div>
-      ${al.dni ? `<div class="alumno-dni">DNI ${al.dni}</div>` : ''}
-    </div>
-    <span class="curso-chip">${curso}</span>
-  </div>
-  <div class="body">
-    <table>
-      <thead><tr><th>Evaluación</th><th>Fecha</th><th>Calificación</th></tr></thead>
-      <tbody>${filasExamenes}</tbody>
-    </table>
-    <div class="obs-block">
-      <div class="obs-label">Observaciones del docente</div>
-      <div class="obs-text">Sin observaciones registradas para este período.</div>
-    </div>
-    <div class="firma-wrap">
-      <div class="firma">
-        <img src="${getFirmaDirector()}" style="width:110px;height:55px;object-fit:contain;display:block;margin:0 auto 4px"/>
-        <div class="firma-linea"></div>
-        <div class="firma-nombre">Patricio Manganella</div>
-        <div class="firma-rol">Director del Instituto</div>
-      </div>
-    </div>
-  </div>
-  <div class="footer">
-    <span>Next Ezeiza English Institute</span>
-    <span>Emitido: ${hoy}</span>
-  </div>
-</div>
-<script>setTimeout(function(){window.print()},500)</script>
-</body></html>`
-    const blob = new Blob([html], {type:'text/html;charset=utf-8'})
-    const url = URL.createObjectURL(blob)
-    window.open(url, '_blank')
-    setTimeout(() => URL.revokeObjectURL(url), 15000)
-    setGenerando(false)
   }
 
   return (
@@ -1087,7 +980,11 @@ tr:last-child td{border-bottom:none}
   )
 }
 
-// ── CERTIFICADO DE ASISTENCIA ──
+
+// ── BOLETÍN DIGITAL ──
+// ── CERTIFICADO DE ASISTENCIA (Opción A) ──
+// El HTML se genera en el servidor (/api/certificado/[alumnoId]) que lee el
+// instituto, color, firma y director dinámicamente desde la DB.
 function CertificadoSection({ alumnos }: any) {
   const [selAlumno, setSelAlumno] = useState('')
   const [tipo, setTipo] = useState('Asistencia al curso de inglés')
@@ -1101,108 +998,40 @@ function CertificadoSection({ alumnos }: any) {
   const generar = async () => {
     if (!selAlumno) return alert('Seleccioná un alumno')
     setGenerando(true)
-    const al = alumnos.find((a: any) => a.id === selAlumno)
-    if (!al) { setGenerando(false); return }
-    const sb = createClient()
-    const cuRes = await sb.from('cursos_alumnos').select('cursos(nombre,nivel,dias,hora_inicio,hora_fin)').eq('alumno_id', selAlumno).limit(1)
-    const cursoData = cuRes.data?.[0]?.cursos as any
-    const curso = cursoData?.nombre || '—'
-    const nivel = nivelManual || cursoData?.nivel || al.nivel || '—'
-    const fmtDesde = new Date(desde+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
-    const fmtHasta = new Date(hasta+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
-    const hoy = new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
-    const anioActual = new Date().getFullYear()
-    const certNum = `CE-${anioActual}-${Math.floor(Math.random()*9000)+1000}`
+    try {
+      const sb = createClient()
+      // Obtener el curso del alumno
+      const cuRes = await sb
+        .from('cursos_alumnos')
+        .select('cursos(id,nombre,nivel)')
+        .eq('alumno_id', selAlumno)
+        .limit(1)
+      const cursoData = cuRes.data?.[0]?.cursos as any
+      const cursoId = cursoData?.id
 
-    const html = `<!DOCTYPE html>
-<html lang="es"><head><meta charset="UTF-8">
-<title>Certificado — ${al.nombre} ${al.apellido}</title>
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;0,700;1,400;1,600&family=Inter:wght@400;500;600&display=swap');
-*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',Arial,sans-serif;background:#f0eaf8;min-height:100vh;display:flex;align-items:flex-start;justify-content:center;padding:32px 16px 48px}
-.page{width:100%;max-width:620px;background:#fff;border:5px solid #652f8d;border-radius:4px;box-shadow:0 12px 48px rgba(101,47,141,.2)}
-.page-inner{border:1px solid rgba(101,47,141,.25);margin:10px;border-radius:2px;overflow:hidden}
-.head{background:#652f8d;color:#fff;padding:32px 48px 28px;text-align:center}
-.head-escudo{width:56px;height:56px;background:rgba(255,255,255,.15);border:2px solid rgba(255,255,255,.4);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;font-size:26px}
-.inst-nombre{font-family:'Lora',Georgia,serif;font-size:22px;font-weight:700;letter-spacing:.02em}
-.inst-sub{font-size:11px;opacity:.65;text-transform:uppercase;letter-spacing:.15em;margin-top:5px}
-.body{padding:40px 56px 32px;text-align:center}
-.cert-titulo{font-size:11px;font-weight:600;color:#9b8eaa;text-transform:uppercase;letter-spacing:.18em;margin-bottom:20px}
-.cert-certifica{font-family:'Lora',Georgia,serif;font-style:italic;font-size:16px;color:#5a4d6a;margin-bottom:14px}
-.cert-nombre-wrap{display:inline-block;padding-bottom:12px;border-bottom:2px solid #652f8d;margin-bottom:10px}
-.cert-nombre{font-family:'Lora',Georgia,serif;font-size:34px;font-weight:700;color:#1a1020;letter-spacing:-.5px}
-.cert-dni{font-size:13px;color:#9b8eaa;margin-bottom:28px}
-.cert-texto{font-family:'Lora',Georgia,serif;font-size:15px;color:#5a4d6a;line-height:1.85;max-width:440px;margin:0 auto 30px}
-.cert-datos{display:flex;justify-content:center;border:1px solid #ede8f5;border-radius:12px;overflow:hidden;margin:0 0 36px}
-.cert-dato{flex:1;padding:16px 12px;text-align:center;border-right:1px solid #ede8f5}
-.cert-dato:last-child{border-right:none}
-.cert-dato-val{font-family:'Lora',Georgia,serif;font-size:18px;font-weight:700;color:#652f8d}
-.cert-dato-label{font-size:10px;color:#9b8eaa;text-transform:uppercase;letter-spacing:.1em;margin-top:4px}
-.firmas{display:flex;justify-content:space-around;margin:8px 0 4px;padding-top:8px}
-.firma{text-align:center;min-width:160px}
-.firma-img{width:110px;height:55px;object-fit:contain;display:block;margin:0 auto 4px}
-.firma-linea{width:160px;border-top:1px solid #1a1020;margin:0 auto 8px}
-.firma-nombre{font-size:13px;color:#1a1020;font-weight:600}
-.firma-rol{font-size:11px;color:#9b8eaa;margin-top:3px}
-.footer{background:#f9f5fd;border-top:1px solid #ede8f5;padding:14px 36px;display:flex;justify-content:space-between;align-items:center;font-size:10px;color:#9b8eaa;font-family:'Courier New',monospace}
-@media print{body{background:white;padding:0}.page{box-shadow:none;max-width:100%}}
-</style></head><body>
-<div class="page">
-  <div class="page-inner">
-    <div class="head">
-      <div class="head-escudo">🎓</div>
-      <div class="inst-nombre">Next Ezeiza English Institute</div>
-      <div class="inst-sub">Ezeiza · Buenos Aires · Argentina</div>
-    </div>
-    <div class="body">
-      <div class="cert-titulo">Certificado de ${tipo}</div>
-      <div class="cert-certifica">La dirección del instituto certifica que</div>
-      <div class="cert-nombre-wrap">
-        <div class="cert-nombre">${al.nombre} ${al.apellido}</div>
-      </div>
-      ${al.dni ? `<div class="cert-dni">DNI ${al.dni}</div>` : '<div style="margin-bottom:28px"></div>'}
-      <div class="cert-texto">
-        es alumno/a regular del curso de inglés <strong style="color:#1a1020">${curso}</strong>,
-        con asistencia registrada en el período comprendido entre el <strong style="color:#1a1020">${fmtDesde}</strong> y el <strong style="color:#1a1020">${fmtHasta}</strong>.
-        ${destinatario ? `<br><br>El presente certificado se emite a solicitud del/la interesado/a para ser presentado ante <strong style="color:#1a1020">${destinatario}</strong>.` : ''}
-      </div>
-      <div class="cert-datos">
-        <div class="cert-dato">
-          <div class="cert-dato-val">${nivel}</div>
-          <div class="cert-dato-label">Nivel</div>
-        </div>
-        <div class="cert-dato">
-          <div class="cert-dato-val">${curso}</div>
-          <div class="cert-dato-label">Curso</div>
-        </div>
-        <div class="cert-dato">
-          <div class="cert-dato-val">${anioActual}</div>
-          <div class="cert-dato-label">Año</div>
-        </div>
-      </div>
-      <div class="firmas">
-        <div class="firma">
-          <img class="firma-img" src="${getFirmaDirector()}" />
-          <div class="firma-linea"></div>
-          <div class="firma-nombre">Patricio Manganella</div>
-          <div class="firma-rol">Director del Instituto</div>
-        </div>
-      </div>
-    </div>
-    <div class="footer">
-      <span>Cert. N° ${certNum}</span>
-      <span>Emitido el ${hoy}</span>
-    </div>
-  </div>
-</div>
-<script>setTimeout(function(){window.print()},500)</script>
-</body></html>`
-    const blob = new Blob([html], {type:'text/html;charset=utf-8'})
-    const url = URL.createObjectURL(blob)
-    window.open(url, '_blank')
-    setTimeout(() => URL.revokeObjectURL(url), 15000)
-    setGenerando(false)
+      if (!cursoId) {
+        alert('El alumno no tiene un curso asignado.')
+        setGenerando(false)
+        return
+      }
+
+      // Armar la URL de la API y abrir en nueva pestaña
+      // La ruta /api/certificado/[alumnoId] lee instituto, color, firma y director desde la DB
+      const params = new URLSearchParams({
+        curso_id:    cursoId,
+        tipo,
+        desde,
+        hasta,
+        ...(destinatario ? { destinatario } : {}),
+        ...(nivelManual  ? { nivel: nivelManual } : {}),
+      })
+      window.open(`/api/certificado/${selAlumno}?${params.toString()}`, '_blank')
+    } catch (e) {
+      console.error('[Certificado]', e)
+      alert('Error al generar el certificado.')
+    } finally {
+      setGenerando(false)
+    }
   }
 
   return (
