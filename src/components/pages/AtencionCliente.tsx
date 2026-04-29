@@ -15,7 +15,6 @@ function hoy() { return new Date().toISOString().split('T')[0] }
 function fmt(f: string) { if(!f)return'—'; const [y,m,d]=f.split('-'); return `${d}/${m}/${y}` }
 
 export default function AtencionCliente() {
-  const { usuario } = useAuth()
   const [tab, setTab] = useState<'consultas'|'espera'>('consultas')
 
   return (
@@ -44,9 +43,13 @@ function RegistroConsultas() {
   const [anio, setAnio] = useState(new Date().getFullYear())
   const [registros, setRegistros] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [guardando, setGuardando] = useState(false)
+  // guardandoFecha: fecha del día que está siendo guardado en este momento
+  const [guardandoFecha, setGuardandoFecha] = useState<string|null>(null)
+  // guardadoFecha: fecha del día guardado recientemente (feedback visual ✓)
+  const [guardadoFecha, setGuardadoFecha] = useState<string|null>(null)
+  // pendientes: set de fechas con cambios sin guardar
+  const [pendientes, setPendientes] = useState<Set<string>>(new Set())
 
-  // ✅ FIX: depender de usuario?.instituto_id para no disparar antes de que auth esté lista
   useEffect(() => {
     if (!usuario?.instituto_id) return
     cargar()
@@ -54,13 +57,11 @@ function RegistroConsultas() {
 
   const cargar = async () => {
     setLoading(true)
+    setPendientes(new Set())
     const mesNombre = MESES[mes]
     try {
-      // ✅ FIX: leer via API con service_role en lugar de cliente anon (que queda bloqueado por RLS)
       const params = new URLSearchParams({ mes: mesNombre, anio: String(anio) })
-      const res = await fetch(`/api/consultas-diarias?${params}`, {
-        headers: apiHeaders(),
-      })
+      const res = await fetch(`/api/consultas-diarias?${params}`, { headers: apiHeaders() })
       const json = await res.json()
       if (json.error) {
         console.error('[RegistroConsultas cargar]', json.error)
@@ -93,35 +94,65 @@ function RegistroConsultas() {
   const totalConsultas = totales.ws + totales.instagram
   const conversionRate = totalConsultas > 0 ? Math.round((totales.inscriptos / totalConsultas) * 100) : 0
 
-  const guardarDia = async (fecha: string, campo: string, valor: number) => {
-    if (isNaN(valor) || valor < 0) return
-    setGuardando(true)
+  // Actualiza el valor en memoria y marca la fila como pendiente
+  const cambiarValor = (fecha: string, campo: string, valor: number) => {
+    setRegistros(prev => {
+      const existe = prev.find(r => r.fecha === fecha)
+      if (existe) return prev.map(r => r.fecha === fecha ? { ...r, [campo]: valor } : r)
+      return [...prev, { fecha, mes: MESES[mes], anio, ws: 0, instagram: 0, inscriptos: 0, [campo]: valor }]
+    })
+    setPendientes(prev => new Set(prev).add(fecha))
+    // Limpiar feedback de guardado previo para esa fecha
+    if (guardadoFecha === fecha) setGuardadoFecha(null)
+  }
+
+  // Guarda el registro completo del día (los 3 campos a la vez)
+  const guardarDia = async (fecha: string) => {
+    const reg = registros.find(r => r.fecha === fecha) || { ws: 0, instagram: 0, inscriptos: 0 }
+    setGuardandoFecha(fecha)
     const mesNombre = MESES[mes]
     try {
-      // ✅ FIX: incluir apiHeaders() para que x-instituto-id llegue al route
       const res = await fetch('/api/consultas-diarias', {
         method: 'POST',
         headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fecha, mes: mesNombre, anio, campo, valor })
+        body: JSON.stringify({
+          fecha,
+          mes: mesNombre,
+          anio,
+          ws: reg.ws ?? 0,
+          instagram: reg.instagram ?? 0,
+          inscriptos: reg.inscriptos ?? 0,
+        })
       })
       const json = await res.json()
       if (json.data) {
+        // Confirmar con el dato devuelto por la DB
         setRegistros(prev => {
           const idx = prev.findIndex(r => r.fecha === fecha)
           if (idx >= 0) {
             const next = [...prev]
-            next[idx] = { ...next[idx], [campo]: valor }
+            next[idx] = json.data
             return next
           }
           return [...prev, json.data]
         })
+        setPendientes(prev => {
+          const next = new Set(prev)
+          next.delete(fecha)
+          return next
+        })
+        setGuardadoFecha(fecha)
+        // Limpiar el ✓ después de 2 segundos
+        setTimeout(() => setGuardadoFecha(f => f === fecha ? null : f), 2000)
       } else {
-        console.error('[guardarDia]', json.error)
+        console.error('[guardarDia] error del servidor:', json.error)
+        alert(`Error al guardar: ${json.error || 'Error desconocido'}`)
       }
     } catch (e) {
       console.error('[guardarDia] fetch error:', e)
+      alert('Error de conexión al guardar. Intentá de nuevo.')
     }
-    setGuardando(false)
+    setGuardandoFecha(null)
   }
 
   const exportarCSV = () => {
@@ -169,7 +200,6 @@ function RegistroConsultas() {
     table{width:100%;border-collapse:collapse}
     th{border-bottom:2px solid #652f8d;padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:#652f8d;letter-spacing:.04em}
     td{padding:8px;border-bottom:1px solid #f0edf5}
-    .conv{background:#e6f4ec;color:#2d7a4f;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700;display:inline-block}
     @media print{body{padding:16px}}</style></head><body>
     <div class="hd"><div class="logo"><span>Next</span> Ezeiza</div>
     <div style="font-size:12px;color:#888">${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div></div>
@@ -192,7 +222,7 @@ function RegistroConsultas() {
     <div>
       {/* Selector mes/año + exportar */}
       <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'14px',marginBottom:'14px'}}>
-        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}> 
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
           <div>
             <SL style={{marginBottom:'4px'}}>Mes</SL>
             <select style={IS} value={mes} onChange={e=>setMes(+e.target.value)}>
@@ -229,11 +259,13 @@ function RegistroConsultas() {
 
       {/* Tabla por días */}
       <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',overflow:'hidden'}}>
-        <div style={{display:'grid',gridTemplateColumns:'80px 1fr 1fr 1fr',background:'var(--bg)',borderBottom:'1.5px solid var(--border)',padding:'10px 14px'}}>
+        {/* Header */}
+        <div style={{display:'grid',gridTemplateColumns:'72px 1fr 1fr 1fr 90px',background:'var(--bg)',borderBottom:'1.5px solid var(--border)',padding:'10px 14px',gap:'8px'}}>
           <div style={{fontSize:'10px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase'}}>Fecha</div>
           <div style={{fontSize:'10px',fontWeight:700,color:'#25D366',textTransform:'uppercase',textAlign:'center'}}>WS</div>
           <div style={{fontSize:'10px',fontWeight:700,color:'#E1306C',textTransform:'uppercase',textAlign:'center'}}>Instagram</div>
           <div style={{fontSize:'10px',fontWeight:700,color:'var(--v)',textTransform:'uppercase',textAlign:'center'}}>Inscriptos</div>
+          <div style={{fontSize:'10px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',textAlign:'center'}}></div>
         </div>
 
         {loading ? (
@@ -243,50 +275,111 @@ function RegistroConsultas() {
             const esHoy = fecha === hoyStr
             const dayName = new Date(fecha+'T12:00:00').toLocaleDateString('es-AR',{weekday:'short'})
             const dayNum = fecha.split('-')[2]
-            const tieneDatos = reg.ws || reg.instagram || reg.inscriptos
+            const esPendiente = pendientes.has(fecha)
+            const estaGuardando = guardandoFecha === fecha
+            const guardadoOk = guardadoFecha === fecha
+
             return (
-              <div key={fecha} style={{display:'grid',gridTemplateColumns:'80px 1fr 1fr 1fr',padding:'8px 14px',borderBottom:'1px solid var(--border)',background:esHoy?'var(--vl)':tieneDatos?'transparent':'transparent',alignItems:'center'}}>
+              <div
+                key={fecha}
+                style={{
+                  display:'grid',
+                  gridTemplateColumns:'72px 1fr 1fr 1fr 90px',
+                  padding:'8px 14px',
+                  borderBottom:'1px solid var(--border)',
+                  background: esHoy ? 'var(--vl)' : 'transparent',
+                  alignItems:'center',
+                  gap:'8px',
+                  // Borde izquierdo sutil cuando hay cambios pendientes
+                  borderLeft: esPendiente ? '3px solid var(--amber)' : '3px solid transparent',
+                }}
+              >
+                {/* Fecha */}
                 <div>
                   <div style={{fontSize:'12px',fontWeight:700,color:esHoy?'var(--v)':'var(--text)'}}>{dayNum} {dayName}</div>
                   {esHoy && <div style={{fontSize:'9px',color:'var(--v)',fontWeight:700}}>HOY</div>}
                 </div>
+
+                {/* Inputs WS / Instagram / Inscriptos */}
                 {(['ws','instagram','inscriptos'] as const).map(campo => (
                   <div key={campo} style={{textAlign:'center'}}>
                     <input
                       type="number" min="0" max="999"
                       value={reg[campo] ?? 0}
-                      onChange={e => {
-                        const val = parseInt(e.target.value) || 0
-                        setRegistros(prev => {
-                          const existe = prev.find(r => r.fecha === fecha)
-                          if (existe) return prev.map(r => r.fecha === fecha ? {...r,[campo]:val} : r)
-                          return [...prev, { fecha, mes: MESES[mes], anio, ws:0, instagram:0, inscriptos:0, [campo]:val }]
-                        })
+                      onChange={e => cambiarValor(fecha, campo, parseInt(e.target.value) || 0)}
+                      style={{
+                        width:'52px', padding:'6px',
+                        border: esPendiente ? '1.5px solid var(--amber)' : '1.5px solid var(--border)',
+                        borderRadius:'8px', fontSize:'14px', fontWeight:600,
+                        textAlign:'center', fontFamily:'Inter,sans-serif',
+                        outline:'none', color:'var(--text)', background:'var(--white)',
+                        transition:'border-color .15s',
                       }}
-                      onBlur={e => guardarDia(fecha, campo, parseInt(e.target.value)||0)}
-                      style={{width:'52px',padding:'6px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'14px',fontWeight:600,textAlign:'center',fontFamily:'Inter,sans-serif',outline:'none',color:'var(--text)',background:'var(--white)'}}
                     />
                   </div>
                 ))}
+
+                {/* Botón guardar / estado */}
+                <div style={{textAlign:'center'}}>
+                  {guardadoOk ? (
+                    // Feedback ✓ por 2 segundos
+                    <span style={{
+                      display:'inline-flex', alignItems:'center', justifyContent:'center',
+                      width:'32px', height:'32px', borderRadius:'8px',
+                      background:'var(--greenl)', color:'var(--green)', fontSize:'16px', fontWeight:700,
+                    }}>✓</span>
+                  ) : (
+                    <button
+                      onClick={() => guardarDia(fecha)}
+                      disabled={estaGuardando || !esPendiente}
+                      title={esPendiente ? 'Guardar cambios de este día' : 'Sin cambios'}
+                      style={{
+                        padding:'6px 10px',
+                        background: esPendiente ? 'var(--v)' : 'var(--bg)',
+                        color: esPendiente ? '#fff' : 'var(--text3)',
+                        border: esPendiente ? 'none' : '1.5px solid var(--border)',
+                        borderRadius:'8px',
+                        fontSize:'11px', fontWeight:700,
+                        cursor: esPendiente ? 'pointer' : 'default',
+                        opacity: estaGuardando ? 0.6 : 1,
+                        transition:'all .15s',
+                        whiteSpace:'nowrap',
+                      }}
+                    >
+                      {estaGuardando ? '...' : 'Guardar'}
+                    </button>
+                  )}
+                </div>
               </div>
             )
           })
         )}
 
-        <div style={{display:'grid',gridTemplateColumns:'80px 1fr 1fr 1fr',padding:'10px 14px',background:'var(--bg)',borderTop:'2px solid var(--border)'}}>
+        {/* Totales */}
+        <div style={{display:'grid',gridTemplateColumns:'72px 1fr 1fr 1fr 90px',padding:'10px 14px',background:'var(--bg)',borderTop:'2px solid var(--border)',gap:'8px'}}>
           <div style={{fontSize:'12px',fontWeight:700,color:'var(--text3)'}}>TOTAL</div>
           <div style={{textAlign:'center',fontSize:'16px',fontWeight:800,color:'#25D366'}}>{totales.ws}</div>
           <div style={{textAlign:'center',fontSize:'16px',fontWeight:800,color:'#E1306C'}}>{totales.instagram}</div>
           <div style={{textAlign:'center',fontSize:'16px',fontWeight:800,color:'var(--v)'}}>{totales.inscriptos}</div>
+          <div />
         </div>
       </div>
-      <div style={{fontSize:'11px',color:'var(--text3)',textAlign:'center',marginTop:'8px'}}>Los cambios se guardan automáticamente al salir del campo</div>
+
+      {/* Ayuda contextual */}
+      {pendientes.size > 0 ? (
+        <div style={{fontSize:'11px',color:'var(--amber)',textAlign:'center',marginTop:'8px',fontWeight:600}}>
+          {pendientes.size} día{pendientes.size > 1 ? 's' : ''} con cambios sin guardar
+        </div>
+      ) : (
+        <div style={{fontSize:'11px',color:'var(--text3)',textAlign:'center',marginTop:'8px'}}>
+          Modificá los valores y presioná <strong>Guardar</strong> en cada fila
+        </div>
+      )}
     </div>
   )
 }
 
 // ── LISTA DE ESPERA ──
-// ESTADOS DE SEGUIMIENTO COMERCIAL
 const ESTADOS_SEGUIMIENTO = [
   { id: 'nuevo',      label: 'Nuevo',       bg: '#e0f0f7', color: '#1a6b8a' },
   { id: 'contactado', label: 'Contactado',  bg: '#fef3cd', color: '#b45309' },
@@ -325,7 +418,6 @@ function ListaEspera() {
   const [form, setForm] = useState(formVacio)
   const [guardando, setGuardando] = useState(false)
 
-  // Form de inscripción rápida
   const [formInscripcion, setFormInscripcion] = useState({
     fecha_alta: hoy(), matricula: '', cuota_mensual: '', nivel: 'Básico', es_menor: false,
     padre_nombre: '', padre_telefono: '', padre_email: '',
@@ -402,9 +494,7 @@ function ListaEspera() {
 
   const abrirInscribir = (a: any) => {
     setFormInscripcion({
-      fecha_alta: hoy(),
-      matricula: '',
-      cuota_mensual: '',
+      fecha_alta: hoy(), matricula: '', cuota_mensual: '',
       nivel: a.nivel_curso && a.nivel_curso !== 'No sabe / A evaluar' ? a.nivel_curso : 'Básico',
       es_menor: (a.edad && a.edad < 18) || false,
       padre_nombre: '', padre_telefono: '', padre_email: '',
@@ -426,8 +516,7 @@ function ListaEspera() {
         matricula: parseFloat(formInscripcion.matricula) || 0,
         fecha_alta: formInscripcion.fecha_alta,
         es_menor: formInscripcion.es_menor,
-        activo: true, color,
-        edad: a.edad || 0,
+        activo: true, color, edad: a.edad || 0,
       }
       if (formInscripcion.es_menor) {
         payload.padre_nombre = formInscripcion.padre_nombre
@@ -435,7 +524,6 @@ function ListaEspera() {
         payload.padre_email = formInscripcion.padre_email
       }
 
-      // Crear alumno via API Route (service role)
       const res = await fetch('/api/crear-alumno', {
         method: 'POST',
         headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
@@ -444,7 +532,6 @@ function ListaEspera() {
       const json = await res.json()
 
       if (json.data) {
-        // Registrar matrícula si tiene valor
         if (payload.matricula > 0) {
           const sb = createClient()
           const hoyDate = new Date()
@@ -458,7 +545,6 @@ function ListaEspera() {
             observaciones: 'Matrícula de inscripción'
           }).catch(() => {})
         }
-        // Eliminar de lista de espera
         const sb = createClient()
         await sb.from('lista_espera').delete().eq('id', a.id)
         setLista(prev => prev.filter(x => x.id !== a.id))
@@ -491,7 +577,6 @@ function ListaEspera() {
     .filter(a => filtroEstado === 'todos' || (a.estado_seguimiento || 'nuevo') === filtroEstado)
     .filter(a => !busqueda || `${a.nombre} ${a.apellido} ${a.celular}`.toLowerCase().includes(busqueda.toLowerCase()))
 
-  // KPIs de conversión por etapa
   const kpiEstados = ESTADOS_SEGUIMIENTO.map(e => ({
     ...e,
     count: lista.filter(a => (a.estado_seguimiento || 'nuevo') === e.id).length
@@ -499,7 +584,6 @@ function ListaEspera() {
 
   return (
     <div>
-      {/* KPIs de etapas del pipeline */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px',marginBottom:'14px'}}>
         {kpiEstados.map(e => (
           <button key={e.id} onClick={() => setFiltroEstado(filtroEstado === e.id ? 'todos' : e.id)}
@@ -522,7 +606,6 @@ function ListaEspera() {
         </div>
       </div>
 
-      {/* Buscador */}
       {lista.length > 3 && (
         <div style={{position:'relative',marginBottom:'12px'}}>
           <input type="text" value={busqueda} onChange={e=>setBusqueda(e.target.value)} placeholder="Buscar por nombre o celular..."
@@ -547,7 +630,6 @@ function ListaEspera() {
             return (
               <div key={a.id} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'14px 16px',marginBottom:'10px'}}>
                 <div style={{display:'flex',alignItems:'flex-start',gap:'12px'}}>
-                  {/* Avatar */}
                   <div style={{width:40,height:40,borderRadius:'12px',background:color,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'14px',fontWeight:700,color:'#fff',flexShrink:0}}>
                     {a.nombre[0]}{a.apellido[0]}
                   </div>
@@ -575,10 +657,7 @@ function ListaEspera() {
                     )}
                   </div>
                 </div>
-
-                {/* Acciones */}
                 <div style={{display:'flex',gap:'6px',marginTop:'12px',flexWrap:'wrap'}}>
-                  {/* Inscribir como alumno — acción principal */}
                   <button onClick={() => abrirInscribir(a)}
                     style={{flex:'1 1 auto',padding:'9px 12px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'9px',fontSize:'12px',fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'5px'}}>
                     <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M16 17v-1a4 4 0 00-4-4H8a4 4 0 00-4 4v1"/><circle cx="10" cy="7" r="4"/></svg>
@@ -612,7 +691,6 @@ function ListaEspera() {
           <div style={{background:'var(--white)',borderRadius:'24px 24px 0 0',padding:'28px 20px 32px',width:'100%',maxWidth:'480px',maxHeight:'90vh',overflowY:'auto'}}>
             <div style={{width:'40px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 20px'}} />
             <div style={{fontSize:'18px',fontWeight:700,marginBottom:'20px'}}>{editandoId ? 'Editar interesado' : 'Agregar a lista de espera'}</div>
-
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
               <Field label="Nombre *"><input style={IS} value={form.nombre} onChange={e=>setForm({...form,nombre:e.target.value})} /></Field>
               <Field label="Apellido *"><input style={IS} value={form.apellido} onChange={e=>setForm({...form,apellido:e.target.value})} /></Field>
@@ -661,14 +739,11 @@ function ListaEspera() {
             <div style={{width:'40px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 20px'}} />
             <div style={{fontSize:'18px',fontWeight:700,marginBottom:'4px'}}>Inscribir como alumno</div>
             <div style={{fontSize:'13px',color:'var(--text2)',marginBottom:'20px'}}>{modalInscribir.nombre} {modalInscribir.apellido} será creado como alumno activo y removido de la lista de espera.</div>
-
-            {/* Datos heredados (solo lectura) */}
             <div style={{background:'var(--vl)',borderRadius:'12px',padding:'12px',marginBottom:'16px',fontSize:'13px',color:'var(--text2)'}}>
               <div style={{fontWeight:600,color:'var(--v)',marginBottom:'4px'}}>Datos heredados de la lista</div>
               <div>📱 {modalInscribir.celular||'—'} · {modalInscribir.nivel_curso||'Nivel a definir'}</div>
               {modalInscribir.observaciones && <div style={{marginTop:'3px',fontSize:'12px'}}>📝 {modalInscribir.observaciones}</div>}
             </div>
-
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
               <Field label="Nivel">
                 <select style={IS} value={formInscripcion.nivel} onChange={e=>setFormInscripcion({...formInscripcion,nivel:e.target.value})}>
@@ -704,7 +779,6 @@ function ListaEspera() {
                 </div>
               </>
             )}
-
             <div style={{padding:'10px 12px',borderRadius:'10px',fontSize:'12.5px',color:'var(--amber)',background:'var(--amberl)',border:'1px solid #e8d080',marginBottom:'14px',lineHeight:1.5}}>
               ⚠ Esta acción crea el alumno y lo elimina de la lista de espera. No se puede deshacer.
             </div>
