@@ -35,6 +35,7 @@ export async function GET(req: NextRequest) {
   }
 }
 
+// Recibe el registro completo del día: { fecha, mes, anio, ws, instagram, inscriptos }
 export async function POST(req: NextRequest) {
   try {
     const ip = getClientIp(req)
@@ -42,27 +43,45 @@ export async function POST(req: NextRequest) {
     if (!rl.ok) return rateLimitResponse(rl.resetMs)
 
     const institutoId = getInstitutoId(req)
-    const { fecha, mes, anio, campo, valor } = await req.json()
-    if (!fecha || !mes || !campo || valor === undefined) {
+    if (!institutoId) return NextResponse.json({ error: 'Sin instituto' }, { status: 400 })
+
+    const { fecha, mes, anio, ws, instagram, inscriptos } = await req.json()
+    if (!fecha || !mes || anio === undefined) {
       return NextResponse.json({ error: 'Faltan campos' }, { status: 400 })
     }
 
     const supabase = sb()
-    let q = supabase.from('consultas_diarias').select('*').eq('fecha', fecha).eq('mes', mes).eq('anio', anio)
-    if (institutoId) q = q.eq('instituto_id', institutoId)
 
-    const { data: existente } = await q.single()
+    const { data: existente } = await supabase
+      .from('consultas_diarias')
+      .select('id')
+      .eq('fecha', fecha)
+      .eq('mes', mes)
+      .eq('anio', anio)
+      .eq('instituto_id', institutoId)
+      .single()
+
+    const valores = {
+      ws: ws ?? 0,
+      instagram: instagram ?? 0,
+      inscriptos: inscriptos ?? 0,
+    }
 
     if (existente) {
       const { data, error } = await supabase
-        .from('consultas_diarias').update({ [campo]: valor }).eq('id', existente.id).select().single()
+        .from('consultas_diarias')
+        .update(valores)
+        .eq('id', existente.id)
+        .select()
+        .single()
       if (error) throw error
       return NextResponse.json({ data })
     } else {
       const { data, error } = await supabase
         .from('consultas_diarias')
-        .insert({ fecha, mes, anio, ws: 0, instagram: 0, inscriptos: 0, [campo]: valor, ...(institutoId ? { instituto_id: institutoId } : {}) })
-        .select().single()
+        .insert({ fecha, mes, anio, instituto_id: institutoId, ...valores })
+        .select()
+        .single()
       if (error) throw error
       return NextResponse.json({ data })
     }
