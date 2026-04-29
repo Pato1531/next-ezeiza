@@ -9,6 +9,32 @@ function getInstitutoId(req: NextRequest): string | null {
   return req.headers.get('x-instituto-id') || null
 }
 
+export async function GET(req: NextRequest) {
+  try {
+    const institutoId = getInstitutoId(req)
+    if (!institutoId) return NextResponse.json({ error: 'Sin instituto' }, { status: 400 })
+
+    const { searchParams } = new URL(req.url)
+    const mes = searchParams.get('mes')
+    const anio = searchParams.get('anio')
+    if (!mes || !anio) return NextResponse.json({ error: 'Faltan mes/anio' }, { status: 400 })
+
+    const supabase = sb()
+    const { data, error } = await supabase
+      .from('consultas_diarias')
+      .select('*')
+      .eq('instituto_id', institutoId)
+      .eq('mes', mes)
+      .eq('anio', parseInt(anio))
+      .order('fecha', { ascending: true })
+
+    if (error) throw error
+    return NextResponse.json({ data: data || [] })
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const ip = getClientIp(req)
