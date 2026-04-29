@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
-import { logActivity } from '@/lib/hooks'
+import { logActivity, apiHeaders } from '@/lib/hooks'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const DIAS_SEMANA = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábados']
@@ -38,6 +38,7 @@ export default function AtencionCliente() {
 
 // ── REGISTRO DE CONSULTAS ──
 function RegistroConsultas() {
+  const { usuario } = useAuth()
   const hoyStr = hoy()
   const [mes, setMes] = useState(new Date().getMonth())
   const [anio, setAnio] = useState(new Date().getFullYear())
@@ -45,15 +46,32 @@ function RegistroConsultas() {
   const [loading, setLoading] = useState(true)
   const [guardando, setGuardando] = useState(false)
 
-  useEffect(() => { cargar() }, [mes, anio])
+  // ✅ FIX: depender de usuario?.instituto_id para no disparar antes de que auth esté lista
+  useEffect(() => {
+    if (!usuario?.instituto_id) return
+    cargar()
+  }, [mes, anio, usuario?.instituto_id])
 
   const cargar = async () => {
     setLoading(true)
-    const sb = createClient()
     const mesNombre = MESES[mes]
-    const { data } = await sb.from('consultas_diarias')
-      .select('*').eq('mes', mesNombre).eq('anio', anio).order('fecha')
-    setRegistros(data || [])
+    try {
+      // ✅ FIX: leer via API con service_role en lugar de cliente anon (que queda bloqueado por RLS)
+      const params = new URLSearchParams({ mes: mesNombre, anio: String(anio) })
+      const res = await fetch(`/api/consultas-diarias?${params}`, {
+        headers: apiHeaders(),
+      })
+      const json = await res.json()
+      if (json.error) {
+        console.error('[RegistroConsultas cargar]', json.error)
+        setRegistros([])
+      } else {
+        setRegistros(json.data || [])
+      }
+    } catch (e) {
+      console.error('[RegistroConsultas cargar] fetch error:', e)
+      setRegistros([])
+    }
     setLoading(false)
   }
 
@@ -80,9 +98,10 @@ function RegistroConsultas() {
     setGuardando(true)
     const mesNombre = MESES[mes]
     try {
+      // ✅ FIX: incluir apiHeaders() para que x-instituto-id llegue al route
       const res = await fetch('/api/consultas-diarias', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ fecha, mes: mesNombre, anio, campo, valor })
       })
       const json = await res.json()
@@ -419,7 +438,7 @@ function ListaEspera() {
       // Crear alumno via API Route (service role)
       const res = await fetch('/api/crear-alumno', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       })
       const json = await res.json()
@@ -525,10 +544,6 @@ function ListaEspera() {
           {listaFiltrada.map((a: any, idx: number) => {
             const color = COLORES_AV[idx % COLORES_AV.length]
             const estadoActual = a.estado_seguimiento || 'nuevo'
-            const sigEstado = (est: string) => {
-              const idx2 = ESTADOS_SEGUIMIENTO.findIndex(e => e.id === est)
-              return ESTADOS_SEGUIMIENTO[Math.min(idx2 + 1, ESTADOS_SEGUIMIENTO.length - 1)].id
-            }
             return (
               <div key={a.id} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'14px 16px',marginBottom:'10px'}}>
                 <div style={{display:'flex',alignItems:'flex-start',gap:'12px'}}>
