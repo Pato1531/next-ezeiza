@@ -7,7 +7,6 @@ function sb() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
 
-
 export async function POST(req: NextRequest) {
   try {
     const ip = getClientIp(req)
@@ -22,23 +21,56 @@ export async function POST(req: NextRequest) {
     }
 
     const supabase = sb()
+    const tipo = pago.tipo || 'cuota'
 
-    // 1. Eliminar pago previo del mismo alumno/mes/año
-    //    Filtrar por instituto_id cuando está disponible para evitar borrar de otros institutos
-    let delQ = supabase
-      .from('pagos_alumnos')
-      .delete()
-      .eq('alumno_id', pago.alumno_id)
-      .eq('mes', pago.mes)
-      .eq('anio', pago.anio)
-    if (institutoId) delQ = (delQ as any).eq('instituto_id', institutoId)
+    // ── LÓGICA DE REEMPLAZO SELECTIVA ──────────────────────────────────────────
+    // Solo se elimina el pago previo si es del MISMO TIPO.
+    // Esto evita que registrar una cuota mensual borre un proporcional previo,
+    // o que una matrícula borre una cuota del mismo mes.
+    //
+    // Tipos que REEMPLAZAN (solo puede haber 1 por mes):
+    //   'cuota'         → cuota mensual estándar
+    //   'recargo'       → cuota con recargo
+    //   'cuota_recargo' → alias de recargo
+    //   'matricula'     → matrícula anual
+    //
+    // Tipos que ACUMULAN (pueden existir varios en el mismo mes):
+    //   'proporcional'  → cobro parcial, siempre se agrega como registro nuevo
+    // ───────────────────────────────────────────────────────────────────────────
+    const TIPOS_QUE_REEMPLAZAN = ['cuota', 'recargo', 'cuota_recargo', 'matricula']
 
-    const { error: delError } = await delQ
-    if (delError) {
-      console.warn('[registrar-pago] DELETE warning:', delError.message, delError.code)
+    if (TIPOS_QUE_REEMPLAZAN.includes(tipo)) {
+      let delQ = supabase
+        .from('pagos_alumnos')
+        .delete()
+        .eq('alumno_id', pago.alumno_id)
+        .eq('mes', pago.mes)
+        .eq('anio', pago.anio)
+        .eq('tipo', tipo)
+      if (institutoId) delQ = (delQ as any).eq('instituto_id', institutoId)
+
+      const { error: delError } = await delQ
+      if (delError) {
+        // Si la columna 'tipo' no existe todavía (migración pendiente),
+        // hacer delete amplio como fallback para no dejar duplicados
+        if (delError.code === '42703') {
+          let delQFallback = supabase
+            .from('pagos_alumnos')
+            .delete()
+            .eq('alumno_id', pago.alumno_id)
+            .eq('mes', pago.mes)
+            .eq('anio', pago.anio)
+          if (institutoId) delQFallback = (delQFallback as any).eq('instituto_id', institutoId)
+          await delQFallback
+        } else {
+          console.warn('[registrar-pago] DELETE warning:', delError.message, delError.code)
+        }
+      }
     }
+    // Para 'proporcional' y cualquier tipo no listado:
+    // no se borra nada → se inserta directamente como registro adicional.
 
-    // 2. Construir payload del INSERT
+    // ── INSERT ─────────────────────────────────────────────────────────────────
     const insertData: any = {
       alumno_id: pago.alumno_id,
       mes: pago.mes,
@@ -50,10 +82,10 @@ export async function POST(req: NextRequest) {
       ...(institutoId ? { instituto_id: institutoId } : {}),
     }
 
-    // 3. Intentar INSERT con campo 'tipo' (por si la migración ya se ejecutó)
+    // Intentar con campo 'tipo' (columna puede no existir en instancias sin migración)
     let result = await supabase
       .from('pagos_alumnos')
-      .insert({ ...insertData, tipo: pago.tipo || 'cuota' })
+      .insert({ ...insertData, tipo })
       .select()
       .single()
 
