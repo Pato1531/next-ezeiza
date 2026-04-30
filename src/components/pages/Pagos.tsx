@@ -16,6 +16,10 @@ function fmtFecha(f: string) {
   return `${d}/${m}/${y}`
 }
 
+function fmtMonto(n: number) {
+  return n.toLocaleString('es-AR', { minimumFractionDigits: 0 })
+}
+
 // ── Componentes UI locales ────────────────────────────────────────────────────
 const SL = ({ children, style }: any) => (
   <div style={{ fontSize:'11px', fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.07em', ...style }}>
@@ -36,6 +40,23 @@ const ModalSheet = ({ title, children, onClose }: any) => (
     </div>
   </div>
 )
+
+// Chip de concepto para mostrar en el detalle de cada pago registrado
+const ChipConcepto = ({ tipo }: { tipo: string }) => {
+  const map: Record<string, { label: string; color: string; bg: string }> = {
+    cuota:       { label: 'Cuota',        color: '#652f8d', bg: '#f4eefb' },
+    cuota_recargo: { label: 'Recargo',    color: '#b45309', bg: '#fef3cd' },
+    recargo:     { label: 'Recargo',      color: '#b45309', bg: '#fef3cd' },
+    matricula:   { label: 'Matrícula',    color: '#1a6b8a', bg: '#e0f0f7' },
+    proporcional:{ label: 'Proporcional', color: '#2d7a4f', bg: '#e6f4ec' },
+  }
+  const c = map[tipo] || { label: tipo, color: 'var(--text3)', bg: 'var(--bg)' }
+  return (
+    <span style={{ padding:'2px 8px', borderRadius:'20px', fontSize:'10.5px', fontWeight:700, color: c.color, background: c.bg, border:`1px solid ${c.color}22` }}>
+      {c.label}
+    </span>
+  )
+}
 
 // ── Componente principal ──────────────────────────────────────────────────────
 export default function Pagos() {
@@ -65,7 +86,6 @@ export default function Pagos() {
   const [alumnosPagadosMes, setAlumnosPagadosMes] = useState<Set<string>>(new Set())
   const [busqueda, setBusqueda] = useState('')
   const [guardando, setGuardando] = useState(false)
-  const [guardado, setGuardado] = useState(false)
   // Conceptos
   const [cobrarCuota, setCobrarCuota] = useState(true)
   const [cobrarRecargo, setCobrarRecargo] = useState(false)
@@ -73,6 +93,17 @@ export default function Pagos() {
   const [cobrarMatricula, setCobrarMatricula] = useState(false)
   const [cobrarProporcional, setCobrarProporcional] = useState(false)
   const [montoProporcional, setMontoProporcional] = useState('')
+
+  // ── Estado: Feedback post-registro ───────────────────────────────────────
+  // Guarda el resumen del último registro para mostrarlo en pantalla
+  const [resultadoRegistro, setResultadoRegistro] = useState<{
+    ok: number
+    errores: number
+    totalMonto: number
+    conceptos: string[]
+    mes: string
+    metodo: string
+  } | null>(null)
 
   // ── Cargar reporte ────────────────────────────────────────────────────────
   const cargarReporte = async () => {
@@ -111,6 +142,9 @@ export default function Pagos() {
       }
     }
     cargar()
+    // Limpiar resultado anterior al cambiar mes
+    setResultadoRegistro(null)
+    setSeleccionados(new Set())
   }, [mes])
 
   // ── Filtros ───────────────────────────────────────────────────────────────
@@ -121,19 +155,16 @@ export default function Pagos() {
     return matchDia && matchMetodo
   })
 
-  // Agrupar pagos por alumno: un alumno que pagó cuota+matrícula → una sola fila con total
-  // Se usa el pago de tipo 'cuota' como base (o el primero disponible)
-  // para el ID del recibo, que internamente ya suma todos los pagos del mes
   const pagosAgrupados = (() => {
     const grupos: Record<string, any> = {}
     for (const p of pagosReporteFiltrados) {
       const key = `${p.alumno_id}-${p.mes}-${p.anio}`
       if (!grupos[key]) {
-        grupos[key] = { ...p, _montoTotal: 0, _tipos: [] }
+        grupos[key] = { ...p, _montoTotal: 0, _tipos: [], _pagos: [] }
       }
       grupos[key]._montoTotal += (p.monto || 0)
       grupos[key]._tipos.push(p.tipo || 'cuota')
-      // Preferir el ID del pago de cuota para el recibo (suma todo el mes)
+      grupos[key]._pagos.push(p)
       if (p.tipo === 'cuota') {
         grupos[key].id = p.id
         grupos[key].monto = p.monto
@@ -163,6 +194,18 @@ export default function Pagos() {
     return sum + t
   }, 0)
 
+  // Cantidad de alumnos seleccionados que ya tienen un pago de cuota este mes
+  // (para advertir antes de registrar)
+  const seleccionadosQueYaPagaron = [...seleccionados].filter(id => alumnosPagadosMes.has(id))
+
+  // Conceptos activos (para mostrar en resumen)
+  const conceptosActivos = [
+    cobrarCuota && 'Cuota mensual',
+    cobrarRecargo && `Recargo ($${fmtMonto(parseFloat(montoRecargo)||0)})`,
+    cobrarMatricula && 'Matrícula',
+    cobrarProporcional && `Proporcional ($${fmtMonto(parseFloat(montoProporcional)||0)})`,
+  ].filter(Boolean) as string[]
+
   // ── Selección alumnos ─────────────────────────────────────────────────────
   const toggleAlumno = (id: string) => {
     setSeleccionados(prev => {
@@ -186,7 +229,25 @@ export default function Pagos() {
     if (cobrarProporcional && (!montoProporcional || parseFloat(montoProporcional) <= 0)) return alert('Ingresá el monto proporcional')
     if (cobrarRecargo && (!montoRecargo || parseFloat(montoRecargo) <= 0)) return alert('Ingresá el monto del recargo')
 
+    // ── Advertencia si algún alumno seleccionado ya pagó cuota este mes ─────
+    // El proporcional siempre se suma; la cuota/recargo/matrícula reemplaza.
+    if (seleccionadosQueYaPagaron.length > 0 && (cobrarCuota || cobrarRecargo || cobrarMatricula)) {
+      const nombres = seleccionadosQueYaPagaron
+        .map(id => {
+          const a = alumnos.find((x: any) => x.id === id)
+          return a ? `${a.nombre} ${a.apellido}` : ''
+        })
+        .filter(Boolean)
+        .join(', ')
+      const concepto = [cobrarCuota && 'cuota', cobrarRecargo && 'recargo', cobrarMatricula && 'matrícula'].filter(Boolean).join(', ')
+      const ok = window.confirm(
+        `⚠️ ${seleccionadosQueYaPagaron.length} alumno${seleccionadosQueYaPagaron.length > 1 ? 's' : ''} ya tiene${seleccionadosQueYaPagaron.length > 1 ? 'n' : ''} registrado un pago de ${concepto} para ${mes}:\n\n${nombres}\n\nEl pago anterior de ${concepto} será reemplazado. ¿Continuás?`
+      )
+      if (!ok) return
+    }
+
     setGuardando(true)
+    setResultadoRegistro(null)
     const fecha = new Date().toISOString().split('T')[0]
     const alumnosSeleccionados = alumnos.filter((a: any) => seleccionados.has(a.id))
 
@@ -225,24 +286,45 @@ export default function Pagos() {
         )
       )
       const errores = resultados.filter(r => r.error)
-      if (errores.length > 0) {
-        console.error('[Pagos] errores:', errores)
-        alert(`${errores.length} pago(s) no se pudieron guardar.`)
-      }
-      showToast(`✓ ${alumnosSeleccionados.length} alumno${alumnosSeleccionados.length !== 1 ? 's' : ''} · ${inserts.length} concepto${inserts.length !== 1 ? 's' : ''} registrado${inserts.length !== 1 ? 's' : ''}`)
-      logActivity('Registró pagos', 'Pagos', `${alumnosSeleccionados.length} alumnos · ${mes} ${anioActual}`)
       const alumnosOk = [...new Set(resultados.filter(r => !r.error).map((_, i) => inserts[i].alumno_id))]
+
+      // ── Resumen de feedback ───────────────────────────────────────────────
+      const montoTotal = [...seleccionados].reduce((sum, id) => {
+        const a = alumnos.find((x: any) => x.id === id)
+        if (!a) return sum
+        let t = 0
+        if (cobrarCuota) t += (a.cuota_mensual || 0)
+        if (cobrarRecargo) t += (parseFloat(montoRecargo) || 0)
+        if (cobrarMatricula) t += (a.matricula || 0)
+        if (cobrarProporcional) t += (parseFloat(montoProporcional) || 0)
+        return sum + t
+      }, 0)
+
+      setResultadoRegistro({
+        ok: alumnosSeleccionados.length - errores.length,
+        errores: errores.length,
+        totalMonto: montoTotal,
+        conceptos: conceptosActivos,
+        mes,
+        metodo,
+      })
+
+      if (errores.length > 0) {
+        showToast(`⚠ ${errores.length} pago(s) no se pudieron guardar`, 'error')
+      } else {
+        showToast(`✓ ${alumnosSeleccionados.length} alumno${alumnosSeleccionados.length !== 1 ? 's' : ''} · $${fmtMonto(montoTotal)} registrado${alumnosSeleccionados.length !== 1 ? 's' : ''}`)
+      }
+
+      logActivity('Registró pagos', 'Pagos', `${alumnosSeleccionados.length} alumnos · ${mes} ${anioActual}`)
       alumnosOk.forEach(id => window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: id } })))
       setAlumnosPagadosMes(prev => new Set([...prev, ...alumnosOk]))
     } catch (e) {
       console.error('[Pagos] catch:', e)
-      alert('Error de conexión al guardar los pagos.')
+      showToast('Error de conexión al guardar los pagos', 'error')
     }
 
     setGuardando(false)
-    setGuardado(true)
     setSeleccionados(new Set())
-    setTimeout(() => setGuardado(false), 3000)
   }
 
   // ── Exportar Excel ────────────────────────────────────────────────────────
@@ -251,10 +333,11 @@ export default function Pagos() {
       ['REPORTE DE PAGOS'],
       [`Mes: ${repMes} ${repAnio}`, '', '', `Total: $${totalRecaudado.toLocaleString('es-AR')}`],
       [''],
-      ['Alumno', 'Nivel', 'Monto', 'Método', 'Fecha', 'Observaciones'],
+      ['Alumno', 'Nivel', 'Concepto', 'Monto', 'Método', 'Fecha', 'Observaciones'],
       ...pagosReporteFiltrados.map(p => [
         `${p.alumnos?.nombre} ${p.alumnos?.apellido}`,
         p.alumnos?.nivel || '—',
+        p.tipo || 'cuota',
         `$${p.monto?.toLocaleString('es-AR')}`,
         p.metodo || '—',
         p.fecha_pago ? new Date(p.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR') : '—',
@@ -277,6 +360,7 @@ export default function Pagos() {
       <tr>
         <td>${p.alumnos?.nombre} ${p.alumnos?.apellido}</td>
         <td>${p.alumnos?.nivel || '—'}</td>
+        <td><span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#f4eefb;color:#652f8d">${p.tipo || 'cuota'}</span></td>
         <td style="font-weight:600;color:#652f8d">$${p.monto?.toLocaleString('es-AR')}</td>
         <td>${p.metodo || '—'}</td>
         <td>${p.fecha_pago ? new Date(p.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
@@ -302,7 +386,7 @@ export default function Pagos() {
       <span style="font-weight:600;color:#652f8d">${pagosReporte.length} pagos registrados</span>
       <span style="font-size:18px;font-weight:700;color:#652f8d">Total: $${totalRecaudado.toLocaleString('es-AR')}</span>
     </div>
-    <table><tr><th>Alumno</th><th>Nivel</th><th>Monto</th><th>Método</th><th>Fecha</th></tr>
+    <table><tr><th>Alumno</th><th>Nivel</th><th>Concepto</th><th>Monto</th><th>Método</th><th>Fecha</th></tr>
     ${filas}
     </table>
     <script>setTimeout(function(){window.print()},400)</script>
@@ -414,62 +498,68 @@ export default function Pagos() {
                     const montoTotal = (p._montoTotal || p.monto) || 0
                     const textoWS = `✅ *Recibo de pago*\n\nHola ${contacto}! Confirmamos el pago de *${p.mes} ${p.anio}* de *${p.alumnos?.nombre} ${p.alumnos?.apellido}*.\n\n💰 Monto: *$${montoTotal.toLocaleString('es-AR')}*\n📅 Fecha: ${fechaFmt}\n💳 Método: ${p.metodo || 'Efectivo'}\n\n📄 Tu recibo: ${urlRecibo}\n\n¡Gracias! 🙌`
                     return (
-                      <div key={p.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 16px', borderBottom: i < pagosAgrupados.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
-                          <div style={{ width:32, height:32, borderRadius:8, background:p.alumnos?.color || '#652f8d', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, color:'#fff', flexShrink:0 }}>
-                            {p.alumnos?.nombre?.[0]}{p.alumnos?.apellido?.[0]}
+                      <div key={p.id} style={{ padding:'12px 16px', borderBottom: i < pagosAgrupados.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                            <div style={{ width:32, height:32, borderRadius:8, background:p.alumnos?.color || '#652f8d', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, color:'#fff', flexShrink:0 }}>
+                              {p.alumnos?.nombre?.[0]}{p.alumnos?.apellido?.[0]}
+                            </div>
+                            <div>
+                              <div style={{ fontSize:'13.5px', fontWeight:600 }}>{p.alumnos?.nombre} {p.alumnos?.apellido}</div>
+                              <div style={{ fontSize:'11px', color:'var(--text3)' }}>
+                                {p.metodo} · {p.fecha_pago ? new Date(p.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR') : '—'}
+                              </div>
+                            </div>
                           </div>
-                          <div>
-                            <div style={{ fontSize:'13.5px', fontWeight:600 }}>{p.alumnos?.nombre} {p.alumnos?.apellido}</div>
-                            <div style={{ fontSize:'11px', color:'var(--text3)' }}>{p.metodo} · {p.fecha_pago ? new Date(p.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</div>
-                          </div>
-                        </div>
-                        <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-                          <div style={{ fontSize:'15px', fontWeight:700, color:'var(--v)' }}>
-                            ${(p._montoTotal || p.monto)?.toLocaleString('es-AR')}
-                            {p._tipos?.length > 1 && (
-                              <span style={{ fontSize:'10px', fontWeight:600, color:'#1a6b8a', background:'#e0f0f7', padding:'1px 7px', borderRadius:'10px', marginLeft:'6px' }}>
-                                {p._tipos.includes('matricula') ? '+ Matrícula' : ''}
-                              </span>
+                          <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                            <div style={{ textAlign:'right' }}>
+                              <div style={{ fontSize:'15px', fontWeight:700, color:'var(--v)' }}>
+                                ${fmtMonto(montoTotal)}
+                              </div>
+                              {/* Chips de concepto por cada pago del alumno ese mes */}
+                              <div style={{ display:'flex', gap:'4px', marginTop:'4px', flexWrap:'wrap', justifyContent:'flex-end' }}>
+                                {p._tipos.map((t: string, idx: number) => (
+                                  <ChipConcepto key={idx} tipo={t} />
+                                ))}
+                              </div>
+                            </div>
+                            {cel && (
+                              <a
+                                href={`https://wa.me/54${cel}?text=${encodeURIComponent(textoWS)}`}
+                                target="_blank" rel="noopener noreferrer"
+                                style={{ padding:'5px 10px', background:'#25D366', color:'#fff', borderRadius:'7px', fontSize:'11px', fontWeight:600, textDecoration:'none', display:'flex', alignItems:'center', gap:'3px', flexShrink:0 }}>
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                                WS
+                              </a>
+                            )}
+                            <button
+                              onClick={() => setPagoEditando({ ...p })}
+                              style={{ padding:'5px 10px', background:'var(--vl)', color:'var(--v)', border:'1px solid #d4a8e8', borderRadius:'7px', fontSize:'11px', fontWeight:600, cursor:'pointer', flexShrink:0 }}>
+                              Editar
+                            </button>
+                            {puedeEliminar && (
+                              <button
+                                onClick={async () => {
+                                  if (!confirm(`¿Eliminar el pago de ${p.alumnos?.nombre} ${p.alumnos?.apellido}?`)) return
+                                  const sb = createClient()
+                                  const { error } = await sb.from('pagos_alumnos').delete().eq('id', p.id)
+                                  if (!error) {
+                                    setPagosReporte(prev => prev.filter(x => x.id !== p.id))
+                                    const restantes = pagosReporte.filter(x => x.id !== p.id && x.alumno_id === p.alumno_id)
+                                    if (restantes.length === 0) {
+                                      setAlumnosPagadosMes(prev => { const n = new Set(prev); n.delete(p.alumno_id); return n })
+                                    }
+                                    logActivity('Eliminó pago', 'Pagos', `${p.alumnos?.nombre} ${p.alumnos?.apellido} · ${p.mes} ${p.anio}`)
+                                    showToast('Pago eliminado')
+                                  } else {
+                                    alert('Error al eliminar el pago')
+                                  }
+                                }}
+                                style={{ padding:'5px 10px', background:'var(--redl, #fef2f2)', color:'var(--red, #dc2626)', border:'1px solid #fca5a5', borderRadius:'7px', fontSize:'11px', fontWeight:600, cursor:'pointer', flexShrink:0 }}>
+                                Eliminar
+                              </button>
                             )}
                           </div>
-                          {cel && (
-                            <a
-                              href={`https://wa.me/54${cel}?text=${encodeURIComponent(textoWS)}`}
-                              target="_blank" rel="noopener noreferrer"
-                              style={{ padding:'5px 10px', background:'#25D366', color:'#fff', borderRadius:'7px', fontSize:'11px', fontWeight:600, textDecoration:'none', display:'flex', alignItems:'center', gap:'3px', flexShrink:0 }}>
-                              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
-                              WS
-                            </a>
-                          )}
-                          <button
-                            onClick={() => setPagoEditando({ ...p })}
-                            style={{ padding:'5px 10px', background:'var(--vl)', color:'var(--v)', border:'1px solid #d4a8e8', borderRadius:'7px', fontSize:'11px', fontWeight:600, cursor:'pointer', flexShrink:0 }}>
-                            Editar
-                          </button>
-                          {puedeEliminar && (
-                            <button
-                              onClick={async () => {
-                                if (!confirm(`¿Eliminar el pago de ${p.alumnos?.nombre} ${p.alumnos?.apellido}?`)) return
-                                const sb = createClient()
-                                const { error } = await sb.from('pagos_alumnos').delete().eq('id', p.id)
-                                if (!error) {
-                                  setPagosReporte(prev => prev.filter(x => x.id !== p.id))
-                                  // Si ya no quedan pagos de ese alumno en el mes, marcarlo como no pagado
-                                  const restantes = pagosReporte.filter(x => x.id !== p.id && x.alumno_id === p.alumno_id)
-                                  if (restantes.length === 0) {
-                                    setAlumnosPagadosMes(prev => { const n = new Set(prev); n.delete(p.alumno_id); return n })
-                                  }
-                                  logActivity('Eliminó pago', 'Pagos', `${p.alumnos?.nombre} ${p.alumnos?.apellido} · ${p.mes} ${p.anio}`)
-                                  showToast('Pago eliminado')
-                                } else {
-                                  alert('Error al eliminar el pago')
-                                }
-                              }}
-                              style={{ padding:'5px 10px', background:'var(--redl, #fef2f2)', color:'var(--red, #dc2626)', border:'1px solid #fca5a5', borderRadius:'7px', fontSize:'11px', fontWeight:600, cursor:'pointer', flexShrink:0 }}>
-                              Eliminar
-                            </button>
-                          )}
                         </div>
                       </div>
                     )
@@ -532,7 +622,6 @@ export default function Pagos() {
                   const { error } = await sb.from('pagos_alumnos').delete().eq('id', pagoEditando.id)
                   if (!error) {
                     setPagosReporte(prev => prev.filter(x => x.id !== pagoEditando.id))
-                    // Si ya no quedan pagos de ese alumno en el mes, marcarlo como no pagado
                     const restantes = pagosReporte.filter(x => x.id !== pagoEditando.id && x.alumno_id === pagoEditando.alumno_id)
                     if (restantes.length === 0) {
                       setAlumnosPagadosMes(prev => { const n = new Set(prev); n.delete(pagoEditando.alumno_id); return n })
@@ -563,7 +652,10 @@ export default function Pagos() {
                 }).eq('id', pagoEditando.id)
                 if (!error) {
                   setPagosReporte(prev => prev.map(p => p.id === pagoEditando.id ? { ...p, ...pagoEditando } : p))
+                  showToast('✓ Pago actualizado')
                   setPagoEditando(null)
+                } else {
+                  showToast('Error al guardar', 'error')
                 }
                 setGuardandoEditPago(false)
               }}
@@ -577,6 +669,61 @@ export default function Pagos() {
       {/* ── VISTA REGISTRAR ───────────────────────────────────────────────── */}
       {vistaTab === 'registrar' && (
         <>
+          {/* ── PANEL DE RESULTADO POST-REGISTRO ─────────────────────────── */}
+          {resultadoRegistro && (
+            <div style={{
+              background: resultadoRegistro.errores === 0 ? 'var(--greenl)' : 'var(--amberl)',
+              border: `1.5px solid ${resultadoRegistro.errores === 0 ? 'var(--green)' : 'var(--amber)'}`,
+              borderRadius:'16px', padding:'16px', marginBottom:'14px',
+            }}>
+              {/* Encabezado */}
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'10px' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                  <span style={{ fontSize:'20px' }}>{resultadoRegistro.errores === 0 ? '✅' : '⚠️'}</span>
+                  <div>
+                    <div style={{ fontSize:'14px', fontWeight:700, color: resultadoRegistro.errores === 0 ? 'var(--green)' : 'var(--amber)' }}>
+                      {resultadoRegistro.errores === 0
+                        ? `${resultadoRegistro.ok} pago${resultadoRegistro.ok !== 1 ? 's' : ''} registrado${resultadoRegistro.ok !== 1 ? 's' : ''} correctamente`
+                        : `${resultadoRegistro.ok} OK · ${resultadoRegistro.errores} con error`}
+                    </div>
+                    <div style={{ fontSize:'12px', color:'var(--text2)', marginTop:'1px' }}>
+                      {resultadoRegistro.mes} {anioActual} · {resultadoRegistro.metodo}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setResultadoRegistro(null)}
+                  style={{ background:'transparent', border:'none', fontSize:'18px', color:'var(--text3)', cursor:'pointer', lineHeight:1, padding:'2px' }}>
+                  ×
+                </button>
+              </div>
+
+              {/* Detalle: monto total + conceptos */}
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', background:'rgba(255,255,255,.55)', borderRadius:'10px', marginBottom:'8px' }}>
+                <div style={{ fontSize:'12px', color:'var(--text2)', fontWeight:600 }}>Total registrado</div>
+                <div style={{ fontSize:'18px', fontWeight:800, color:'var(--v)' }}>
+                  ${fmtMonto(resultadoRegistro.totalMonto)}
+                </div>
+              </div>
+
+              {/* Chips de conceptos aplicados */}
+              <div style={{ display:'flex', gap:'6px', flexWrap:'wrap' }}>
+                {resultadoRegistro.conceptos.map((c, i) => (
+                  <span key={i} style={{ padding:'3px 10px', borderRadius:'20px', fontSize:'11.5px', fontWeight:600, background:'rgba(255,255,255,.7)', color:'var(--text2)', border:'1px solid rgba(0,0,0,.08)' }}>
+                    {c}
+                  </span>
+                ))}
+              </div>
+
+              {/* Acceso rápido al reporte */}
+              <button
+                onClick={() => setVistaTab('reporte')}
+                style={{ marginTop:'10px', padding:'8px 14px', background:'transparent', color:'var(--v)', border:'1.5px solid var(--v)', borderRadius:'9px', fontSize:'12px', fontWeight:600, cursor:'pointer' }}>
+                Ver reporte del mes →
+              </button>
+            </div>
+          )}
+
           {/* Configuración */}
           <div style={{ background:'var(--white)', border:'1.5px solid var(--border)', borderRadius:'16px', padding:'16px', marginBottom:'14px' }}>
             <SL style={{ marginBottom:'12px' }}>Configuración del pago</SL>
@@ -664,7 +811,7 @@ export default function Pagos() {
                 </div>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:'13px', fontWeight:600 }}>Monto proporcional</div>
-                  <div style={{ fontSize:'11px', color:'var(--text3)', marginTop:'1px' }}>Monto fijo igual para todos</div>
+                  <div style={{ fontSize:'11px', color:'var(--text3)', marginTop:'1px' }}>Se acumula — no reemplaza pagos anteriores del mes</div>
                 </div>
                 {cobrarProporcional && montoProporcional && (
                   <div style={{ fontSize:'14px', fontWeight:700, color:'var(--green)' }}>${parseFloat(montoProporcional || '0').toLocaleString('es-AR')}</div>
@@ -754,11 +901,14 @@ export default function Pagos() {
                 <div style={{ fontSize:'22px', fontWeight:700, color:'var(--v)' }}>${totalMonto.toLocaleString('es-AR')}</div>
               </div>
             </div>
-            {guardado && (
-              <div style={{ padding:'10px 14px', background:'var(--greenl)', borderRadius:'10px', fontSize:'13px', fontWeight:600, color:'var(--green)', marginBottom:'10px', textAlign:'center' }}>
-                ✓ Pagos registrados correctamente
+
+            {/* Advertencia: alumnos seleccionados que ya pagaron */}
+            {seleccionadosQueYaPagaron.length > 0 && (cobrarCuota || cobrarRecargo || cobrarMatricula) && (
+              <div style={{ padding:'9px 12px', background:'var(--amberl)', border:'1px solid var(--amber)', borderRadius:'10px', fontSize:'12px', color:'var(--amber)', fontWeight:600, marginBottom:'10px', lineHeight:1.4 }}>
+                ⚠ {seleccionadosQueYaPagaron.length} alumno{seleccionadosQueYaPagaron.length > 1 ? 's' : ''} ya {seleccionadosQueYaPagaron.length > 1 ? 'tienen' : 'tiene'} un pago de cuota/recargo/matrícula en {mes}. Al confirmar, ese pago será reemplazado.
               </div>
             )}
+
             <button
               onClick={guardar}
               disabled={guardando || seleccionados.size === 0}
