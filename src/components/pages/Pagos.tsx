@@ -66,7 +66,7 @@ export default function Pagos() {
   const mesActual = MESES[new Date().getMonth()]
   const anioActual = new Date().getFullYear()
 
-  const [vistaTab, setVistaTab] = useState<'registrar' | 'reporte'>('registrar')
+  const [vistaTab, setVistaTab] = useState<'registrar' | 'reporte' | 'deudores'>('registrar')
 
   // ── Estado: Reporte ───────────────────────────────────────────────────────
   const [repMes, setRepMes] = useState(mesActual)
@@ -105,6 +105,12 @@ export default function Pagos() {
     metodo: string
   } | null>(null)
 
+  // ── Estado: Deudores ──────────────────────────────────────────────────────
+  const [deudMes, setDeudMes] = useState(mesActual)
+  const [deudAnio, setDeudAnio] = useState(anioActual)
+  const [alumnosQuePageronDeud, setAlumnosQuePageronDeud] = useState<Set<string>>(new Set())
+  const [loadingDeudores, setLoadingDeudores] = useState(false)
+
   // ── Cargar reporte ────────────────────────────────────────────────────────
   const cargarReporte = async () => {
     setLoadingReporte(true)
@@ -124,6 +130,25 @@ export default function Pagos() {
   useEffect(() => {
     if (vistaTab === 'reporte') cargarReporte()
   }, [vistaTab, repMes, repAnio])
+
+  // ── Cargar deudores del mes ───────────────────────────────────────────────
+  const cargarDeudores = async () => {
+    setLoadingDeudores(true)
+    try {
+      const sb = createClient()
+      const { data } = await sb
+        .from('pagos_alumnos')
+        .select('alumno_id')
+        .eq('mes', deudMes)
+        .eq('anio', deudAnio)
+      setAlumnosQuePageronDeud(new Set((data || []).map((r: any) => r.alumno_id)))
+    } catch (e) { console.error(e) }
+    setLoadingDeudores(false)
+  }
+
+  useEffect(() => {
+    if (vistaTab === 'deudores') cargarDeudores()
+  }, [vistaTab, deudMes, deudAnio])
 
   // ── Cargar quiénes ya pagaron el mes ─────────────────────────────────────
   useEffect(() => {
@@ -179,9 +204,31 @@ export default function Pagos() {
 
   const totalRecaudado = pagosReporteFiltrados.reduce((s, p) => s + (p.monto || 0), 0)
 
-  const filtrados = busqueda
-    ? alumnos.filter((a: any) => `${a.nombre} ${a.apellido}`.toLowerCase().includes(busqueda.toLowerCase()))
-    : alumnos
+  // Helper: índice numérico de un nombre de mes (1-based)
+  const mesIndex = (nombre: string) => MESES.indexOf(nombre) + 1
+
+  // Alumnos activos en el mes seleccionado (excluye alumnos cuya fecha_alta sea posterior)
+  const alumnosActivosEnMes = (mesNombre: string, anio: number) =>
+    alumnos.filter((a: any) => {
+      if (!a.fecha_alta) return true
+      const [y, m] = a.fecha_alta.split('-').map(Number)
+      // Si el alumno se dio de alta después del mes consultado, no aparece
+      if (y > anio) return false
+      if (y === anio && m > mesIndex(mesNombre)) return false
+      return true
+    })
+
+  // Deudores: alumnos activos en el mes que NO tienen pago registrado ese mes
+  const deudores = alumnosActivosEnMes(deudMes, deudAnio).filter(
+    (a: any) => !alumnosQuePageronDeud.has(a.id)
+  )
+
+  const filtrados = (() => {
+    const base = alumnosActivosEnMes(mes, anioActual)
+    return busqueda
+      ? base.filter((a: any) => `${a.nombre} ${a.apellido}`.toLowerCase().includes(busqueda.toLowerCase()))
+      : base
+  })()
 
   const totalMonto = [...seleccionados].reduce((sum, id) => {
     const a = alumnos.find((x: any) => x.id === id)
@@ -424,6 +471,14 @@ export default function Pagos() {
             borderColor: vistaTab === 'reporte' ? 'var(--v)' : 'var(--border)' }}>
           Reporte
         </button>
+        <button
+          onClick={() => setVistaTab('deudores')}
+          style={{ padding:'9px 18px', borderRadius:'20px', border:'1.5px solid', fontSize:'13px', fontWeight:600, cursor:'pointer',
+            background: vistaTab === 'deudores' ? '#dc2626' : 'transparent',
+            color: vistaTab === 'deudores' ? '#fff' : 'var(--text2)',
+            borderColor: vistaTab === 'deudores' ? '#dc2626' : 'var(--border)' }}>
+          Deudores
+        </button>
       </div>
 
       {/* ── VISTA REPORTE ─────────────────────────────────────────────────── */}
@@ -571,7 +626,87 @@ export default function Pagos() {
         </div>
       )}
 
-      {/* ── MODAL EDITAR PAGO ─────────────────────────────────────────────── */}
+      {/* ── VISTA DEUDORES ────────────────────────────────────────────────── */}
+      {vistaTab === 'deudores' && (
+        <div>
+          {/* Filtros */}
+          <div style={{ background:'var(--white)', border:'1.5px solid var(--border)', borderRadius:'16px', padding:'16px', marginBottom:'14px' }}>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>
+              <div>
+                <div style={{ fontSize:'10.5px', fontWeight:600, color:'var(--text3)', textTransform:'uppercase', marginBottom:'3px' }}>Mes</div>
+                <select style={IS} value={deudMes} onChange={e => setDeudMes(e.target.value)}>
+                  {MESES.map(m => <option key={m}>{m}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{ fontSize:'10.5px', fontWeight:600, color:'var(--text3)', textTransform:'uppercase', marginBottom:'3px' }}>Año</div>
+                <select style={IS} value={deudAnio} onChange={e => setDeudAnio(+e.target.value)}>
+                  {[2024, 2025, 2026, 2027].map(y => <option key={y}>{y}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {loadingDeudores ? (
+            <div style={{ textAlign:'center', padding:'32px', color:'var(--text3)' }}>Cargando...</div>
+          ) : (
+            <>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'12px', flexWrap:'wrap', gap:'8px' }}>
+                <div>
+                  <div style={{ fontSize:'15px', fontWeight:700 }}>
+                    {deudores.length} deudor{deudores.length !== 1 ? 'es' : ''} · {deudMes} {deudAnio}
+                  </div>
+                  <div style={{ fontSize:'12px', color:'var(--text3)', marginTop:'2px' }}>
+                    Alumnos activos ese mes sin pago registrado
+                  </div>
+                </div>
+              </div>
+
+              {deudores.length === 0 ? (
+                <div style={{ textAlign:'center', padding:'40px', color:'var(--text3)', background:'var(--white)', borderRadius:'14px', border:'1.5px solid var(--border)' }}>
+                  ✓ Sin deudores para {deudMes} {deudAnio}
+                </div>
+              ) : (
+                <div style={{ background:'var(--white)', border:'1.5px solid var(--border)', borderRadius:'14px', overflow:'hidden' }}>
+                  {deudores.sort((a: any, b: any) => a.apellido.localeCompare(b.apellido)).map((a: any, i: number) => {
+                    const tel = a.es_menor ? (a.padre_telefono || a.telefono) : (a.telefono || a.padre_telefono)
+                    const cel = tel?.replace(/\D/g, '')
+                    const contacto = a.es_menor ? (a.padre_nombre || a.nombre) : a.nombre
+                    const msgDeudor = `Hola ${contacto} 👋, te escribimos desde Next English Institute. Notamos que la cuota de *${deudMes} ${deudAnio}* de *${a.nombre} ${a.apellido}* aún no fue registrada.\n📌 Si ya realizaste el pago, por favor ignorá este mensaje. Cualquier consulta estamos disponibles. ¡Muchas gracias! 🙌`
+                    return (
+                      <div key={a.id} style={{ padding:'12px 16px', borderBottom: i < deudores.length - 1 ? '1px solid var(--border)' : 'none', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
+                          <div style={{ width:32, height:32, borderRadius:8, background:a.color || '#652f8d', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, color:'#fff', flexShrink:0 }}>
+                            {a.nombre?.[0]}{a.apellido?.[0]}
+                          </div>
+                          <div>
+                            <div style={{ fontSize:'13.5px', fontWeight:600 }}>{a.nombre} {a.apellido}</div>
+                            <div style={{ fontSize:'11px', color:'var(--text3)' }}>{a.nivel} · ${a.cuota_mensual?.toLocaleString('es-AR')}/mes</div>
+                          </div>
+                        </div>
+                        <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
+                          <span style={{ padding:'3px 10px', borderRadius:'20px', fontSize:'11.5px', fontWeight:600, background:'#fef2f2', color:'#dc2626', border:'1px solid #fca5a5' }}>
+                            Sin pago
+                          </span>
+                          {cel && (
+                            <a
+                              href={`https://wa.me/54${cel}?text=${encodeURIComponent(msgDeudor)}`}
+                              target="_blank" rel="noopener noreferrer"
+                              style={{ padding:'5px 10px', background:'#25D366', color:'#fff', borderRadius:'7px', fontSize:'11px', fontWeight:600, textDecoration:'none', display:'flex', alignItems:'center', gap:'3px', flexShrink:0 }}>
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/></svg>
+                              WS
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
       {pagoEditando && (
         <ModalSheet title="Editar pago" onClose={() => setPagoEditando(null)}>
           <div style={{ marginBottom:'10px' }}>
