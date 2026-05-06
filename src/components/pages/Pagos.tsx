@@ -108,7 +108,7 @@ export default function Pagos() {
   // ── Estado: Deudores ──────────────────────────────────────────────────────
   const [deudMes, setDeudMes] = useState(mesActual)
   const [deudAnio, setDeudAnio] = useState(anioActual)
-  const [alumnosQuePageronDeud, setAlumnosQuePageronDeud] = useState<Set<string>>(new Set())
+  const [deudoresList, setDeudoresList] = useState<any[]>([])
   const [loadingDeudores, setLoadingDeudores] = useState(false)
 
   // ── Cargar reporte ────────────────────────────────────────────────────────
@@ -132,16 +132,36 @@ export default function Pagos() {
   }, [vistaTab, repMes, repAnio])
 
   // ── Cargar deudores del mes ───────────────────────────────────────────────
+  // Trae directamente de Supabase los alumnos activos con fecha_alta <= mes consultado
+  // que NO tienen pago registrado ese mes. Evita depender de los campos del hook useAlumnos.
   const cargarDeudores = async () => {
     setLoadingDeudores(true)
     try {
       const sb = createClient()
-      const { data } = await sb
+      const mesNum = MESES.indexOf(deudMes) + 1
+      const periodoConsultado = deudAnio * 100 + mesNum
+      // Último día del mes consultado para filtrar fecha_alta
+      const ultimoDia = new Date(deudAnio, mesNum, 0).toISOString().split('T')[0]
+
+      // 1. Alumnos activos con fecha_alta <= último día del mes consultado
+      const { data: todosAlumnos } = await sb
+        .from('alumnos')
+        .select('id, nombre, apellido, nivel, cuota_mensual, color, telefono, padre_nombre, padre_telefono, es_menor, fecha_alta')
+        .eq('activo', true)
+        .lte('fecha_alta', ultimoDia)
+
+      // 2. IDs de alumnos que ya pagaron ese mes
+      const { data: pagaron } = await sb
         .from('pagos_alumnos')
         .select('alumno_id')
         .eq('mes', deudMes)
         .eq('anio', deudAnio)
-      setAlumnosQuePageronDeud(new Set((data || []).map((r: any) => r.alumno_id)))
+
+      const pagaronSet = new Set((pagaron || []).map((r: any) => r.alumno_id))
+
+      // 3. Filtrar: activos ese mes y sin pago
+      const resultado = (todosAlumnos || []).filter((a: any) => !pagaronSet.has(a.id))
+      setDeudoresList(resultado)
     } catch (e) { console.error(e) }
     setLoadingDeudores(false)
   }
@@ -205,31 +225,13 @@ export default function Pagos() {
   const totalRecaudado = pagosReporteFiltrados.reduce((s, p) => s + (p.monto || 0), 0)
 
   // Helper: índice numérico de un nombre de mes (1-based)
-  const mesIndex = (nombre: string) => MESES.indexOf(nombre) + 1
 
-  // Alumnos activos en el mes consultado: solo aparecen si fecha_alta <= mes/año consultado
-  // Usa comparación periodoAlta <= periodoConsultado (YYYYMM) para ser 100% preciso
-  const alumnosActivosEnMes = (mesNombre: string, anio: number) => {
-    const periodoConsultado = anio * 100 + mesIndex(mesNombre)
-    return alumnos.filter((a: any) => {
-      if (!a.fecha_alta) return true
-      const partes = a.fecha_alta.split('-')
-      const periodoAlta = parseInt(partes[0], 10) * 100 + parseInt(partes[1], 10)
-      return periodoAlta <= periodoConsultado
-    })
-  }
+  // deudores viene directo de Supabase con fecha_alta ya filtrada en cargarDeudores
+  const deudores = deudoresList
 
-  // Deudores: alumnos activos en el mes que NO tienen pago registrado ese mes
-  const deudores = alumnosActivosEnMes(deudMes, deudAnio).filter(
-    (a: any) => !alumnosQuePageronDeud.has(a.id)
-  )
-
-  const filtrados = (() => {
-    const base = alumnosActivosEnMes(mes, anioActual)
-    return busqueda
-      ? base.filter((a: any) => `${a.nombre} ${a.apellido}`.toLowerCase().includes(busqueda.toLowerCase()))
-      : base
-  })()
+  const filtrados = busqueda
+    ? alumnos.filter((a: any) => `${a.nombre} ${a.apellido}`.toLowerCase().includes(busqueda.toLowerCase()))
+    : alumnos
 
   const totalMonto = [...seleccionados].reduce((sum, id) => {
     const a = alumnos.find((x: any) => x.id === id)
