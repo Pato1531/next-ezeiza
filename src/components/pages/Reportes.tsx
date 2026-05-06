@@ -540,21 +540,6 @@ export default function Reportes() {
         })}
       </ReportSection>
 
-      {/* KPIs */}
-      {(!esSecretaria && !esCoordinadora) && <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px',marginBottom:'20px'}}>
-        {[
-          {val:`${alumnos.length}`,    label:'Alumnos activos',     color:'var(--v)'},
-          {val:`${cursos.length}`,     label:'Cursos activos',      color:'var(--v)'},
-          {val:`${avgAsist}%`,         label:'Asist. docente prom.',color:'var(--green)'},
-          {val:`$${Math.round(totalLiq/1000)}k`, label:'Liquidación mensual', color:'var(--v)'},
-        ].map(k => (
-          <div key={k.label} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'18px 16px'}}>
-            <div style={{fontSize:'28px',fontWeight:700,lineHeight:1,marginBottom:'4px',color:k.color}}>{k.val}</div>
-            <div style={{fontSize:'12px',color:'var(--text2)',fontWeight:500}}>{k.label}</div>
-          </div>
-        ))}
-      </div>}
-
       {/* SECCIÓN: ASISTENCIA DOCENTE */}
       {(!esSecretaria && !esCoordinadora) && (
       <ReportSection
