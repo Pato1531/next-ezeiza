@@ -207,16 +207,17 @@ export default function Pagos() {
   // Helper: índice numérico de un nombre de mes (1-based)
   const mesIndex = (nombre: string) => MESES.indexOf(nombre) + 1
 
-  // Alumnos activos en el mes seleccionado (excluye alumnos cuya fecha_alta sea posterior)
-  const alumnosActivosEnMes = (mesNombre: string, anio: number) =>
-    alumnos.filter((a: any) => {
+  // Alumnos activos en el mes consultado: solo aparecen si fecha_alta <= mes/año consultado
+  // Usa comparación periodoAlta <= periodoConsultado (YYYYMM) para ser 100% preciso
+  const alumnosActivosEnMes = (mesNombre: string, anio: number) => {
+    const periodoConsultado = anio * 100 + mesIndex(mesNombre)
+    return alumnos.filter((a: any) => {
       if (!a.fecha_alta) return true
-      const [y, m] = a.fecha_alta.split('-').map(Number)
-      // Si el alumno se dio de alta después del mes consultado, no aparece
-      if (y > anio) return false
-      if (y === anio && m > mesIndex(mesNombre)) return false
-      return true
+      const partes = a.fecha_alta.split('-')
+      const periodoAlta = parseInt(partes[0], 10) * 100 + parseInt(partes[1], 10)
+      return periodoAlta <= periodoConsultado
     })
+  }
 
   // Deudores: alumnos activos en el mes que NO tienen pago registrado ese mes
   const deudores = alumnosActivosEnMes(deudMes, deudAnio).filter(
