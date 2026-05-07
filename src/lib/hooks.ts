@@ -747,8 +747,16 @@ export function useMiProfesora() {
           sb.from('usuarios').select('nombre').eq('id', user.id).single()
             .then(({ data: u }) => {
               if (!u) { setIsLoading(false); return }
-              sb.from('profesoras').select('*').ilike('nombre', `%${u.nombre.split(' ')[0]}%`).limit(1)
-                .then(({ data: rows2 }) => { setData(rows2?.[0] ?? null); setIsLoading(false) })
+              // Buscar por nombre completo primero, luego fallback a nombre parcial
+              // para evitar matchear otra profesora con el mismo primer nombre
+              sb.from('profesoras').select('*').ilike('nombre', `%${u.nombre}%`).limit(1)
+                .then(({ data: rows2 }) => {
+                  if (rows2?.length) { setData(rows2[0]); setIsLoading(false); return }
+                  // Fallback: buscar por primer apellido (más discriminante que primer nombre)
+                  const apellido = u.nombre.trim().split(' ').slice(-1)[0]
+                  sb.from('profesoras').select('*').ilike('nombre', `%${apellido}%`).limit(1)
+                    .then(({ data: rows3 }) => { setData(rows3?.[0] ?? null); setIsLoading(false) })
+                })
             })
         })
     })
