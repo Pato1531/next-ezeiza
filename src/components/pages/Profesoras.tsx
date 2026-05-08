@@ -157,7 +157,7 @@ export default function Profesoras() {
         <SL>{profesoras.length} colaboradores</SL>
         <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
           {soloLectura && <Badge cls="b-purple">Solo lectura</Badge>}
-          {puedeEditar && <BtnP sm onClick={irAFormNuevo}>+ Nuevo colaborador</BtnP>}
+          {/* Nuevo colaborador se crea desde Permisos → Usuarios para vincular acceso a la app */}
         </div>
       </div>
       {profesoras.map(p => (
