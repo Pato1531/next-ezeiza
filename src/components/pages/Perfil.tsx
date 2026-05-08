@@ -1,9 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { createClient, PERMISOS } from '@/lib/supabase'
-import { apiHeaders } from '@/lib/hooks'
+
 
 const LABEL_MODULOS: Record<string, string> = {
   dashboard:             'Dashboard',
@@ -203,11 +203,6 @@ export default function Perfil() {
         <FirmaDigital institutoId={usuario.instituto_id} />
       )}
 
-      {/* ── Accesos de usuarios (solo director) ── */}
-      {usuario.rol === 'director' && (
-        <AccesosUsuarios institutoId={usuario.instituto_id} />
-      )}
-
       {/* ── Cerrar sesión ── */}
       <div style={s.section}>
         <button
@@ -317,215 +312,6 @@ function FirmaDigital({ institutoId }: { institutoId: string }) {
 }
 
 
-// ── Componente AccesosUsuarios ─────────────────────────────────────────────────
-const ROLES_OPCIONES = ['profesora', 'secretaria', 'coordinadora']
-const LABEL_ROL: Record<string, string> = {
-  profesora: 'Profesora / Docente',
-  secretaria: 'Secretaria',
-  coordinadora: 'Coordinadora',
-  director: 'Director',
-}
-
-function AccesosUsuarios({ institutoId }: { institutoId: string }) {
-  const sb = createClient()
-  const IS: React.CSSProperties = {
-    width: '100%', padding: '10px 14px', border: '1px solid var(--border)',
-    borderRadius: '8px', fontSize: '14px', color: 'var(--text)',
-    background: '#fff', outline: 'none', fontFamily: 'inherit', boxSizing: 'border-box',
-  }
-
-  // Lista de colaboradores
-  const [colaboradores, setColaboradores] = useState<any[]>([])
-  const [loadingLista, setLoadingLista] = useState(true)
-
-  // Formulario nuevo usuario
-  const [mostrarForm, setMostrarForm] = useState(false)
-  const [form, setForm] = useState({ nombre: '', email: '', password: '', rol: 'profesora' })
-  const [creando, setCreando] = useState(false)
-  const [msg, setMsg] = useState<{ tipo: 'ok' | 'error'; texto: string } | null>(null)
-
-  // Editar rol
-  const [editandoId, setEditandoId] = useState<string | null>(null)
-  const [nuevoRol, setNuevoRol] = useState('')
-
-  const cargarColaboradores = useCallback(async () => {
-    setLoadingLista(true)
-    const { data } = await sb.from('usuarios')
-      .select('id, nombre, email, rol, color')
-      .eq('instituto_id', institutoId)
-      .neq('rol', 'director')
-      .order('nombre')
-    setColaboradores(data || [])
-    setLoadingLista(false)
-  }, [institutoId])
-
-  useEffect(() => { cargarColaboradores() }, [cargarColaboradores])
-
-  const crearUsuario = async () => {
-    setMsg(null)
-    if (!form.nombre.trim() || !form.email.trim() || !form.password.trim()) {
-      setMsg({ tipo: 'error', texto: 'Completá todos los campos' }); return
-    }
-    if (form.password.length < 8) {
-      setMsg({ tipo: 'error', texto: 'La contraseña debe tener al menos 8 caracteres' }); return
-    }
-    setCreando(true)
-    try {
-      const res = await fetch('/api/admin-crear-usuario', {
-        method: 'POST',
-        headers: apiHeaders(),
-        body: JSON.stringify({
-          nombre: form.nombre.trim(),
-          email: form.email.trim().toLowerCase(),
-          password: form.password,
-          rol: form.rol,
-          instituto_id: institutoId,
-        }),
-      })
-      const json = await res.json()
-      if (json.error) { setMsg({ tipo: 'error', texto: json.error }); setCreando(false); return }
-
-      setMsg({ tipo: 'ok', texto: `✓ Usuario ${form.nombre} creado correctamente` })
-      setForm({ nombre: '', email: '', password: '', rol: 'profesora' })
-      setMostrarForm(false)
-      cargarColaboradores()
-    } catch (e: any) {
-      setMsg({ tipo: 'error', texto: e.message || 'Error al crear usuario' })
-    }
-    setCreando(false)
-  }
-
-  const cambiarRol = async (userId: string) => {
-    await fetch('/api/actualizar-usuario', {
-      method: 'POST',
-      headers: apiHeaders(),
-      body: JSON.stringify({ id: userId, datos: { rol: nuevoRol } }),
-    })
-    setEditandoId(null)
-    cargarColaboradores()
-  }
-
-  const eliminarUsuario = async (userId: string, nombre: string) => {
-    if (!confirm(`¿Eliminar el acceso de ${nombre}? Esta acción no se puede deshacer.`)) return
-    await fetch('/api/eliminar-usuario', {
-      method: 'POST',
-      headers: apiHeaders(),
-      body: JSON.stringify({ id: userId }),
-    })
-    cargarColaboradores()
-  }
-
-  const iniciales = (nombre: string) => nombre.trim().split(' ').slice(0, 2).map(p => p[0]).join('').toUpperCase()
-
-  return (
-    <div style={{ background: 'var(--white)', border: '1.5px solid var(--border)', borderRadius: '16px', padding: '20px', margin: '0 16px 12px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <p style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text3)', letterSpacing: '.07em', margin: 0 }}>
-          ACCESOS DE USUARIOS
-        </p>
-        <button
-          onClick={() => { setMostrarForm(v => !v); setMsg(null) }}
-          style={{ padding: '6px 14px', background: mostrarForm ? 'transparent' : 'var(--v)', color: mostrarForm ? 'var(--text2)' : '#fff', border: '1.5px solid ' + (mostrarForm ? 'var(--border)' : 'var(--v)'), borderRadius: '20px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
-          {mostrarForm ? 'Cancelar' : '+ Nuevo usuario'}
-        </button>
-      </div>
-
-      {/* Formulario nuevo usuario */}
-      {mostrarForm && (
-        <div style={{ background: 'var(--bg)', borderRadius: '12px', padding: '16px', marginBottom: '16px', border: '1px solid var(--border)' }}>
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', marginBottom: '4px' }}>Nombre completo</div>
-            <input style={IS} placeholder="Ej: María González" value={form.nombre} onChange={e => setForm(p => ({ ...p, nombre: e.target.value }))} />
-          </div>
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', marginBottom: '4px' }}>Email</div>
-            <input style={IS} type="email" placeholder="usuario@instituto.edu" value={form.email} onChange={e => setForm(p => ({ ...p, email: e.target.value }))} />
-          </div>
-          <div style={{ marginBottom: '10px' }}>
-            <div style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', marginBottom: '4px' }}>Contraseña inicial</div>
-            <input style={IS} type="password" placeholder="Mínimo 8 caracteres" value={form.password} onChange={e => setForm(p => ({ ...p, password: e.target.value }))} />
-          </div>
-          <div style={{ marginBottom: '14px' }}>
-            <div style={{ fontSize: '10.5px', fontWeight: 700, color: 'var(--text3)', textTransform: 'uppercase', marginBottom: '4px' }}>Rol</div>
-            <select style={IS} value={form.rol} onChange={e => setForm(p => ({ ...p, rol: e.target.value }))}>
-              {ROLES_OPCIONES.map(r => <option key={r} value={r}>{LABEL_ROL[r]}</option>)}
-            </select>
-          </div>
-          {msg && (
-            <div style={{ padding: '10px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 500, marginBottom: '12px', background: msg.tipo === 'ok' ? 'var(--greenl)' : 'var(--redl)', color: msg.tipo === 'ok' ? 'var(--green)' : 'var(--red)' }}>
-              {msg.texto}
-            </div>
-          )}
-          <button
-            onClick={crearUsuario}
-            disabled={creando}
-            style={{ width: '100%', padding: '11px', background: 'var(--v)', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: creando ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
-            {creando ? 'Creando...' : 'Crear usuario'}
-          </button>
-        </div>
-      )}
-
-      {/* Mensaje fuera del form */}
-      {!mostrarForm && msg && (
-        <div style={{ padding: '10px 14px', borderRadius: '8px', fontSize: '13px', fontWeight: 500, marginBottom: '12px', background: msg.tipo === 'ok' ? 'var(--greenl)' : 'var(--redl)', color: msg.tipo === 'ok' ? 'var(--green)' : 'var(--red)' }}>
-          {msg.texto}
-        </div>
-      )}
-
-      {/* Lista de colaboradores */}
-      {loadingLista ? (
-        <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text3)', fontSize: '13px' }}>Cargando...</div>
-      ) : colaboradores.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text3)', fontSize: '13px' }}>
-          No hay colaboradores registrados todavía.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          {colaboradores.map(u => (
-            <div key={u.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', background: 'var(--bg)', borderRadius: '10px', border: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <div style={{ width: 34, height: 34, borderRadius: '8px', background: u.color || '#652f8d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', fontWeight: 700, color: '#fff', flexShrink: 0 }}>
-                  {iniciales(u.nombre)}
-                </div>
-                <div>
-                  <div style={{ fontSize: '13.5px', fontWeight: 600, color: 'var(--text)' }}>{u.nombre}</div>
-                  {editandoId === u.id ? (
-                    <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
-                      <select
-                        value={nuevoRol}
-                        onChange={e => setNuevoRol(e.target.value)}
-                        style={{ fontSize: '12px', padding: '3px 8px', border: '1px solid var(--v)', borderRadius: '6px', color: 'var(--v)', background: '#fff', fontFamily: 'inherit' }}>
-                        {ROLES_OPCIONES.map(r => <option key={r} value={r}>{LABEL_ROL[r]}</option>)}
-                      </select>
-                      <button onClick={() => cambiarRol(u.id)} style={{ padding: '3px 10px', background: 'var(--v)', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>✓</button>
-                      <button onClick={() => setEditandoId(null)} style={{ padding: '3px 8px', background: 'transparent', color: 'var(--text3)', border: '1px solid var(--border)', borderRadius: '6px', fontSize: '12px', cursor: 'pointer' }}>✕</button>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: '11px', color: 'var(--text3)', marginTop: '1px' }}>{LABEL_ROL[u.rol] ?? u.rol}</div>
-                  )}
-                </div>
-              </div>
-              {editandoId !== u.id && (
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button
-                    onClick={() => { setEditandoId(u.id); setNuevoRol(u.rol) }}
-                    style={{ padding: '5px 10px', background: 'var(--vl)', color: 'var(--v)', border: '1px solid var(--v)', borderRadius: '7px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>
-                    Rol
-                  </button>
-                  <button
-                    onClick={() => eliminarUsuario(u.id, u.nombre)}
-                    style={{ padding: '5px 10px', background: 'var(--redl)', color: 'var(--red)', border: '1px solid #fca5a5', borderRadius: '7px', fontSize: '11px', fontWeight: 600, cursor: 'pointer' }}>
-                    Baja
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
 
 const s: Record<string, React.CSSProperties> = {
   page: {
