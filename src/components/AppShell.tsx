@@ -213,6 +213,22 @@ export default function AppShell() {
     return () => window.removeEventListener('pago-registrado', handler)
   }, [])
 
+  // Listener para navegación programática desde otros componentes
+  // Uso: window.dispatchEvent(new CustomEvent('navigate-to', { detail: { page: 'profesoras' } }))
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent).detail
+      if (d?.page) {
+        setPage(d.page)
+        setMounted(prev => new Set([...prev, d.page]))
+        setMasOpen(false)
+        try { sessionStorage.setItem('nav_page', d.page) } catch {}
+      }
+    }
+    window.addEventListener('navigate-to', handler)
+    return () => window.removeEventListener('navigate-to', handler)
+  }, [])
+
   useEffect(() => {
     if (!busqGlobalQ.trim() || busqGlobalQ.length < 2) { setBusqResultados([]); return }
     const t = setTimeout(async () => {
