@@ -200,8 +200,14 @@ export default function Permisos() {
   }
 
   const toggleActivo = async (u: any) => {
-    const sb = createClient()
-    await sb.from('usuarios').update({ activo: !u.activo }).eq('id', u.id)
+    const accion = u.activo ? 'desactivar' : 'activar'
+    try {
+      await fetch('/api/usuarios', {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({ accion, user_id: u.id }),
+      })
+    } catch (e) { console.error('[toggleActivo]', e) }
     await cargarUsuarios()
     logActivity(u.activo ? 'Desactivó usuario' : 'Activó usuario', 'Permisos', u.nombre)
   }
