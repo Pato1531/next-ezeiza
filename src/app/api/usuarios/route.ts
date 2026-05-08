@@ -97,8 +97,8 @@ export async function POST(req: NextRequest) {
           usuario_id: uid,
           color: color || '#652f8d',
           tipo_contrato: 'hora',
-          valor_hora: 0,
-          valor_fijo: 0,
+          tarifa_hora: 0,
+          sueldo_fijo: 0,
         })
 
         if (profInsertError) {
