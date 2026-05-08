@@ -189,14 +189,16 @@ export default function Permisos() {
       if (json.ok) {
         setFormNuevo({ nombre:'', email:'', password:'', rol:'coordinadora', color:'#652f8d' })
         await cargarUsuarios()
-        setMsg({ tipo:'ok', texto:'✓ Usuario creado correctamente' })
         logActivity('Creó usuario', 'Permisos', formNuevo.nombre)
+        // Navegar a Colaboradores para completar la ficha del nuevo usuario
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent('navigate-to', { detail: { page: 'profesoras' } }))
+        }, 400)
       } else {
         alert(json.error || 'Error al crear usuario')
       }
     } catch { alert('Error de conexión') }
     setCreando(false)
-    setTimeout(() => setMsg(null), 4000)
   }
 
   const toggleActivo = async (u: any) => {
