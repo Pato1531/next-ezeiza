@@ -54,7 +54,7 @@ export async function POST(req: NextRequest) {
 
       // Insertar en tabla usuarios
       const { error: dbError } = await admin.from('usuarios').upsert({
-        id: uid, nombre, rol, color: color || '#652f8d', initials, activo: true,
+        id: uid, nombre, email, rol, color: color || '#652f8d', initials, activo: true,
         instituto_id: institutoId,
       })
       if (dbError) return NextResponse.json({ error: dbError.message }, { status: 400 })
