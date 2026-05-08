@@ -103,29 +103,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: true })
     }
 
-    // Desactivar usuario — banea en Auth + marca inactivo en DB
+    // Desactivar usuario — elimina de Auth + marca inactivo en DB
+    // Se elimina de Auth para liberar el email y poder recrearlo si es necesario
     if (accion === 'desactivar') {
       const { user_id } = datos
       if (!user_id) return NextResponse.json({ error: 'Falta user_id' }, { status: 400 })
-      // Ban en Supabase Auth (10 años = baja efectiva)
-      await admin.auth.admin.updateUserById(user_id, { ban_duration: '876000h' })
-      // Marcar inactivo en tabla usuarios
+      // Eliminar de Supabase Auth (libera el email)
+      await admin.auth.admin.deleteUser(user_id)
+      // Marcar inactivo en tabla usuarios (se conserva para historial)
       await admin.from('usuarios').update({ activo: false }).eq('id', user_id)
       // Si era profesora, desactivar en profesoras también
       await admin.from('profesoras').update({ activa: false }).eq('usuario_id', user_id)
-      return NextResponse.json({ ok: true })
-    }
-
-    // Activar usuario — quitar ban + marcar activo en DB
-    if (accion === 'activar') {
-      const { user_id } = datos
-      if (!user_id) return NextResponse.json({ error: 'Falta user_id' }, { status: 400 })
-      // Quitar ban en Auth
-      await admin.auth.admin.updateUserById(user_id, { ban_duration: 'none' })
-      // Marcar activo en tabla usuarios
-      await admin.from('usuarios').update({ activo: true }).eq('id', user_id)
-      // Si era profesora, reactivar en profesoras también
-      await admin.from('profesoras').update({ activa: true }).eq('usuario_id', user_id)
       return NextResponse.json({ ok: true })
     }
 
