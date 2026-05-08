@@ -1,8 +1,7 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { getInstitutoId } from '@/lib/server-utils'
 import { createClient } from '@supabase/supabase-js'
-import { rateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
+import { NextRequest, NextResponse } from 'next/server'
 
+// Admin client con service role — solo se usa server-side
 function getAdminClient() {
   return createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -11,134 +10,127 @@ function getAdminClient() {
   )
 }
 
-
-// GET — Listar todos los usuarios del instituto (para módulo Permisos)
-// Usa service_role para bypassear RLS y que el Director vea todos los usuarios.
 export async function GET(req: NextRequest) {
   try {
-    const institutoId = getInstitutoId(req)
+    const institutoId = req.headers.get('x-instituto-id')
+    if (!institutoId) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     const admin = getAdminClient()
-
-    if (!institutoId) {
-      console.warn('[usuarios GET] instituto_id no recibido en el header')
-      return NextResponse.json({ error: 'instituto_id requerido' }, { status: 400 })
-    }
-
-    const { data, error } = await admin
-      .from('usuarios')
-      .select('id, nombre, email, rol, color, initials, activo, instituto_id, permisos_custom')
+    const { data, error } = await admin.from('usuarios')
+      .select('id, nombre, email, rol, color, activo, initials')
       .eq('instituto_id', institutoId)
-      .order('nombre', { ascending: true })
-
-    if (error) {
-      console.error('[usuarios GET] Supabase error:', error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
-    }
-
-    return NextResponse.json({ data: data || [] })
+      .order('nombre')
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ data })
   } catch (e: any) {
-    console.error('[usuarios GET] catch:', e)
-    return NextResponse.json({ error: e.message, data: [] }, { status: 500 })
+    return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }
 
-// POST — Crear nuevo usuario (director, coordinadora, secretaria, profesora)
 export async function POST(req: NextRequest) {
   try {
-    const ip = getClientIp(req)
-    const rl = rateLimit(ip + ':usuarios', { limit: 10, windowMs: 60000 })
-    if (!rl.ok) return rateLimitResponse(rl.resetMs)
-
-    const institutoId = getInstitutoId(req)
     const body = await req.json()
     const { accion, ...datos } = body
     const admin = getAdminClient()
+    const institutoId = req.headers.get('x-instituto-id')
 
-    // ── CREAR usuario ──────────────────────────────────────────────────────
+    // Crear usuario nuevo
     if (accion === 'crear') {
       const { email, password, nombre, rol, color } = datos
       if (!email || !password || !nombre || !rol) {
-        return NextResponse.json({ error: 'Faltan datos: email, password, nombre, rol' }, { status: 400 })
+        return NextResponse.json({ error: 'Faltan datos obligatorios' }, { status: 400 })
       }
 
+      // Crear en Auth
       const { data: authData, error: authError } = await admin.auth.admin.createUser({
-        email: email.trim().toLowerCase(),
+        email,
         password,
         email_confirm: true,
-        user_metadata: { nombre, rol },
+        user_metadata: { nombre, rol }
       })
       if (authError) return NextResponse.json({ error: authError.message }, { status: 400 })
 
       const uid = authData.user.id
       const initials = nombre.split(' ').map((p: string) => p[0]).join('').toUpperCase().slice(0, 2)
 
+      // Insertar en tabla usuarios
       const { error: dbError } = await admin.from('usuarios').upsert({
-        id: uid,
-        nombre,
-        email: email.trim().toLowerCase(),
-        rol,
-        color: color || '#652f8d',
-        initials,
-        activo: true,
-        ...(institutoId ? { instituto_id: institutoId } : {}),
+        id: uid, nombre, rol, color: color || '#652f8d', initials, activo: true,
+        instituto_id: institutoId,
       })
       if (dbError) return NextResponse.json({ error: dbError.message }, { status: 400 })
+
+      // Si es profesora, crear registro en profesoras con usuario_id vinculado
+      if (rol === 'profesora') {
+        const partes = nombre.trim().split(' ')
+        const apellido = partes.length >= 2 ? partes.slice(1).join(' ') : partes[0]
+        await admin.from('profesoras').insert({
+          nombre,
+          apellido,
+          email,
+          activa: true,
+          instituto_id: institutoId,
+          usuario_id: uid,
+          color: color || '#652f8d',
+          tipo_contrato: 'hora',
+          valor_hora: 0,
+          valor_fijo: 0,
+        }).then(({ error: e }) => {
+          if (e) console.error('[usuarios/crear] profesoras insert:', e.message)
+        })
+      }
 
       return NextResponse.json({ ok: true, id: uid })
     }
 
-    // ── CAMBIAR CONTRASEÑA ─────────────────────────────────────────────────
+    // Cambiar contraseña
     if (accion === 'cambiar_password') {
       const { user_id, nueva_password } = datos
       if (!user_id || !nueva_password) return NextResponse.json({ error: 'Faltan datos' }, { status: 400 })
       if (nueva_password.length < 6) return NextResponse.json({ error: 'Mínimo 6 caracteres' }, { status: 400 })
+
       const { error } = await admin.auth.admin.updateUserById(user_id, { password: nueva_password })
       if (error) return NextResponse.json({ error: error.message }, { status: 400 })
       return NextResponse.json({ ok: true })
     }
 
-    // ── ACTUALIZAR ROL / NOMBRE ────────────────────────────────────────────
-    if (accion === 'actualizar') {
-      const { user_id, nombre, rol, color } = datos
-      if (!user_id) return NextResponse.json({ error: 'user_id requerido' }, { status: 400 })
-
-      const updates: Record<string, any> = {}
-      if (nombre) updates.nombre = nombre
-      if (rol) updates.rol = rol
-      if (color) updates.color = color
-
-      const { error: updErr } = await admin.from('usuarios').update(updates).eq('id', user_id)
-      if (updErr) { console.error('[usuarios update]', updErr.message); return NextResponse.json({ error: updErr.message }, { status: 500 }) }
-
-      if (nombre || rol) {
-        await admin.auth.admin.updateUserById(user_id, {
-          user_metadata: { ...(nombre ? { nombre } : {}), ...(rol ? { rol } : {}) },
-        })
-      }
+    // Actualizar rol/nombre en auth metadata
+    if (accion === 'actualizar_metadata') {
+      const { user_id, nombre, rol } = datos
+      const { error } = await admin.auth.admin.updateUserById(user_id, {
+        user_metadata: { nombre, rol }
+      })
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 })
       return NextResponse.json({ ok: true })
     }
 
-    // ── DESACTIVAR usuario ─────────────────────────────────────────────────
+    // Desactivar usuario — banea en Auth + marca inactivo en DB
     if (accion === 'desactivar') {
       const { user_id } = datos
-      if (!user_id) return NextResponse.json({ error: 'user_id requerido' }, { status: 400 })
-      const { error: desErr } = await admin.from('usuarios').update({ activo: false }).eq('id', user_id)
-      if (desErr) return NextResponse.json({ error: desErr.message }, { status: 500 })
+      if (!user_id) return NextResponse.json({ error: 'Falta user_id' }, { status: 400 })
+      // Ban en Supabase Auth (10 años = baja efectiva)
+      await admin.auth.admin.updateUserById(user_id, { ban_duration: '876000h' })
+      // Marcar inactivo en tabla usuarios
+      await admin.from('usuarios').update({ activo: false }).eq('id', user_id)
+      // Si era profesora, desactivar en profesoras también
+      await admin.from('profesoras').update({ activa: false }).eq('usuario_id', user_id)
       return NextResponse.json({ ok: true })
     }
 
-    // ── REACTIVAR usuario ──────────────────────────────────────────────────
-    if (accion === 'reactivar') {
+    // Activar usuario — quitar ban + marcar activo en DB
+    if (accion === 'activar') {
       const { user_id } = datos
-      if (!user_id) return NextResponse.json({ error: 'user_id requerido' }, { status: 400 })
-      const { error: reactErr } = await admin.from('usuarios').update({ activo: true }).eq('id', user_id)
-      if (reactErr) return NextResponse.json({ error: reactErr.message }, { status: 500 })
+      if (!user_id) return NextResponse.json({ error: 'Falta user_id' }, { status: 400 })
+      // Quitar ban en Auth
+      await admin.auth.admin.updateUserById(user_id, { ban_duration: 'none' })
+      // Marcar activo en tabla usuarios
+      await admin.from('usuarios').update({ activo: true }).eq('id', user_id)
+      // Si era profesora, reactivar en profesoras también
+      await admin.from('profesoras').update({ activa: true }).eq('usuario_id', user_id)
       return NextResponse.json({ ok: true })
     }
 
     return NextResponse.json({ error: 'Acción no reconocida' }, { status: 400 })
   } catch (e: any) {
-    console.error('[usuarios POST] catch:', e)
     return NextResponse.json({ error: e.message }, { status: 500 })
   }
 }
