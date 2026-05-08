@@ -47,7 +47,7 @@ export default function Profesoras() {
   }
   const irALista = () => { setSelId(null); setVista('lista') }
   const irAFormNuevo = () => {
-    setForm({ nombre:'', apellido:'', email:'', fecha_nacimiento:'', telefono:'', tipo_colaborador:'docente', tarifa_hora:0, horas_semana:0, sueldo_fijo:0, tipo_contrato:'hora', color: COLORES[profesoras.length % COLORES.length] })
+    setForm({ nombre:'', apellido:'', nombreCompleto:'', email:'', fecha_nacimiento:'', telefono:'', tipo_colaborador:'docente', tarifa_hora:0, horas_semana:0, sueldo_fijo:0, tipo_contrato:'hora', color: COLORES[profesoras.length % COLORES.length] })
     setVista('form')
   }
   const irAFormEditar = () => {
@@ -55,9 +55,16 @@ export default function Profesoras() {
   }
 
   const guardar = async () => {
-    if (!form?.nombre || !form?.apellido) return alert('Nombre y apellido son obligatorios')
+    if (!form?.nombre && !form?.nombreCompleto) return alert('El nombre es obligatorio')
     setGuardando(true)
-    const initials = `${form.nombre[0]}${form.apellido[0]}`.toUpperCase()
+    // Si vino de form nuevo usa nombreCompleto, si edita usa nombre+apellido existentes
+    const esNuevo = !form?.id
+    if (esNuevo && form?.nombreCompleto) {
+      const partes = form.nombreCompleto.trim().split(' ')
+      form.nombre = partes[0]
+      form.apellido = partes.length > 1 ? partes.slice(1).join(' ') : partes[0]
+    }
+    const initials = `${form.nombre?.[0]||''}${form.apellido?.[0]||''}`.toUpperCase()
     const { id, activo, activa, ...datos } = form
     const t = setTimeout(() => { setGuardando(false); if (id) irADetalle(id); else irALista() }, 6000)
     try {
@@ -177,10 +184,14 @@ export default function Profesoras() {
       <BtnG sm onClick={() => form?.id ? irADetalle(form.id) : irALista()} style={{marginBottom:'20px'}}>← Cancelar</BtnG>
       <div style={{fontSize:'20px',fontWeight:700,marginBottom:'20px'}}>{form?.id ? 'Editar colaborador' : 'Nuevo colaborador'}</div>
       <Card>
-        <Row2>
-          <Field2 label="Nombre *"><Input value={form?.nombre||''} onChange={(v:string)=>setForm({...form,nombre:v})} /></Field2>
-          <Field2 label="Apellido *"><Input value={form?.apellido||''} onChange={(v:string)=>setForm({...form,apellido:v})} /></Field2>
-        </Row2>
+        {form?.id ? (
+          <Row2>
+            <Field2 label="Nombre *"><Input value={form?.nombre||''} onChange={(v:string)=>setForm({...form,nombre:v})} /></Field2>
+            <Field2 label="Apellido *"><Input value={form?.apellido||''} onChange={(v:string)=>setForm({...form,apellido:v})} /></Field2>
+          </Row2>
+        ) : (
+          <Field2 label="Nombre completo *"><Input value={form?.nombreCompleto||''} onChange={(v:string)=>setForm({...form,nombreCompleto:v})} placeholder="Ej: María González" /></Field2>
+        )}
         <Field2 label="Email"><Input type="email" value={form?.email||''} onChange={(v:string)=>setForm({...form,email:v})} /></Field2>
         <Row2>
           <Field2 label="Fecha de nacimiento">
