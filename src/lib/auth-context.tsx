@@ -9,6 +9,7 @@ import {
   setSessionReady    as hooksSetSessionReady,
   setAuthReady       as hooksSetAuthReady,
   setAccessToken     as hooksSetAccessToken,
+  cacheInvalidateAll as hooksCacheInvalidateAll,
 } from '@/lib/hooks'
 
 // ── Cliente singleton ─────────────────────────────────────────────────────────
@@ -238,6 +239,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (event === 'SIGNED_IN' && session?.user?.id) {
           clearTimeout(safetyTimer)
           cargarUsuario(session.user.id)
+        } else if (event === 'TOKEN_REFRESHED' && session?.access_token) {
+          // Supabase rotó el token — actualizar en hooks.ts sin recargar el usuario
+          hooksSetAccessToken(session.access_token)
         } else if (event === 'SIGNED_OUT') {
           if (typeof window !== 'undefined') localStorage.removeItem('ne_session_uid')
           setUsuario(null)
@@ -247,6 +251,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           hooksSetSessionReady(false)
           hooksSetAuthReady(false)
           hooksSetAccessToken('')
+          hooksCacheInvalidateAll()
           _institutoIdLocal = null
           setLoading(false)
         }
@@ -277,6 +282,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     hooksSetSessionReady(false)
     hooksSetAuthReady(false)
     hooksSetAccessToken('')
+    hooksCacheInvalidateAll()
     _institutoIdLocal = null
     setLoading(false)
     try {
