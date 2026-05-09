@@ -1,6 +1,6 @@
 import { rateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
-import { getInstitutoId } from '@/lib/server-utils'
+import { getInstitutoId, verificarAuth } from '@/lib/server-utils'
 import { createClient } from '@supabase/supabase-js'
 
 function sb() {
@@ -12,6 +12,9 @@ export async function POST(req: NextRequest) {
     const ip = getClientIp(req)
     const rl = rateLimit(ip + ':registrar-pago', { limit: 20, windowMs: 60000 })
     if (!rl.ok) return rateLimitResponse(rl.resetMs)
+
+    const authError = await verificarAuth(req)
+    if (authError) return authError
 
     const institutoId = getInstitutoId(req)
     const pago = await req.json()
@@ -114,6 +117,9 @@ export async function POST(req: NextRequest) {
 // GET — listar pagos del mes para saber quiénes ya pagaron (usa service_role, bypasea RLS)
 export async function GET(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const { searchParams } = new URL(req.url)
     const mes = searchParams.get('mes')
     const anio = searchParams.get('anio')
@@ -136,6 +142,9 @@ export async function GET(req: NextRequest) {
 // DELETE — eliminar un pago por id
 export async function DELETE(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const { id } = await req.json()
     if (!id) return NextResponse.json({ error: 'Falta id del pago' }, { status: 400 })
 
