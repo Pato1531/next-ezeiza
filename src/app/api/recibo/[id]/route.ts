@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { verificarAuth } from '@/lib/server-utils'
 
 function getSupabase() {
   return createClient(
