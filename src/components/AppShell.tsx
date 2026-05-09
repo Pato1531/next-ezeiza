@@ -196,6 +196,9 @@ export default function AppShell() {
   const [vistosLocal, setVistosLocal] = useState<string[]>([])
   const [atencionBadge, setAtencionBadge] = useState(0)
   const [onboardingVisto, setOnboardingVisto] = useState<Set<string>>(new Set())
+  const [showOnboarding, setShowOnboarding] = useState(false)
+  const [onboardingStep, setOnboardingStep] = useState(0)
+  const [onboardingChecks, setOnboardingChecks] = useState({ cursos: false, profesoras: false, alumnos: false, pagos: false })
   const [navCustom, setNavCustom] = useState<string[] | null>(null)
   const [navEditOpen, setNavEditOpen] = useState(false)
   const [busqGlobalOpen, setBusqGlobalOpen] = useState(false)
@@ -316,6 +319,16 @@ export default function AppShell() {
     } catch {}
   }, [usuario?.id])
 
+  // Detectar sede nueva: solo director, primera vez (clave no vista en localStorage)
+  useEffect(() => {
+    if (!usuario || usuario.rol !== 'director') return
+    const key = `onboarding_completado_${usuario.instituto_id}`
+    try {
+      const visto = localStorage.getItem(key)
+      if (!visto) setShowOnboarding(true)
+    } catch {}
+  }, [usuario?.id])
+
   useEffect(() => {
     if (!comunicados.length || !usuario) return
     const misComunicados = comunicados.filter(c => c.rol_destino === 'todos' || c.rol_destino === usuario.rol)
@@ -372,9 +385,95 @@ export default function AppShell() {
     }
   }
 
+  const cerrarOnboarding = () => {
+    setShowOnboarding(false)
+    try { localStorage.setItem(`onboarding_completado_${usuario?.instituto_id}`, '1') } catch {}
+  }
+
+  const pasoOnboarding = (page: string) => {
+    navTo(page)
+    setShowOnboarding(false)
+    try { localStorage.setItem(`onboarding_completado_${usuario?.instituto_id}`, '1') } catch {}
+  }
+
+  const PASOS_ONBOARDING = [
+    {
+      id: 'cursos', icon: '📚', titulo: 'Crear tus cursos',
+      desc: 'Agregá los cursos activos con su horario, nivel y profesora asignada.',
+      page: 'cursos', label: 'Ir a Cursos'
+    },
+    {
+      id: 'profesoras', icon: '👩‍🏫', titulo: 'Registrar colaboradores',
+      desc: 'Cargá el equipo docente y administrativo en la sección Colaboradores.',
+      page: 'profesoras', label: 'Ir a Colaboradores'
+    },
+    {
+      id: 'alumnos', icon: '🎓', titulo: 'Cargar alumnos',
+      desc: 'Ingresá los alumnos activos con su información de contacto y nivel.',
+      page: 'alumnos', label: 'Ir a Alumnos'
+    },
+    {
+      id: 'permisos', icon: '🔑', titulo: 'Dar accesos al equipo',
+      desc: 'Creá usuarios para que profesoras y secretarias puedan ingresar a la app.',
+      page: 'permisos', label: 'Ir a Permisos'
+    },
+  ]
+
   return (
     <ToastProvider>
     <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+
+      {/* ── MODAL ONBOARDING PRIMERA VEZ ─────────────────────────────────── */}
+      {showOnboarding && usuario?.rol === 'director' && (
+        <div style={{position:'fixed',inset:0,background:'rgba(20,0,40,.6)',zIndex:1000,display:'flex',alignItems:'flex-end',justifyContent:'center',padding:'0'}}>
+          <div style={{background:'var(--white)',borderRadius:'24px 24px 0 0',padding:'28px 20px 40px',width:'100%',maxWidth:'520px',maxHeight:'90vh',overflowY:'auto'}}>
+            <div style={{width:'40px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 24px'}} />
+
+            {/* Header */}
+            <div style={{textAlign:'center',marginBottom:'28px'}}>
+              <div style={{fontSize:'36px',marginBottom:'10px'}}>🎉</div>
+              <div style={{fontSize:'20px',fontWeight:800,color:'var(--text)',marginBottom:'6px'}}>
+                ¡Bienvenido a EduGest!
+              </div>
+              <div style={{fontSize:'13px',color:'var(--text3)',lineHeight:1.5,maxWidth:'360px',margin:'0 auto'}}>
+                Tu sede está lista. Seguí estos pasos para configurarla y empezar a gestionar tu instituto.
+              </div>
+            </div>
+
+            {/* Checklist de pasos */}
+            <div style={{display:'flex',flexDirection:'column',gap:'10px',marginBottom:'24px'}}>
+              {PASOS_ONBOARDING.map((paso, i) => (
+                <div key={paso.id} style={{display:'flex',alignItems:'center',gap:'14px',padding:'14px 16px',background:'var(--bg)',borderRadius:'14px',border:'1.5px solid var(--border)'}}>
+                  <div style={{fontSize:'24px',flexShrink:0}}>{paso.icon}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}}>{paso.titulo}</div>
+                    <div style={{fontSize:'12px',color:'var(--text3)',lineHeight:1.4}}>{paso.desc}</div>
+                  </div>
+                  <button
+                    onClick={() => pasoOnboarding(paso.page)}
+                    style={{padding:'7px 12px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'11.5px',fontWeight:600,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}}>
+                    {paso.label}
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer */}
+            <div style={{display:'flex',gap:'10px'}}>
+              <button
+                onClick={cerrarOnboarding}
+                style={{flex:1,padding:'13px',background:'transparent',color:'var(--text3)',border:'1.5px solid var(--border)',borderRadius:'12px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>
+                Ya configuré todo
+              </button>
+              <button
+                onClick={() => pasoOnboarding('cursos')}
+                style={{flex:2,padding:'13px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:700,cursor:'pointer'}}>
+                Empezar por Cursos →
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* TOPBAR */}
       <div style={{ background: 'var(--white)', borderBottom: '1px solid var(--border)', padding: '0 20px', height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 40 }}>
