@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getInstitutoId } from '@/lib/server-utils'
+import { getInstitutoId , verificarAuthRol} from '@/lib/server-utils'
 import { createClient } from '@supabase/supabase-js'
 
 function sb() {
@@ -13,6 +13,9 @@ function sb() {
 // POST — Crear nueva profesora/colaborador
 export async function POST(req: NextRequest) {
   try {
+    const authError = await verificarAuthRol(req, ['director', 'coordinadora'])
+    if (authError) return authError
+
     const institutoId = getInstitutoId(req)
     const datos = await req.json()
 
@@ -45,6 +48,9 @@ export async function POST(req: NextRequest) {
 // PATCH — Actualizar datos de una profesora/colaborador
 export async function PATCH(req: NextRequest) {
   try {
+    const authError = await verificarAuthRol(req, ['director', 'coordinadora'])
+    if (authError) return authError
+
     const { id, datos } = await req.json()
     if (!id) return NextResponse.json({ error: 'id requerido' }, { status: 400 })
 
@@ -70,6 +76,9 @@ export async function PATCH(req: NextRequest) {
 // DELETE — Desactivar profesora/colaborador
 export async function DELETE(req: NextRequest) {
   try {
+    const authError = await verificarAuthRol(req, ['director'])
+    if (authError) return authError
+
     const { id } = await req.json()
     if (!id) return NextResponse.json({ error: 'id requerido' }, { status: 400 })
 
