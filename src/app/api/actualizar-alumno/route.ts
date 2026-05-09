@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { verificarAuth } from '@/lib/server-utils'
 
 function sb() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -7,6 +8,9 @@ function sb() {
 
 export async function POST(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const { id, datos } = await req.json()
     if (!id) return NextResponse.json({ error: 'Falta id' }, { status: 400 })
     const { error } = await sb().from('alumnos').update(datos).eq('id', id)
