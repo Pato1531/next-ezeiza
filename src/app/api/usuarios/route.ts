@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { rateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
+import { getInstitutoId, verificarAuth, verificarAuthRol } from '@/lib/server-utils'
 
 function getAdminClient() {
   return createClient(
@@ -9,13 +10,13 @@ function getAdminClient() {
     { auth: { autoRefreshToken: false, persistSession: false } }
   )
 }
-function getInstitutoId(req: NextRequest): string | null {
-  return req.headers.get('x-instituto-id') || null
-}
 
 // GET — Listar todos los usuarios del instituto (para módulo Permisos)
 export async function GET(req: NextRequest) {
   try {
+    const authError = await verificarAuthRol(req, ['director', 'coordinadora'])
+    if (authError) return authError
+
     const institutoId = getInstitutoId(req)
     if (!institutoId) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     const admin = getAdminClient()
@@ -41,9 +42,21 @@ export async function POST(req: NextRequest) {
     const rl = rateLimit(ip + ':usuarios', { limit: 10, windowMs: 60000 })
     if (!rl.ok) return rateLimitResponse(rl.resetMs)
 
-    const institutoId = getInstitutoId(req)
+    // Validar que es director para acciones críticas,
+    // o al menos usuario autenticado del instituto para cambiar su propia contraseña
     const body = await req.json()
     const { accion, ...datos } = body
+
+    const accionesDirector = ['crear', 'desactivar', 'reactivar', 'actualizar']
+    if (accionesDirector.includes(accion)) {
+      const authError = await verificarAuthRol(req, ['director'])
+      if (authError) return authError
+    } else {
+      const authError = await verificarAuth(req)
+      if (authError) return authError
+    }
+
+    const institutoId = getInstitutoId(req)
     const admin = getAdminClient()
 
     // ── CREAR usuario ──────────────────────────────────────────────────────
