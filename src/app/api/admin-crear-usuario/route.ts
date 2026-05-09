@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { rateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
+import { getInstitutoId , verificarAuthRol} from '@/lib/server-utils'
 
 function sb() {
   return createClient(
@@ -9,9 +10,7 @@ function sb() {
   )
 }
 
-function getInstitutoId(req: NextRequest): string | null {
-  return req.headers.get('x-instituto-id') || null
-}
+// getInstitutoId imported from @/lib/server-utils
 
 // POST /api/admin-crear-usuario
 // Crea un usuario en Supabase Auth + tabla usuarios + tabla profesoras (si rol === profesora)
@@ -21,6 +20,9 @@ export async function POST(req: NextRequest) {
     const ip = getClientIp(req)
     const rl = rateLimit(ip + ':admin-crear-usuario', { limit: 20, windowMs: 60000 })
     if (!rl.ok) return rateLimitResponse(rl.resetMs)
+
+    const authError = await verificarAuthRol(req, ['director'])
+    if (authError) return authError
 
     const institutoId = getInstitutoId(req)
     if (!institutoId) {
