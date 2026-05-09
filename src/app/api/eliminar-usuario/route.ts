@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { rateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
+import { getInstitutoId , verificarAuthRol} from '@/lib/server-utils'
 
 function sb() {
   return createClient(
@@ -9,9 +10,7 @@ function sb() {
   )
 }
 
-function getInstitutoId(req: NextRequest): string | null {
-  return req.headers.get('x-instituto-id') || null
-}
+// getInstitutoId imported from @/lib/server-utils
 
 // POST /api/eliminar-usuario
 // Desactiva el acceso de un colaborador (no borra auth.users para preservar historial)
@@ -21,6 +20,9 @@ export async function POST(req: NextRequest) {
     const ip = getClientIp(req)
     const rl = rateLimit(ip + ':eliminar-usuario', { limit: 20, windowMs: 60000 })
     if (!rl.ok) return rateLimitResponse(rl.resetMs)
+
+    const authError = await verificarAuthRol(req, ['director'])
+    if (authError) return authError
 
     const institutoId = getInstitutoId(req)
     if (!institutoId) {
