@@ -10,6 +10,12 @@ function sb() {
 
 export async function POST(request: NextRequest) {
   try {
+    // Validar que viene con instituto_id — no acepta logs sin contexto de sede
+    const institutoId = request.headers.get('x-instituto-id')
+    if (!institutoId) {
+      return NextResponse.json({ error: 'instituto_id requerido' }, { status: 400 })
+    }
+
     const body = await request.json()
     const { usuario_nombre, accion, modulo, detalle } = body
 
@@ -24,6 +30,7 @@ export async function POST(request: NextRequest) {
         accion,
         modulo,
         detalle: detalle || null,
+        instituto_id: institutoId,
       }])
 
     if (error) throw error
