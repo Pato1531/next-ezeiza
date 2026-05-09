@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getInstitutoId } from '@/lib/server-utils'
+import { getInstitutoId , verificarAuth} from '@/lib/server-utils'
 import { createClient } from '@supabase/supabase-js'
 
 function sb() {
@@ -9,6 +9,9 @@ function sb() {
 // PATCH — Actualizar campos de un curso (incluye bibliografia)
 export async function PATCH(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const { id, datos } = await req.json()
     if (!id) return NextResponse.json({ error: 'Falta id del curso' }, { status: 400 })
     if (!datos || Object.keys(datos).length === 0) {
@@ -37,6 +40,9 @@ export async function PATCH(req: NextRequest) {
 // POST — Crear nuevo curso
 export async function POST(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const body = await req.json()
     const datos = body.datos || body
     const institutoId = getInstitutoId(req)
