@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getInstitutoId } from '@/lib/server-utils'
+import { getInstitutoId , verificarAuth} from '@/lib/server-utils'
 
 function sb() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -9,6 +9,9 @@ function sb() {
 // POST — asignar curso a alumno (reemplaza el anterior)
 export async function POST(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const { alumno_id, curso_id } = await req.json()
     if (!alumno_id || !curso_id) return NextResponse.json({ error: 'Faltan datos' }, { status: 400 })
     const institutoId = getInstitutoId(req)
@@ -28,6 +31,9 @@ export async function POST(req: NextRequest) {
 // DELETE — quitar alumno de curso
 export async function DELETE(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const { alumno_id, curso_id } = await req.json()
     if (!alumno_id) return NextResponse.json({ error: 'Falta alumno_id' }, { status: 400 })
     let q = sb().from('cursos_alumnos').delete().eq('alumno_id', alumno_id)
