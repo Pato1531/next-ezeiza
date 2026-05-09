@@ -157,7 +157,14 @@ export default function Profesoras() {
         <SL>{profesoras.length} colaboradores</SL>
         <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
           {soloLectura && <Badge cls="b-purple">Solo lectura</Badge>}
-          {/* Nuevo colaborador se crea desde Permisos → Usuarios para vincular acceso a la app */}
+          {puedeEditar && (
+            <button
+              onClick={() => window.dispatchEvent(new CustomEvent('navigate-to', { detail: { page: 'permisos' } }))}
+              style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'12.5px',fontWeight:600,cursor:'pointer'}}>
+              <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5l5 5-5 5M17 10H3"/></svg>
+              Gestionar accesos
+            </button>
+          )}
         </div>
       </div>
       {profesoras.map(p => (
