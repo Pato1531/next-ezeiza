@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { rateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
+import { getInstitutoId , verificarAuthRol} from '@/lib/server-utils'
 
 function sb() {
   return createClient(
@@ -9,15 +10,16 @@ function sb() {
   )
 }
 
-function getInstitutoId(req: NextRequest): string | null {
-  return req.headers.get('x-instituto-id') || null
-}
+// getInstitutoId imported from @/lib/server-utils
 
 // POST /api/actualizar-usuario
 // Actualiza campos de un usuario (rol, nombre, etc.)
 // Solo puede modificar usuarios del mismo instituto
 export async function POST(req: NextRequest) {
   try {
+    const authError = await verificarAuthRol(req, ['director'])
+    if (authError) return authError
+
     const ip = getClientIp(req)
     const rl = rateLimit(ip + ':actualizar-usuario', { limit: 30, windowMs: 60000 })
     if (!rl.ok) return rateLimitResponse(rl.resetMs)
