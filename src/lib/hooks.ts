@@ -23,9 +23,26 @@ export function setInstitutoId(id: string) { _institutoId = id }
 
 // Header estándar para todas las API Routes — incluye instituto_id para multi-tenancy
 export function apiHeaders(): Record<string, string> {
+  // Incluir Bearer token para que los API routes puedan verificar
+  // que el usuario autenticado pertenece al instituto del header
+  let token: string | null = null
+  try {
+    // Leer el token de sesión del localStorage de Supabase (disponible en cliente)
+    if (typeof window !== 'undefined') {
+      const storageKey = Object.keys(localStorage).find(k => k.includes('auth-token') || k.includes('supabase.auth'))
+      if (storageKey) {
+        const raw = localStorage.getItem(storageKey)
+        if (raw) {
+          const parsed = JSON.parse(raw)
+          token = parsed?.access_token || parsed?.session?.access_token || null
+        }
+      }
+    }
+  } catch {}
   return {
     'Content-Type': 'application/json',
     ..._institutoId ? { 'x-instituto-id': _institutoId } : {},
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
   }
 }
 
