@@ -1,7 +1,7 @@
 // src/app/api/planificacion/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getInstitutoId } from '@/lib/server-utils'
+import { getInstitutoId, verificarAuth } from '@/lib/server-utils'
 
 function sb() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
@@ -22,6 +22,9 @@ async function perteneceAlInstituto(id: string, institutoId: string | null): Pro
 // POST — crear unidad(es)
 export async function POST(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const institutoId = getInstitutoId(req)
     const body = await req.json()
 
@@ -70,6 +73,9 @@ export async function POST(req: NextRequest) {
 // PUT — actualizar unidad (solo si pertenece al instituto)
 export async function PUT(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const institutoId = getInstitutoId(req)
     const { id, ...campos } = await req.json()
     if (!id) return NextResponse.json({ error: 'Falta id' }, { status: 400 })
@@ -95,6 +101,9 @@ export async function PUT(req: NextRequest) {
 // DELETE — eliminar unidad (solo si pertenece al instituto)
 export async function DELETE(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const institutoId = getInstitutoId(req)
     const { id } = await req.json()
     if (!id) return NextResponse.json({ error: 'Falta id' }, { status: 400 })
