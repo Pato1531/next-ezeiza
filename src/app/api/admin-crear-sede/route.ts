@@ -18,6 +18,13 @@ function slugify(nombre: string): string {
 
 export async function POST(req: NextRequest) {
   try {
+    // Validar ADMIN_KEY — solo el panel de administración puede crear sedes
+    const adminKey = req.headers.get('x-admin-key') || ''
+    const expectedKey = process.env.NEXT_PUBLIC_ADMIN_KEY || ''
+    if (!expectedKey || adminKey !== expectedKey) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
+    }
+
     const { instituto_nombre, director_nombre, director_email, director_password } = await req.json()
 
     if (!instituto_nombre?.trim()) return NextResponse.json({ error: 'Nombre del instituto obligatorio' }, { status: 400 })
