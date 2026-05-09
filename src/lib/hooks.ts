@@ -114,7 +114,7 @@ export function onAuthReady(fn: () => void): () => void {
 // ── Cache helpers (sessionStorage) ───────────────────────────────────────────
 // Permite que al volver del background los datos aparezcan instantáneamente
 // mientras Supabase rehidrata la sesión en background.
-const CACHE_TTL_MS = 10 * 60 * 1000 // 10 minutos
+const CACHE_TTL_MS = 2 * 60 * 1000 // 2 minutos — suficiente para UX fluida al volver del background
 
 function cacheRead<T>(key: string): T[] | null {
   if (typeof window === 'undefined') return null
@@ -135,6 +135,31 @@ function cacheWrite<T>(key: string, data: T[]) {
   try {
     sessionStorage.setItem('nq_' + key, JSON.stringify({ data, ts: Date.now() }))
   } catch {}
+}
+
+// Invalida el cache de una clave específica — llamar después de writes externos
+export function cacheInvalidate(key: string) {
+  if (typeof window === 'undefined') return
+  try { sessionStorage.removeItem('nq_' + key) } catch {}
+  // Limpiar el store en memoria para forzar refetch en el próximo render
+  delete (_store as any)[key]
+  delete (_storeHasData as any)[key]
+  _storeListeners[key]?.forEach(fn => fn())
+}
+
+// Invalida todos los caches — llamar en logout para no filtrar datos entre sesiones
+export function cacheInvalidateAll() {
+  if (typeof window === 'undefined') return
+  try {
+    Object.keys(sessionStorage)
+      .filter(k => k.startsWith('nq_'))
+      .forEach(k => sessionStorage.removeItem(k))
+  } catch {}
+  // Limpiar store en memoria también
+  Object.keys(_store).forEach(k => {
+    delete (_store as any)[k]
+    delete (_storeHasData as any)[k]
+  })
 }
 
 // ── Global in-memory store — fuente de verdad compartida entre instancias ─────
