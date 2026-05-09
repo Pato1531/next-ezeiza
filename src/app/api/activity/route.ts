@@ -1,15 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getInstitutoId , verificarAuth} from '@/lib/server-utils'
 
 function sb() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
-function getInstitutoId(req: NextRequest): string | null {
-  return req.headers.get('x-instituto-id') || null
-}
+// getInstitutoId imported from @/lib/server-utils
 
 export async function GET(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const institutoId = getInstitutoId(req)
     const { searchParams } = new URL(req.url)
     const desde = searchParams.get('desde')
