@@ -1,16 +1,18 @@
 import { rateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getInstitutoId , verificarAuth} from '@/lib/server-utils'
 
 function sb() {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
 }
-function getInstitutoId(req: NextRequest): string | null {
-  return req.headers.get('x-instituto-id') || null
-}
+// getInstitutoId imported from @/lib/server-utils
 
 export async function POST(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const ip = getClientIp(req)
     const rl = rateLimit(ip + ':guardar-licencia', { limit: 20, windowMs: 60000 })
     if (!rl.ok) return rateLimitResponse(rl.resetMs)
