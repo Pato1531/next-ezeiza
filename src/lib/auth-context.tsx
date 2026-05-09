@@ -8,6 +8,7 @@ import {
   setInstitutoId     as hooksSetInstitutoId,
   setSessionReady    as hooksSetSessionReady,
   setAuthReady       as hooksSetAuthReady,
+  setAccessToken     as hooksSetAccessToken,
 } from '@/lib/hooks'
 
 // ── Cliente singleton ─────────────────────────────────────────────────────────
@@ -138,6 +139,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       hooksSetInstitutoId(u.instituto_id || '')
       hooksSetAuthReady(true)
       hooksSetSessionReady(true)
+      // Pasar el access_token para que apiHeaders() lo incluya en cada request
+      try {
+        const { data: { session } } = await sb.auth.getSession()
+        if (session?.access_token) hooksSetAccessToken(session.access_token)
+      } catch {}
       _institutoIdLocal = u.instituto_id || null
 
       let inst: Instituto | null = null
@@ -240,6 +246,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           hooksSetUserName('Sistema')
           hooksSetSessionReady(false)
           hooksSetAuthReady(false)
+          hooksSetAccessToken('')
           _institutoIdLocal = null
           setLoading(false)
         }
@@ -269,6 +276,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     hooksSetUserName('Sistema')
     hooksSetSessionReady(false)
     hooksSetAuthReady(false)
+    hooksSetAccessToken('')
     _institutoIdLocal = null
     setLoading(false)
     try {
