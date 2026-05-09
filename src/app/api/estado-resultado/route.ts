@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getInstitutoId } from '@/lib/server-utils'
+import { getInstitutoId , verificarAuth} from '@/lib/server-utils'
 import { createClient } from '@supabase/supabase-js'
 import { rateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
 
@@ -34,6 +34,9 @@ const CONCEPTOS_DEFAULT = [
 // Calcula automáticamente los ingresos de pagos_alumnos
 export async function GET(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const institutoId = getInstitutoId(req)
     const { searchParams } = new URL(req.url)
     const mes = searchParams.get('mes')
@@ -119,6 +122,9 @@ export async function GET(req: NextRequest) {
 // POST — Actualizar importe de un concepto (upsert)
 export async function POST(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const ip = getClientIp(req)
     const rl = rateLimit(ip + ':estado-resultado', { limit: 60, windowMs: 60000 })
     if (!rl.ok) return rateLimitResponse(rl.resetMs)
