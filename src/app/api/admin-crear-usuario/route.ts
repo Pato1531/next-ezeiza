@@ -46,18 +46,18 @@ export async function POST(req: NextRequest) {
     const supabase = sb()
 
     // 1. Crear usuario en Supabase Auth
-    const { data: authData, error: authError } = await supabase.auth.admin.createUser({
+    const { data: authData, error: authUserError } = await supabase.auth.admin.createUser({
       email,
       password,
       email_confirm: true, // confirmar email automáticamente
     })
 
-    if (authError) {
-      console.error('[admin-crear-usuario] auth error:', authError)
-      if (authError.message.includes('already registered')) {
+    if (authUserError) {
+      console.error('[admin-crear-usuario] auth error:', authUserError)
+      if (authUserError.message.includes('already registered')) {
         return NextResponse.json({ error: 'Ya existe un usuario con ese email' }, { status: 400 })
       }
-      return NextResponse.json({ error: authError.message }, { status: 500 })
+      return NextResponse.json({ error: authUserError.message }, { status: 500 })
     }
 
     const userId = authData.user.id
