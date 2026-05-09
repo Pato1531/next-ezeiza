@@ -1,6 +1,6 @@
 import { rateLimit, getClientIp, rateLimitResponse } from '@/lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
-import { getInstitutoId } from '@/lib/server-utils'
+import { getInstitutoId , verificarAuth} from '@/lib/server-utils'
 import { createClient } from '@supabase/supabase-js'
 
 function sb() {
@@ -11,6 +11,9 @@ function sb() {
 // POST — Guardar clase + asistencia
 export async function POST(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const ip = getClientIp(req)
     const rl = rateLimit(ip + ':guardar-clase', { limit: 30, windowMs: 60000 })
     if (!rl.ok) return rateLimitResponse(rl.resetMs)
@@ -100,6 +103,9 @@ export async function POST(req: NextRequest) {
 // DELETE — Eliminar clase y su asistencia
 export async function DELETE(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const { clase_id } = await req.json()
     if (!clase_id) return NextResponse.json({ error: 'clase_id requerido' }, { status: 400 })
 
