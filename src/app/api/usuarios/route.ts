@@ -49,11 +49,11 @@ export async function POST(req: NextRequest) {
 
     const accionesDirector = ['crear', 'desactivar', 'reactivar', 'actualizar']
     if (accionesDirector.includes(accion)) {
-      const authError = await verificarAuthRol(req, ['director'])
-      if (authError) return authError
+      const roleError = await verificarAuthRol(req, ['director'])
+      if (roleError) return roleError
     } else {
-      const authError = await verificarAuth(req)
-      if (authError) return authError
+      const tokenError = await verificarAuth(req)
+      if (tokenError) return tokenError
     }
 
     const institutoId = getInstitutoId(req)
@@ -67,13 +67,13 @@ export async function POST(req: NextRequest) {
       }
 
       // 1. Crear en Supabase Auth
-      const { data: authData, error: authError } = await admin.auth.admin.createUser({
+      const { data: authData, error: createUserError } = await admin.auth.admin.createUser({
         email: email.trim().toLowerCase(),
         password,
         email_confirm: true,
         user_metadata: { nombre, rol },
       })
-      if (authError) return NextResponse.json({ error: authError.message }, { status: 400 })
+      if (createUserError) return NextResponse.json({ error: createUserError.message }, { status: 400 })
 
       const uid = authData.user.id
       const initials = nombre.split(' ').map((p: string) => p[0]).join('').toUpperCase().slice(0, 2)
