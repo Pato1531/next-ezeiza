@@ -55,14 +55,17 @@ export default function DashboardEjecutivo() {
         // metodo incluido — era el campo que faltaba
         sb.from('pagos_alumnos')
           .select('monto, metodo, observaciones, alumno_id, fecha_pago')
-          .eq('mes', mesNombre).eq('anio', anio),
+          .eq('mes', mesNombre).eq('anio', anio)
+          .eq('instituto_id', usuario?.instituto_id || ''),
         sb.from('pagos_alumnos')
           .select('monto, alumno_id')
-          .eq('mes', mesAntNombre).eq('anio', anioAnt),
+          .eq('mes', mesAntNombre).eq('anio', anioAnt)
+          .eq('instituto_id', usuario?.instituto_id || ''),
         // Liquidaciones directas — useLiquidaciones() requiere profesora_id, no aplica aquí
         sb.from('liquidaciones')
           .select('total, estado, profesora_id')
-          .eq('mes', mesNombre).eq('anio', anio),
+          .eq('mes', mesNombre).eq('anio', anio)
+          .eq('instituto_id', usuario?.instituto_id || ''),
         usuario?.instituto_id
           ? sb.from('alumnos').select('id, nombre, apellido, nivel, fecha_alta')
               .gte('fecha_alta', inicioMes).lte('fecha_alta', finMes).eq('activo', true)
@@ -106,14 +109,16 @@ export default function DashboardEjecutivo() {
         .from('pagos_alumnos')
         .select('mes, anio, monto')
         .gte('anio', anio - 1)
+        .eq('instituto_id', usuario?.instituto_id || '')
         .order('anio', { ascending: true })
       setHistorico(histData || [])
 
       // Alumnos en riesgo: traer últimas clases por alumno para detectar ausencias consecutivas
       const { data: riesgoData } = await sb
         .from('asistencia_clases')
-        .select('alumno_id, estado, clase_id, clases(id, fecha, cursos(nombre)), alumnos!inner(nombre, apellido, nivel, cuota_mensual, activo)')
+        .select('alumno_id, estado, clase_id, clases(id, fecha, cursos(nombre)), alumnos!inner(nombre, apellido, nivel, cuota_mensual, activo, instituto_id)')
         .eq('alumnos.activo', true)
+        .eq('alumnos.instituto_id', usuario?.instituto_id || '')
         .order('clase_id', { ascending: false })
         .limit(2000)
       setAsistenciaRiesgo(riesgoData || [])
