@@ -58,8 +58,9 @@ export async function GET(req: NextRequest) {
     if (institutoId) pagosQuery = (pagosQuery as any).eq('instituto_id', institutoId)
     const { data: pagos } = await pagosQuery
 
+    // Total de todos los pagos del mes — suma todos los tipos sin excepción
+    // (cuota, recargo, cuota_recargo, matricula, proporcional)
     const ingresosCuotas = (pagos || [])
-      .filter((p: any) => p.tipo === 'cuota' || !p.tipo)
       .reduce((acc: number, p: any) => acc + (p.monto || 0), 0)
 
     const ingresosMatriculas = (pagos || [])
