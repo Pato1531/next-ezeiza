@@ -590,7 +590,7 @@ export default function Alumnos() {
                 <Field2 label="Cuota mensual ($)"><Input type="number" value={form?.cuota_mensual||''} onChange={(v:string)=>setForm({...form,cuota_mensual:+v})} /></Field2>
               </Row2>
               <Row2>
-                <Field2 label="Nivel"><select style={IS} value={form?.nivel||'Básico'} onChange={(e:any)=>setForm({...form,nivel:e.target.value})}>{NIVELES.map(n=><option key={n}>{n}</option>)}</select></Field2>
+                
                 <Field2 label="¿Es menor?"><select style={IS} value={form?.es_menor?'si':'no'} onChange={(e:any)=>setForm({...form,es_menor:e.target.value==='si'})}><option value="no">No</option><option value="si">Sí</option></select></Field2>
               </Row2>
               {form?.es_menor && <>
@@ -623,7 +623,7 @@ export default function Alumnos() {
           {/* STEP 2 nuevo: Académico */}
           {!esEdicion && formStep === 2 && <>
             <Row2>
-              <Field2 label="Nivel"><select style={IS} value={form?.nivel||'Básico'} onChange={(e:any)=>setForm({...form,nivel:e.target.value})}>{NIVELES.map(n=><option key={n}>{n}</option>)}</select></Field2>
+              
               <Field2 label="Cuota mensual ($)"><Input type="number" value={form?.cuota_mensual||''} onChange={(v:string)=>setForm({...form,cuota_mensual:+v})} /></Field2>
             </Row2>
             <Field2 label="Matrícula de inscripción ($)"><Input type="number" value={form?.matricula||''} onChange={(v:string)=>setForm({...form,matricula:+v})} /></Field2>
@@ -692,7 +692,7 @@ export default function Alumnos() {
         <Av color={sel.color} size={48}>{sel.nombre[0]}{sel.apellido[0]}</Av>
         <div>
           <div style={{fontSize:'16px',fontWeight:700}}>{sel.nombre} {sel.apellido}</div>
-          <div style={{fontSize:'13px',color:'var(--text2)',marginTop:'2px'}}>{sel.nivel} · ${sel.cuota_mensual?.toLocaleString('es-AR')}/mes</div>
+          <div style={{fontSize:'13px',color:'var(--text2)',marginTop:'2px'}}>${sel.cuota_mensual?.toLocaleString('es-AR')}/mes</div>
         </div>
       </div>
 
@@ -917,7 +917,7 @@ export default function Alumnos() {
                       <Av color={a.color} size={34}>{a.nombre[0]}{a.apellido[0]}</Av>
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{fontSize:'13.5px',fontWeight:600}}>{a.nombre} {a.apellido}</div>
-                        <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'1px'}}>{a.nivel}</div>
+                        
                       </div>
                     </div>
                   )
