@@ -900,6 +900,7 @@ function BoletinSection({ alumnos }: any) {
   const [periodo, setPeriodo] = useState('2° Trimestre')
   const [anio, setAnio] = useState(new Date().getFullYear())
   const [nivelManual, setNivelManual] = useState('')
+  const [modalidad, setModalidad] = useState('Presencial')
   const [generando, setGenerando] = useState(false)
   const IS = { padding:'9px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)', width:'100%' } as const
 
@@ -985,6 +986,7 @@ function CertificadoSection({ alumnos }: any) {
   const [hasta, setHasta] = useState(`${new Date().getFullYear()}-11-30`)
   const [destinatario, setDestinatario] = useState('')
   const [nivelManual, setNivelManual] = useState('')
+  const [modalidad, setModalidad] = useState('Presencial')
   const [generando, setGenerando] = useState(false)
   const IS = { padding:'9px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)', width:'100%' } as const
 
@@ -1017,6 +1019,7 @@ function CertificadoSection({ alumnos }: any) {
         hasta,
         ...(destinatario ? { destinatario } : {}),
         ...(nivelManual  ? { nivel: nivelManual } : {}),
+        modalidad,
       })
       window.open(`/api/certificado/${selAlumno}?${params.toString()}`, '_blank')
     } catch (e) {
@@ -1055,6 +1058,13 @@ function CertificadoSection({ alumnos }: any) {
       <div style={{marginBottom:'10px'}}>
         <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Nivel (opcional)</div>
         <input style={IS} type="text" value={nivelManual} onChange={e => setNivelManual(e.target.value)} placeholder="Ej: A1, A2, B1, Intermedio..." />
+      </div>
+      <div style={{marginBottom:'10px'}}>
+        <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Modalidad</div>
+        <select style={IS} value={modalidad} onChange={e => setModalidad(e.target.value)}>
+          <option>Presencial</option>
+          <option>Online</option>
+        </select>
       </div>
       <div style={{marginBottom:'14px'}}>
         <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Destinatario (opcional)</div>
