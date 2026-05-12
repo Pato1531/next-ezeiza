@@ -373,3 +373,4 @@ export async function GET(
     return new NextResponse('Error interno', { status: 500 })
   }
 }
+
