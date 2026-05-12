@@ -15,7 +15,13 @@ export async function GET(
 ) {
   try {
     const { searchParams } = new URL(req.url)
-    const cursoId = searchParams.get('curso_id')
+    const cursoId      = searchParams.get('curso_id')
+    const tipo         = searchParams.get('tipo') || 'Asistencia al curso de inglés'
+    const desde        = searchParams.get('desde') || ''
+    const hasta        = searchParams.get('hasta') || ''
+    const nivelParam   = searchParams.get('nivel') || ''
+    const modalidad    = searchParams.get('modalidad') || 'Presencial'
+    const destinatario = searchParams.get('destinatario') || ''
 
     if (!cursoId) {
       return new NextResponse('Parámetro curso_id requerido', { status: 400 })
@@ -276,29 +282,61 @@ export async function GET(
           ? `<div class="cert-dni">DNI ${alumno.dni}</div>`
           : '<div style="margin-bottom:28px"></div>'}
 
-        <div class="cert-texto">
-          ha completado satisfactoriamente el nivel
-          <em>${(curso as any).nivel || (curso as any).nombre || 'English'}</em>,
-          cursando <strong>${(curso as any).nombre}</strong>
-          ${diasStr ? `los días <strong>${diasStr}</strong>` : ''}
-          ${horarioStr ? `<strong>${horarioStr}</strong>` : ''},
-          cumpliendo con los requisitos académicos establecidos por el instituto.
-        </div>
+        ${(() => {
+          const nivelMostrar = nivelParam || (curso as any).nivel || ''
+          const fmtFecha = (f: string) => f ? new Date(f + 'T12:00:00').toLocaleDateString('es-AR', { day:'numeric', month:'long', year:'numeric' }) : ''
+          const desdeStr = fmtFecha(desde)
+          const hastaStr = fmtFecha(hasta)
 
-        <div class="cert-datos">
-          <div class="cert-dato">
-            <div class="cert-dato-val">${(curso as any).nivel || 'N/A'}</div>
-            <div class="cert-dato-label">Nivel</div>
-          </div>
-          <div class="cert-dato">
-            <div class="cert-dato-val">${anioActual}</div>
-            <div class="cert-dato-label">Año</div>
-          </div>
-          <div class="cert-dato">
-            <div class="cert-dato-val">${cargaHoraria}</div>
-            <div class="cert-dato-label">Carga horaria</div>
-          </div>
-        </div>
+          // Grilla Nivel + Año (sin carga horaria)
+          const gridNivelAnio = `
+            <div class="cert-datos">
+              <div class="cert-dato">
+                <div class="cert-dato-val">${nivelMostrar || 'N/A'}</div>
+                <div class="cert-dato-label">Nivel</div>
+              </div>
+              <div class="cert-dato">
+                <div class="cert-dato-val">${anioActual}</div>
+                <div class="cert-dato-label">Año</div>
+              </div>
+            </div>`
+
+          if (tipo === 'Asistencia al curso de inglés') {
+            return `
+              <div class="cert-texto">
+                ha asistido al curso de inglés <strong>${(curso as any).nombre}</strong>,
+                durante el año <strong>${anioActual}</strong>,
+                cumpliendo con los requisitos de asistencia establecidos por el instituto.
+              </div>
+              ${gridNivelAnio}`
+          }
+
+          if (tipo === 'Nivel alcanzado') {
+            return `
+              <div class="cert-texto">
+                Se hace constar, a quien corresponda, que
+                <strong>${alumno.nombre} ${alumno.apellido}</strong>
+                ha completado satisfactoriamente el nivel
+                <em>${nivelMostrar}</em>,
+                cumpliendo con todos los requisitos académicos establecidos por el instituto.
+              </div>
+              ${gridNivelAnio}`
+          }
+
+          if (tipo === 'Alumno regular') {
+            return `
+              <div class="cert-texto">
+                <strong>${institutoNombre}</strong> CERTIFICA QUE
+                <strong>${alumno.nombre} ${alumno.apellido}</strong>${alumno.dni ? `, DNI <strong>${alumno.dni}</strong>,` : ''}
+                se encuentra inscripto/a en el curso de inglés <strong>${(curso as any).nombre}</strong>,
+                nivel <em>${nivelMostrar}</em>, modalidad <strong>${modalidad}</strong>${desdeStr && hastaStr ? `, desde el <strong>${desdeStr}</strong> hasta el <strong>${hastaStr}</strong>` : ''}.
+                ${destinatario ? `Se extiende el presente certificado a ser presentado a <strong>${destinatario}</strong>, para los fines que estime conveniente.` : ''}
+              </div>
+              ${gridNivelAnio}`
+          }
+
+          return `<div class="cert-texto">${(curso as any).nombre}</div>${gridNivelAnio}`
+        })()}
 
         <div class="firmas" style="justify-content:flex-end">
           <div class="firma">
