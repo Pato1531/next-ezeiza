@@ -1,5 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
+import * as XLSX from 'xlsx'
 import { useAlumnos, apiHeaders, logActivity } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
@@ -225,6 +226,40 @@ export default function Pagos() {
   const totalRecaudado = pagosReporteFiltrados.reduce((s, p) => s + (p.monto || 0), 0)
 
   // Helper: índice numérico de un nombre de mes (1-based)
+
+
+  // ── Exportar Deudores XLS ─────────────────────────────────────────────────
+  const descargarDeudoresXLS = () => {
+    const rows = deudores.sort((a:any,b:any)=>a.apellido.localeCompare(b.apellido)).map((a:any) => ({
+      'Apellido': a.apellido,
+      'Nombre': a.nombre,
+      'Nivel': a.nivel,
+      'Cuota mensual': a.cuota_mensual || 0,
+      'Teléfono': a.telefono || a.padre_telefono || '',
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'Deudores')
+    XLSX.writeFile(wb, `deudores_${deudMes}_${deudAnio}.xlsx`)
+  }
+
+  // ── Exportar Deudores PDF ─────────────────────────────────────────────────
+  const descargarDeudoresPDF = () => {
+    const totalMonto = deudores.reduce((s:number,a:any) => s + (a.cuota_mensual||0), 0)
+    const rows = deudores.sort((a:any,b:any)=>a.apellido.localeCompare(b.apellido))
+      .map((a:any) => `<tr><td>${a.apellido}, ${a.nombre}</td><td>${a.nivel||'—'}</td><td>$${(a.cuota_mensual||0).toLocaleString('es-AR')}</td></tr>`).join('')
+    const html = `<h1 style="font-family:sans-serif;color:#652f8d">Deudores — ${deudMes} ${deudAnio}</h1>
+      <p style="font-family:sans-serif;font-size:13px;color:#666">${deudores.length} deudores · Total: $${totalMonto.toLocaleString('es-AR')}</p>
+      <table style="font-family:sans-serif;border-collapse:collapse;width:100%;font-size:13px">
+        <tr><th style="border-bottom:2px solid #652f8d;text-align:left;padding:6px">Alumno</th><th style="border-bottom:2px solid #652f8d;padding:6px">Nivel</th><th style="border-bottom:2px solid #652f8d;text-align:right;padding:6px">Cuota</th></tr>
+        ${rows}
+        <tr style="border-top:2px solid #652f8d;font-weight:700"><td style="padding:6px">TOTAL</td><td></td><td style="text-align:right;padding:6px">$${totalMonto.toLocaleString('es-AR')}</td></tr>
+      </table>`
+    const w = window.open('','_blank')
+    if (!w) return
+    w.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Deudores</title></head><body style="padding:24px">${html}<script>setTimeout(()=>window.print(),400)<\/script></body></html>`)
+    w.document.close()
+  }
 
   // deudores viene directo de Supabase con fecha_alta ya filtrada en cargarDeudores
   const deudores = deudoresList
@@ -662,7 +697,18 @@ export default function Pagos() {
                   <div style={{ fontSize:'12px', color:'var(--text3)', marginTop:'2px' }}>
                     Alumnos activos ese mes sin pago registrado
                   </div>
+                  {deudores.length > 0 && (
+                    <div style={{ fontSize:'13px', fontWeight:700, color:'#dc2626', marginTop:'4px' }}>
+                      Total deuda: ${deudores.reduce((s:number,a:any)=>s+(a.cuota_mensual||0),0).toLocaleString('es-AR')}
+                    </div>
+                  )}
                 </div>
+                {deudores.length > 0 && (
+                  <div style={{ display:'flex', gap:'8px' }}>
+                    <button onClick={descargarDeudoresXLS} style={{ padding:'7px 13px', background:'var(--white)', color:'var(--v)', border:'1.5px solid var(--v)', borderRadius:'9px', fontSize:'12px', fontWeight:600, cursor:'pointer' }}>⬇ XLS</button>
+                    <button onClick={descargarDeudoresPDF} style={{ padding:'7px 13px', background:'var(--v)', color:'#fff', border:'none', borderRadius:'9px', fontSize:'12px', fontWeight:600, cursor:'pointer' }}>⬇ PDF</button>
+                  </div>
+                )}
               </div>
 
               {deudores.length === 0 ? (
