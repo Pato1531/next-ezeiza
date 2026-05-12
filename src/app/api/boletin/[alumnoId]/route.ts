@@ -109,7 +109,10 @@ export async function GET(
           .eq('alumno_id', params.alumnoId)
           .single()
 
-        const badge = notaBadge(notaData?.nota ?? null)
+        // Si no hay nota cargada para este alumno, no incluir en el boletín
+        if (!notaData || notaData.nota === null || notaData.nota === undefined || notaData.nota === '') continue
+
+        const badge = notaBadge(notaData.nota)
         examenesConNota.push({
           nombre: ex.nombre,
           tipo: ex.tipo || '',
@@ -349,12 +352,7 @@ export async function GET(
         </div>
       </div>
 
-      <div class="firma-wrap" style="display:flex;justify-content:space-between;margin-top:36px;">
-        <div class="firma">
-          <div class="firma-linea"></div>
-          <div class="firma-nombre">${docenteNombre}</div>
-          <div class="firma-rol">Docente a cargo</div>
-        </div>
+      <div class="firma-wrap" style="display:flex;justify-content:flex-end;margin-top:36px;">
         <div class="firma">
           ${firmaDirectorUrl
             ? `<div style="height:56px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:0">
