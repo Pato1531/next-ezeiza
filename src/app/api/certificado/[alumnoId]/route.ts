@@ -326,9 +326,7 @@ export async function GET(
           if (tipo === 'Alumno regular') {
             return `
               <div class="cert-texto">
-                <strong>${institutoNombre}</strong> CERTIFICA QUE
-                <strong>${alumno.nombre} ${alumno.apellido}</strong>${alumno.dni ? `, DNI <strong>${alumno.dni}</strong>,` : ''}
-                se encuentra inscripto/a en el curso de inglés <strong>${(curso as any).nombre}</strong>,
+                Se encuentra inscripto/a en el curso de inglés <strong>${(curso as any).nombre}</strong>,
                 nivel <em>${nivelMostrar}</em>, modalidad <strong>${modalidad}</strong>${desdeStr && hastaStr ? `, desde el <strong>${desdeStr}</strong> hasta el <strong>${hastaStr}</strong>` : ''}.
                 ${destinatario ? `Se extiende el presente certificado a ser presentado a <strong>${destinatario}</strong>, para los fines que estime conveniente.` : ''}
               </div>
@@ -373,4 +371,3 @@ export async function GET(
     return new NextResponse('Error interno', { status: 500 })
   }
 }
-
