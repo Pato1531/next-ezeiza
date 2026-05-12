@@ -55,6 +55,7 @@ export default function Reportes() {
     })
   }
   const [alumnosConPago, setAlumnosConPago] = useState<Set<string>>(new Set())
+  const [alumnoCursoMap, setAlumnoCursoMap] = useState<Record<string,string>>({})
   // Asistencia docente dinámica: { profesoraId: porcentaje }
   const [asistenciaProfs, setAsistenciaProfs] = useState<Record<string,number>>({})
   const [avgAsist, setAvgAsist] = useState(0)
@@ -65,7 +66,7 @@ export default function Reportes() {
   const [bajasDelMes, setBajasDelMes] = useState<any[]>([])
   const [loadingMovimientos, setLoadingMovimientos] = useState(false)
 
-  // Cargar pagos del mes actual para cobranza
+  // Cargar pagos del mes actual para cobranza + mapa alumno→curso
   useEffect(() => {
     if (!alumnos.length) return
     const sb = createClient()
@@ -73,6 +74,13 @@ export default function Reportes() {
       .eq('mes', mesActualNombre).eq('anio', anioActual)
       .then(({ data }) => setAlumnosConPago(new Set((data||[]).map((r:any) => r.alumno_id))))
       .catch(() => {})
+    // Mapa alumno→nombre de curso activo
+    sb.from('cursos_alumnos').select('alumno_id, cursos(nombre)')
+      .then(({ data }) => {
+        const map: Record<string,string> = {}
+        ;(data||[]).forEach((r:any) => { if (r.alumno_id && r.cursos?.nombre) map[r.alumno_id] = r.cursos.nombre })
+        setAlumnoCursoMap(map)
+      }).catch(() => {})
   }, [alumnos.length, mesActualNombre, anioActual])
 
   // Cargar desglose de ingresos del mes (cuotas vs matrículas)
@@ -325,7 +333,7 @@ export default function Reportes() {
       [`Mes: ${mesActualNombre} ${anioActual}`],
       ['Pagado: pago registrado · Al día: sin pago del 1-10 · Deudor: sin pago del 11+'],
       [''],
-      ['Alumno','Nivel','Cuota mensual','Estado'],
+      ['Alumno','Curso','Cuota mensual','Estado'],
       ...alumnos.map(a => {
         const { label } = getEstadoCobranza(a.id)
         return [`${a.nombre} ${a.apellido}`, a.nivel, `$${a.cuota_mensual?.toLocaleString('es-AR')}`, label]
@@ -338,7 +346,7 @@ export default function Reportes() {
     const html = `<h1>Cobranza por Alumno — ${mesActualNombre} ${anioActual}</h1>
     <p style="color:#888;font-size:12px">Pagado: pago registrado &bull; Al día: sin pago del 1-10 &bull; Deudor: sin pago del 11+</p>
     <table><tr><th>Alumno</th><th>Nivel</th><th>Cuota</th><th>Estado</th></tr>
-    ${alumnos.map(a=>{const e=getEstadoCobranza(a.id);return`<tr><td>${a.nombre} ${a.apellido}</td><td>${a.nivel}</td><td>$${a.cuota_mensual?.toLocaleString('es-AR')}</td><td style="color:${e.color};font-weight:600">${e.label}</td></tr>`}).join('')}
+    ${alumnos.map(a=>{const e=getEstadoCobranza(a.id);return`<tr><td>${a.nombre} ${a.apellido}</td><td>${alumnoCursoMap[a.id]||'—'}</td><td>$${a.cuota_mensual?.toLocaleString('es-AR')}</td><td style="color:${e.color};font-weight:600">${e.label}</td></tr>`}).join('')}
     </table>`
     abrirPDF('Cobranza por Alumno', html)
   }
@@ -627,7 +635,7 @@ export default function Reportes() {
                       <Av color={a.color} size={28}>{a.nombre[0]}{a.apellido[0]}</Av>
                       <div>
                         <div style={{fontSize:'13.5px',fontWeight:600}}>{a.nombre} {a.apellido}</div>
-                        <div style={{fontSize:'12px',color:'var(--text2)'}}>{a.nivel} · ${a.cuota_mensual?.toLocaleString('es-AR')}/mes</div>
+                        <div style={{fontSize:'12px',color:'var(--text2)'}}>{alumnoCursoMap[a.id] || '—'} · ${a.cuota_mensual?.toLocaleString('es-AR')}/mes</div>
                       </div>
                     </div>
                     <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
