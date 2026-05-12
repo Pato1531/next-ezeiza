@@ -300,12 +300,7 @@ export async function GET(
           </div>
         </div>
 
-        <div class="firmas">
-          <div class="firma">
-            <div class="firma-linea"></div>
-            <div class="firma-nombre">${docenteNombre}</div>
-            <div class="firma-rol">Docente a cargo</div>
-          </div>
+        <div class="firmas" style="justify-content:flex-end">
           <div class="firma">
             ${firmaDirectorUrl
               ? `<div style="height:56px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:8px">
