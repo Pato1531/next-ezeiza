@@ -494,7 +494,6 @@ export default function Alumnos() {
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:'15px',fontWeight:600}}>{a.nombre} {a.apellido}</div>
               <div style={{display:'flex',gap:'5px',marginTop:'5px',flexWrap:'wrap',alignItems:'center'}}>
-                <span style={{padding:'2px 7px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:col?.bg,color:col?.text}}>{a.nivel}</span>
                 {puedeVerPagos && (
                   <span style={{padding:'2px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:700,
                     background: pagado ? 'var(--greenl)' : 'var(--redl)',
@@ -1213,7 +1212,6 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
             <div style={{fontSize:'20px',fontWeight:700}}>{a.nombre} {a.apellido}</div>
             <div style={{fontSize:'13px',color:'var(--text2)',marginTop:'3px'}}>{a.edad} años{a.telefono?' · '+a.telefono:''}</div>
             <div style={{display:'flex',gap:'6px',flexWrap:'wrap',marginTop:'8px'}}>
-              <span style={{padding:'4px 10px',borderRadius:'20px',fontSize:'11.5px',fontWeight:600,background:col?.bg,color:col?.text}}>{a.nivel}</span>
               {a.es_menor && <Badge cls="b-blue">Menor</Badge>}
               {cursoActual
                 ? <span style={{padding:'4px 10px',borderRadius:'20px',fontSize:'11.5px',fontWeight:600,background:'var(--greenl)',color:'var(--green)'}}>{cursoActual.nombre}</span>
