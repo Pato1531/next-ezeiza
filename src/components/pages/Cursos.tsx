@@ -1100,12 +1100,18 @@ function ExamenesTab({ cursoId, alumnosCurso, puedeEditar, puedeCrearExamen }: a
       <SL style={{marginBottom:'10px'}}>Exámenes oficiales</SL>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'20px'}}>
         {/* MIDTERM */}
-        <div onClick={() => midterm ? setSelExamen(midterm) : (puedeCrearExamen ? crearPredefinido('midterm') : null)}
-          style={{background:midterm?'var(--vl)':'var(--white)',border:`1.5px solid ${midterm?'var(--v)':'var(--border)'}`,borderRadius:'16px',padding:'16px',cursor:'pointer',transition:'all .15s'}}
-          onMouseEnter={e=>(e.currentTarget.style.borderColor='var(--v)')}
-          onMouseLeave={e=>(e.currentTarget.style.borderColor=midterm?'var(--v)':'var(--border)')}>
-          <div style={{fontSize:'24px',marginBottom:'6px'}}>📝</div>
-          <div style={{fontSize:'15px',fontWeight:700,color:midterm?'var(--v)':'var(--text)'}}>Midterm Exam</div>
+        <div style={{background:midterm?'var(--vl)':'var(--white)',border:`1.5px solid ${midterm?'var(--v)':'var(--border)'}`,borderRadius:'16px',padding:'16px',transition:'all .15s',cursor:midterm?'default':'pointer'}}
+          onClick={() => !midterm && puedeCrearExamen ? crearPredefinido('midterm') : undefined}>
+          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between'}}>
+            <div style={{fontSize:'24px',marginBottom:'6px'}}>📝</div>
+            {midterm && puedeCrearExamen && (
+              <button onClick={e=>{e.stopPropagation();setFormTest({nombre:midterm.nombre,fecha:midterm.fecha||hoy()});setModalTest({modo:'editar',id:midterm.id,nombre:midterm.nombre,fecha:midterm.fecha||hoy()})}}
+                style={{padding:'3px 9px',background:'var(--vl)',color:'var(--v)',border:'1px solid var(--v)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer'}}>
+                Editar
+              </button>
+            )}
+          </div>
+          <div style={{fontSize:'15px',fontWeight:700,color:midterm?'var(--v)':'var(--text)'}}>{midterm?.nombre || 'Midterm Exam'}</div>
           <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'3px'}}>
             {midterm ? fmtFecha(midterm.fecha) : 'No creado aún · Tocá para crear'}
           </div>
@@ -1122,12 +1128,18 @@ function ExamenesTab({ cursoId, alumnosCurso, puedeEditar, puedeCrearExamen }: a
         </div>
 
         {/* FINAL */}
-        <div onClick={() => final ? setSelExamen(final) : (puedeCrearExamen ? crearPredefinido('final') : null)}
-          style={{background:final?'var(--vl)':'var(--white)',border:`1.5px solid ${final?'var(--v)':'var(--border)'}`,borderRadius:'16px',padding:'16px',cursor:'pointer',transition:'all .15s'}}
-          onMouseEnter={e=>(e.currentTarget.style.borderColor='var(--v)')}
-          onMouseLeave={e=>(e.currentTarget.style.borderColor=final?'var(--v)':'var(--border)')}>
-          <div style={{fontSize:'24px',marginBottom:'6px'}}>🎓</div>
-          <div style={{fontSize:'15px',fontWeight:700,color:final?'var(--v)':'var(--text)'}}>Final Exam</div>
+        <div style={{background:final?'var(--vl)':'var(--white)',border:`1.5px solid ${final?'var(--v)':'var(--border)'}`,borderRadius:'16px',padding:'16px',transition:'all .15s',cursor:final?'default':'pointer'}}
+          onClick={() => !final && puedeCrearExamen ? crearPredefinido('final') : undefined}>
+          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between'}}>
+            <div style={{fontSize:'24px',marginBottom:'6px'}}>🎓</div>
+            {final && puedeCrearExamen && (
+              <button onClick={e=>{e.stopPropagation();setFormTest({nombre:final.nombre,fecha:final.fecha||hoy()});setModalTest({modo:'editar',id:final.id,nombre:final.nombre,fecha:final.fecha||hoy()})}}
+                style={{padding:'3px 9px',background:'var(--vl)',color:'var(--v)',border:'1px solid var(--v)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer'}}>
+                Editar
+              </button>
+            )}
+          </div>
+          <div style={{fontSize:'15px',fontWeight:700,color:final?'var(--v)':'var(--text)'}}>{final?.nombre || 'Final Exam'}</div>
           <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'3px'}}>
             {final ? fmtFecha(final.fecha) : 'No creado aún · Tocá para crear'}
           </div>
