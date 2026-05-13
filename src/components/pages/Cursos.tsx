@@ -873,7 +873,16 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
             <div key={a.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 0',borderBottom:'1px solid var(--border)'}}>
               <div style={{display:'flex',alignItems:'center',gap:'10px',flex:1}}>
                 <Av color={a.color} size={36}>{a.nombre[0]}{a.apellido[0]}</Av>
-                <div style={{flex:1,fontWeight:600}}>{a.nombre} {a.apellido}</div>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:600}}>{a.nombre} {a.apellido}</div>
+                  {a.fecha_nacimiento && (() => {
+                    const hoy = new Date()
+                    const nac = new Date(a.fecha_nacimiento + 'T12:00:00')
+                    let edad = hoy.getFullYear() - nac.getFullYear()
+                    if (hoy.getMonth() < nac.getMonth() || (hoy.getMonth() === nac.getMonth() && hoy.getDate() < nac.getDate())) edad--
+                    return <span style={{display:'inline-block',marginTop:'3px',padding:'2px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:'#f0eaf8',color:'#652f8d'}}>{edad} años</span>
+                  })()}
+                </div>
                 {puedeEditar && <button onClick={() => quitarAlumno(a.id)} style={{padding:'4px 10px',background:'var(--redl)',color:'var(--red)',border:'1px solid #f5c5c5',borderRadius:'7px',fontSize:'12px',cursor:'pointer'}}>Quitar</button>}
               </div>
 
