@@ -119,7 +119,7 @@ export default function Pagos() {
       const sb = createClient()
       const { data } = await sb
         .from('pagos_alumnos')
-        .select('*, alumnos(nombre,apellido,nivel,cuota_mensual,color,telefono,padre_nombre,padre_telefono,es_menor)')
+        .select('*, alumnos(nombre,apellido,nivel,dni,padre_dni,cuota_mensual,color,telefono,padre_nombre,padre_telefono,es_menor)')
         .eq('mes', repMes)
         .eq('anio', repAnio)
         .order('created_at', { ascending: false })
@@ -418,10 +418,10 @@ export default function Pagos() {
       ['REPORTE DE PAGOS'],
       [`Mes: ${repMes} ${repAnio}`, '', '', `Total: $${totalRecaudado.toLocaleString('es-AR')}`],
       [''],
-      ['Alumno', 'Nivel', 'Concepto', 'Monto', 'Método', 'Fecha', 'Observaciones'],
+      ['Alumno', 'DNI', 'Concepto', 'Monto', 'Método', 'Fecha', 'Observaciones'],
       ...pagosReporteFiltrados.map(p => [
         `${p.alumnos?.nombre} ${p.alumnos?.apellido}`,
-        p.alumnos?.nivel || '—',
+        p.alumnos?.es_menor ? (p.alumnos?.padre_dni || '—') : (p.alumnos?.dni || '—'),
         p.tipo || 'cuota',
         `$${p.monto?.toLocaleString('es-AR')}`,
         p.metodo || '—',
@@ -444,7 +444,7 @@ export default function Pagos() {
     const filas = pagosReporteFiltrados.map(p => `
       <tr>
         <td>${p.alumnos?.nombre} ${p.alumnos?.apellido}</td>
-        <td>${p.alumnos?.nivel || '—'}</td>
+        <td>${p.alumnos?.es_menor ? (p.alumnos?.padre_dni || '—') : (p.alumnos?.dni || '—')}</td>
         <td><span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#f4eefb;color:#652f8d">${p.tipo || 'cuota'}</span></td>
         <td style="font-weight:600;color:#652f8d">$${p.monto?.toLocaleString('es-AR')}</td>
         <td>${p.metodo || '—'}</td>
@@ -471,7 +471,7 @@ export default function Pagos() {
       <span style="font-weight:600;color:#652f8d">${pagosReporte.length} pagos registrados</span>
       <span style="font-size:18px;font-weight:700;color:#652f8d">Total: $${totalRecaudado.toLocaleString('es-AR')}</span>
     </div>
-    <table><tr><th>Alumno</th><th>Nivel</th><th>Concepto</th><th>Monto</th><th>Método</th><th>Fecha</th></tr>
+    <table><tr><th>Alumno</th><th>DNI</th><th>Concepto</th><th>Monto</th><th>Método</th><th>Fecha</th></tr>
     ${filas}
     </table>
     <script>setTimeout(function(){window.print()},400)</script>
@@ -1105,4 +1105,3 @@ export default function Pagos() {
     </div>
   )
 }
-
