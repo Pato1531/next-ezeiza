@@ -47,6 +47,7 @@ const ModalSheet = ({title,children,onClose}:any) => (
 
 
 import { showToast } from '@/components/Toast'
+import ImportarAlumnos from '@/components/ImportarAlumnos'
 
 type Vista = 'lista' | 'detalle' | 'form' | 'baja' | 'bajas_historicas' | 'renovacion_matricula'
 
@@ -80,6 +81,7 @@ export default function Alumnos() {
   const [formStep, setFormStep] = useState(0)
   const [guardando, setGuardando] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [importarModal, setImportarModal] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const [soloSinCurso, setSoloSinCurso] = useState(false)
   const [soloSinCuota, setSoloSinCuota] = useState(false)
@@ -379,6 +381,12 @@ export default function Alumnos() {
               Bajas
             </button>
           )}
+          {puedeEditar && (
+            <button onClick={() => setImportarModal(true)} style={{padding:'9px 14px',background:'var(--white)',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
+              <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 2v12M5 9l5 5 5-5"/><rect x="3" y="15" width="14" height="2" rx="1"/></svg>
+              Importar Excel
+            </button>
+          )}
           {puedeEditar && <BtnP sm onClick={irAFormNuevo}>+ Nuevo alumno</BtnP>}
         </div>
       </div>
@@ -520,6 +528,16 @@ export default function Alumnos() {
       )}
       {filtrados.length === 0 && !busqueda && usuario?.rol !== 'profesora' && (
         <div style={{textAlign:'center',padding:'40px',color:'var(--text3)'}}>No hay alumnos registrados</div>
+      )}
+
+      {importarModal && (
+        <ImportarAlumnos
+          onClose={() => setImportarModal(false)}
+          onImportado={(cantidad) => {
+            setImportarModal(false)
+            recargar()
+          }}
+        />
       )}
     </div>
   )
