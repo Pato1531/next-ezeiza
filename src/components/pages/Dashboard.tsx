@@ -43,6 +43,12 @@ export default function Dashboard() {
   const [asistTema, setAsistTema] = useState('')
   const [asistGuardando, setAsistGuardando] = useState(false)
 
+  // ── Estado extra para vista profesora ────────────────────────────────────
+  const [clasesYaRegistradas, setClasesYaRegistradas] = useState<Set<string>>(new Set())
+  const [totalAlumnosProf, setTotalAlumnosProf] = useState(0)
+  const [alumnosAusentesProf, setAlumnosAusentesProf] = useState<any[]>([])
+  const [examensPendientes, setExamensPendientes] = useState<any[]>([])
+
   const today = new Date()
   const mesActual = MESES[today.getMonth()]
 
@@ -70,9 +76,67 @@ export default function Dashboard() {
   }).sort((a,b) => (a.hora_inicio||'').localeCompare(b.hora_inicio||''))
 
   useEffect(() => {
-    if (!alumnos.length) return
-    cargarAlertas()
-  }, [alumnos.length])
+    if (usuario?.rol !== 'profesora' || !miProfesora?.id) return
+    const cargarDatosProf = async () => {
+      const sb = createClient()
+      const hoyStr = new Date().toISOString().split('T')[0]
+
+      // 1. Cursos de esta profesora
+      const { data: cursosProf } = await sb.from('cursos').select('id,nombre').eq('profesora_id', miProfesora.id)
+      const cursoIds = (cursosProf || []).map((c: any) => c.id)
+      if (cursoIds.length === 0) return
+
+      // 2. Total alumnos únicos
+      const { data: rels } = await sb.from('cursos_alumnos').select('alumno_id').in('curso_id', cursoIds)
+      const alumnoIds = [...new Set((rels || []).map((r: any) => r.alumno_id))]
+      setTotalAlumnosProf(alumnoIds.length)
+
+      // 3. Clases ya registradas hoy por esta profesora
+      const { data: clasesHoy } = await sb.from('clases').select('id,curso_id').in('curso_id', cursoIds).eq('fecha', hoyStr)
+      setClasesYaRegistradas(new Set((clasesHoy || []).map((c: any) => c.curso_id)))
+
+      // 4. Alumnos con 2+ ausencias consecutivas en sus cursos
+      const alertasProf: any[] = []
+      await Promise.all(cursoIds.map(async (curso_id: string) => {
+        const { data: clases } = await sb.from('clases').select('id').eq('curso_id', curso_id).order('fecha', { ascending: false }).limit(8)
+        if (!clases?.length) return
+        const claseIds = clases.map((c: any) => c.id)
+        const alumnosCurso = (rels || []).filter((r: any) => r.alumno_id).map((r: any) => r.alumno_id)
+        const { data: asist } = await sb.from('asistencia_clases').select('alumno_id,clase_id,estado').in('clase_id', claseIds).in('alumno_id', alumnosCurso)
+        const porAlumno: Record<string, Record<string, string>> = {}
+        asist?.forEach((a: any) => {
+          if (!porAlumno[a.alumno_id]) porAlumno[a.alumno_id] = {}
+          porAlumno[a.alumno_id][a.clase_id] = a.estado
+        })
+        alumnosCurso.forEach((alumno_id: string) => {
+          const reg = porAlumno[alumno_id] || {}
+          let cons = 0
+          for (const clase of clases) {
+            const estado = reg[clase.id]
+            if (estado === 'A') cons++
+            else if (estado === 'P' || estado === 'T') break
+          }
+          if (cons >= 2 && !alertasProf.find(a => a.id === alumno_id)) {
+            alertasProf.push({ id: alumno_id, consecutivas: cons })
+          }
+        })
+      }))
+      // Resolver nombres
+      if (alertasProf.length > 0) {
+        const { data: als } = await sb.from('alumnos').select('id,nombre,apellido,color').in('id', alertasProf.map(a => a.id))
+        setAlumnosAusentesProf(alertasProf.map(a => {
+          const al = als?.find((x: any) => x.id === a.id)
+          return { ...a, nombre: al?.nombre || '—', apellido: al?.apellido || '', color: al?.color || '#652f8d' }
+        }).slice(0, 5))
+      }
+
+      // 5. Exámenes próximos sin notas cargadas (próximos 30 días)
+      const en30 = new Date(); en30.setDate(en30.getDate() + 30)
+      const { data: exams } = await sb.from('examenes').select('id,nombre,fecha,tipo,cursos(nombre)').in('curso_id', cursoIds).gte('fecha', hoyStr).lte('fecha', en30.toISOString().split('T')[0]).order('fecha').limit(5)
+      setExamensPendientes(exams || [])
+    }
+    cargarDatosProf()
+  }, [miProfesora?.id, usuario?.rol])
 
   // Actualizar cuotas pendientes en tiempo real
   useEffect(() => {
@@ -174,6 +238,7 @@ export default function Dashboard() {
       }))
       await sb.from('asistencia_clases').insert(inserts)
       showToast(`✓ Asistencia de ${asistModal.curso.nombre} guardada`)
+      setClasesYaRegistradas(prev => new Set([...prev, asistModal.curso.id]))
       setAsistModal(null)
     } catch (e: any) {
       showToast('Error al guardar: ' + e.message, 'error')
@@ -289,8 +354,13 @@ export default function Dashboard() {
 
   // ── VISTA PROFESORA ──
   if (usuario?.rol === 'profesora') {
+    const clasesHoyProf = cursosHoy.length
+    const clasesRegistradas = cursosHoy.filter(c => clasesYaRegistradas.has(c.id)).length
+    const clasesPendientes = clasesHoyProf - clasesRegistradas
+
     return (
       <div className="fade-in">
+        {/* Saludo */}
         <div style={{marginBottom:'20px'}}>
           <div style={{fontSize:'13px',color:'var(--text2)',fontWeight:500}}>Hola, {usuario?.nombre.split(' ')[0]} 👋</div>
           <div style={{fontSize:'22px',fontWeight:700,letterSpacing:'-.3px',marginTop:'2px'}}>
@@ -298,6 +368,30 @@ export default function Dashboard() {
           </div>
         </div>
 
+        {/* KPIs rápidos */}
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'20px'}}>
+          <KpiCard val={totalAlumnosProf} label="Mis alumnos" color="var(--v)" />
+          <KpiCard val={cursosHoy.length} label={cursosHoy.length === 1 ? 'Clase hoy' : 'Clases hoy'} color="var(--v)" />
+        </div>
+
+        {/* Estado asistencia del día */}
+        {cursosHoy.length > 0 && (
+          <div style={{padding:'13px 16px',background: clasesPendientes === 0 ? 'var(--greenl)' : 'var(--amberl)',border:`1.5px solid ${clasesPendientes === 0 ? '#a3e0bc' : '#e8d080'}`,borderRadius:'14px',marginBottom:'18px',display:'flex',alignItems:'center',gap:'10px'}}>
+            <span style={{fontSize:'18px'}}>{clasesPendientes === 0 ? '✅' : '📋'}</span>
+            <div style={{flex:1}}>
+              <div style={{fontSize:'13.5px',fontWeight:700,color:clasesPendientes === 0 ? 'var(--green)' : 'var(--amber)'}}>
+                {clasesPendientes === 0
+                  ? 'Asistencia del día completa'
+                  : `${clasesPendientes} clase${clasesPendientes !== 1 ? 's' : ''} sin registrar hoy`}
+              </div>
+              <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'2px'}}>
+                {clasesRegistradas} de {clasesHoyProf} registrada{clasesHoyProf !== 1 ? 's' : ''}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Clases de hoy con botón asistencia */}
         <SL style={{marginBottom:'10px'}}>{diaHoy ? `Clases de hoy · ${diaHoy}` : 'Clases del día'}</SL>
         {cursosHoy.length === 0 ? (
           <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'20px',textAlign:'center',color:'var(--text3)',marginBottom:'18px'}}>
@@ -307,13 +401,96 @@ export default function Dashboard() {
           <div style={{marginBottom:'18px'}}>
             {cursosHoy.map(c => {
               const col = NIVEL_COL[c.nivel] ?? NIVEL_COL['Básico']
+              const yaRegistrada = clasesYaRegistradas.has(c.id)
               return (
-                <CursoCardConBoton key={c.id} c={c} col={col} onAsistencia={() => abrirAsistencia(c)} />
+                <div key={c.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'13px 14px',background:'var(--white)',border:`1.5px solid ${yaRegistrada ? '#a3e0bc' : 'var(--border)'}`,borderRadius:'14px',marginBottom:'8px'}}>
+                  <div style={{width:42,height:42,borderRadius:13,background:col.bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                    <span style={{fontSize:'10px',fontWeight:700,color:col.text}}>{(c.nivel||'').slice(0,3).toUpperCase()}</span>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:'14px',fontWeight:600}}>{c.nombre}</div>
+                    <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'2px'}}>{c.hora_inicio?.slice(0,5)||'—'}–{c.hora_fin?.slice(0,5)||'—'}</div>
+                  </div>
+                  {yaRegistrada
+                    ? <span style={{padding:'5px 10px',background:'var(--greenl)',color:'var(--green)',borderRadius:'8px',fontSize:'11px',fontWeight:700,flexShrink:0}}>✓ Cargada</span>
+                    : <button onClick={() => abrirAsistencia(c)} style={{padding:'6px 11px',background:'var(--vl)',color:'var(--v)',border:'1px solid #d4a8e8',borderRadius:'8px',fontSize:'11px',fontWeight:700,cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}}>Asistencia</button>
+                  }
+                </div>
               )
             })}
           </div>
         )}
 
+        {/* Alumnos con ausencias consecutivas */}
+        {alumnosAusentesProf.length > 0 && (
+          <div style={{marginBottom:'20px'}}>
+            <SL style={{marginBottom:'10px'}}>Ausencias a seguir</SL>
+            {alumnosAusentesProf.map((al: any, i: number) => (
+              <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'11px 14px',background:'var(--white)',border:'1.5px solid #f5c5c5',borderRadius:'14px',marginBottom:'8px'}}>
+                <Av color={al.color} nombre={al.nombre} apellido={al.apellido} size={36} />
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'13.5px',fontWeight:600}}>{al.nombre} {al.apellido}</div>
+                  <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'1px'}}>{al.consecutivas} faltas seguidas</div>
+                </div>
+                <span style={{padding:'3px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:'var(--redl)',color:'var(--red)',flexShrink:0}}>{al.consecutivas} ausencias</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Exámenes próximos */}
+        {examensPendientes.length > 0 && (
+          <div style={{marginBottom:'20px'}}>
+            <SL style={{marginBottom:'10px'}}>Próximos exámenes</SL>
+            {examensPendientes.map((ex: any) => {
+              const fechaEx = new Date(ex.fecha + 'T12:00:00')
+              const diff = Math.round((fechaEx.getTime() - new Date().setHours(0,0,0,0)) / 86400000)
+              const esHoy = diff === 0
+              return (
+                <div key={ex.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'11px 14px',background:'var(--white)',border:`1.5px solid ${esHoy ? '#d4a8e8' : 'var(--border)'}`,borderRadius:'14px',marginBottom:'8px'}}>
+                  <div style={{width:40,height:40,borderRadius:12,background:'#f2e8f9',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'18px',flexShrink:0}}>📝</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:'13.5px',fontWeight:600}}>{ex.nombre}</div>
+                    <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'2px'}}>
+                      {(ex.cursos as any)?.nombre || ''} · {ex.tipo === 'midterm' ? 'Midterm' : ex.tipo === 'final' ? 'Final' : ex.tipo}
+                    </div>
+                  </div>
+                  <div style={{textAlign:'right',flexShrink:0}}>
+                    <div style={{fontSize:'12px',fontWeight:700,color: esHoy ? 'var(--v)' : 'var(--text2)'}}>
+                      {esHoy ? 'Hoy' : diff === 1 ? 'Mañana' : `En ${diff}d`}
+                    </div>
+                    <div style={{fontSize:'11px',color:'var(--text3)'}}>{fmt(ex.fecha)}</div>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+
+        {/* Cumpleaños próximos de sus alumnos */}
+        {cumpleanos.length > 0 && (
+          <div style={{marginBottom:'20px'}}>
+            <SL style={{marginBottom:'10px'}}>Cumpleaños de mis alumnos</SL>
+            <div style={{background:'var(--white)',border:'1.5px solid #fce7f3',borderRadius:'16px',overflow:'hidden'}}>
+              {cumpleanos.slice(0,5).map((cu:any,idx:number) => (
+                <div key={cu.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'10px 16px',borderBottom:idx < Math.min(cumpleanos.length,5)-1 ?'1px solid #fce7f3':'none',background:cu.diasParaCumple===0?'#fff0f8':'transparent'}}>
+                  <Av color={cu.color||'#db2777'} nombre={cu.nombre} apellido={cu.apellido} size={34} />
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:'13px',fontWeight:600}}>{cu.nombre} {cu.apellido}</div>
+                    <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'1px'}}>
+                      {cu.diasParaCumple===0 ? <span style={{color:'#db2777',fontWeight:700}}>🎉 Hoy</span>
+                      : cu.diasParaCumple===1 ? <span style={{color:'#db2777',fontWeight:600}}>Mañana</span>
+                      : `En ${cu.diasParaCumple} días`}
+                    </div>
+                  </div>
+                  <div style={{background:'#fce7f3',color:'#db2777',padding:'3px 10px',borderRadius:'20px',fontSize:'12px',fontWeight:700,flexShrink:0}}>{cu.fechaStr}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Próximos eventos */}
         {proximosEventos.length > 0 && (
           <>
             <SL style={{marginBottom:'10px'}}>Próximos eventos</SL>
