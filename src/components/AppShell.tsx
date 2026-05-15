@@ -102,6 +102,55 @@ class PanelErrorBoundary extends React.Component<
   }
 }
 
+// ── ConfirmDialog global ──────────────────────────────────────────────────────
+// Uso desde cualquier módulo:
+// window.dispatchEvent(new CustomEvent('confirm-action', {
+//   detail: { mensaje: '¿Eliminar alumno?', detalle: 'Esta acción no se puede deshacer.', labelConfirm: 'Eliminar', onConfirm: () => { ... } }
+// }))
+interface ConfirmDialogProps {
+  mensaje: string
+  detalle?: string
+  labelConfirm?: string
+  onConfirm: () => void
+  onClose: () => void
+}
+function ConfirmDialog({ mensaje, detalle, labelConfirm = 'Confirmar', onConfirm, onClose }: ConfirmDialogProps) {
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(20,0,40,.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 20px' }}
+      onClick={onClose}
+    >
+      <div
+        style={{ background: 'var(--white)', borderRadius: '20px', padding: '28px 24px 24px', width: '100%', maxWidth: '360px', boxShadow: '0 8px 32px rgba(0,0,0,.18)' }}
+        onClick={e => e.stopPropagation()}
+      >
+        <div style={{ fontSize: '17px', fontWeight: 700, color: 'var(--text)', marginBottom: detalle ? '8px' : '20px', lineHeight: 1.3 }}>
+          {mensaje}
+        </div>
+        {detalle && (
+          <div style={{ fontSize: '13px', color: 'var(--text2)', marginBottom: '20px', lineHeight: 1.5 }}>
+            {detalle}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button
+            onClick={onClose}
+            style={{ flex: 1, padding: '12px', background: 'transparent', border: '1.5px solid var(--border)', borderRadius: '12px', fontSize: '14px', fontWeight: 600, cursor: 'pointer', color: 'var(--text2)' }}
+          >
+            Cancelar
+          </button>
+          <button
+            onClick={() => { onConfirm(); onClose() }}
+            style={{ flex: 1, padding: '12px', background: 'var(--red)', border: 'none', borderRadius: '12px', fontSize: '14px', fontWeight: 700, cursor: 'pointer', color: '#fff' }}
+          >
+            {labelConfirm}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function NavEditor({ allAllowed, navOrdered, MAX_NAV, saveNavCustom, onClose }: any) {
   const [activeIds, setActiveIds] = React.useState<string[]>(
     () => navOrdered.slice(0, MAX_NAV).map((n: any) => n.id)
@@ -205,6 +254,9 @@ export default function AppShell() {
   const [busqGlobalQ, setBusqGlobalQ] = useState('')
   const [busqResultados, setBusqResultados] = useState<{tipo:string;id:string;titulo:string;sub:string;color?:string;nav:string}[]>([])
   const [busqLoading, setBusqLoading] = useState(false)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    mensaje: string; detalle?: string; labelConfirm?: string; onConfirm: () => void
+  } | null>(null)
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -230,6 +282,17 @@ export default function AppShell() {
     }
     window.addEventListener('navigate-to', handler)
     return () => window.removeEventListener('navigate-to', handler)
+  }, [])
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const d = (e as CustomEvent).detail
+      if (d?.mensaje && typeof d.onConfirm === 'function') {
+        setConfirmDialog({ mensaje: d.mensaje, detalle: d.detalle, labelConfirm: d.labelConfirm, onConfirm: d.onConfirm })
+      }
+    }
+    window.addEventListener('confirm-action', handler)
+    return () => window.removeEventListener('confirm-action', handler)
   }, [])
 
   useEffect(() => {
@@ -597,7 +660,18 @@ export default function AppShell() {
             <svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
               <circle cx="4" cy="10" r="1.5" /><circle cx="10" cy="10" r="1.5" /><circle cx="16" cy="10" r="1.5" />
             </svg>
-            <span style={{ fontSize: '10px', fontWeight: 500, lineHeight: 1 }}>Más</span>
+            <span style={{ fontSize: '10px', fontWeight: 500, lineHeight: 1, display: 'flex', alignItems: 'center', gap: '3px' }}>
+              Más
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                minWidth: '14px', height: '14px', borderRadius: '7px',
+                background: masOpen || masItems.some(i => i.id === page) || page === 'perfil' ? 'var(--v)' : 'var(--border)',
+                color: masOpen || masItems.some(i => i.id === page) || page === 'perfil' ? '#fff' : 'var(--text3)',
+                fontSize: '9px', fontWeight: 700, padding: '0 3px', lineHeight: 1,
+              }}>
+                {masItems.length + 1 /* +1 por Mi perfil */}
+              </span>
+            </span>
           </button>
         )}
       </nav>
@@ -660,6 +734,17 @@ export default function AppShell() {
           MAX_NAV={MAX_NAV}
           saveNavCustom={saveNavCustom}
           onClose={() => setNavEditOpen(false)}
+        />
+      )}
+
+      {/* CONFIRM DIALOG GLOBAL */}
+      {confirmDialog && (
+        <ConfirmDialog
+          mensaje={confirmDialog.mensaje}
+          detalle={confirmDialog.detalle}
+          labelConfirm={confirmDialog.labelConfirm}
+          onConfirm={confirmDialog.onConfirm}
+          onClose={() => setConfirmDialog(null)}
         />
       )}
 
