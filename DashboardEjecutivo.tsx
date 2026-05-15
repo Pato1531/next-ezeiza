@@ -1152,6 +1152,20 @@ function CierreDeMes({ mes, anio, totalCobrado, alumnos, cursos, profesoras, pag
   const totalLiq = (liquidaciones || []).reduce((s: number, l: any) => s + (l.total || 0), 0)
   const margen = totalCobrado - totalLiq
 
+  // ── Cobranza: recaudado vs esperado ──────────────────────────────────────
+  const esperado = (alumnos || []).reduce((s: number, a: any) => s + (a.cuota_mensual || 0), 0)
+  const pctCobranza = esperado > 0 ? Math.round((totalCobrado / esperado) * 100) : 0
+  const alumnosPagaron = new Set((pagos || []).map((p: any) => p.alumno_id))
+  const cobrados = alumnosPagaron.size
+  const totalAlumnos = (alumnos || []).length
+  const sinPagar = totalAlumnos - cobrados
+
+  // breakdown por tipo
+  const totalCuotas    = (pagos || []).filter((p: any) => p.tipo === 'cuota').reduce((s: number, p: any) => s + (p.monto || 0), 0)
+  const totalMatriculas= (pagos || []).filter((p: any) => p.tipo === 'matricula').reduce((s: number, p: any) => s + (p.monto || 0), 0)
+  const totalRecargos  = (pagos || []).filter((p: any) => p.tipo === 'recargo' || (p.observaciones || '').toLowerCase().includes('recargo')).reduce((s: number, p: any) => s + (p.monto || 0), 0)
+  const totalOtros     = totalCobrado - totalCuotas - totalMatriculas - totalRecargos
+
   const descargarPDF = () => {
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
     <title>Cierre ${mes} ${anio}</title>
@@ -1177,6 +1191,13 @@ function CierreDeMes({ mes, anio, totalCobrado, alumnos, cursos, profesoras, pag
       <div class="card"><div class="val">${fmt$(totalLiq)}</div><div class="lbl">Total liquidaciones</div></div>
       <div class="card"><div class="val ${margen >= 0 ? 'positive' : 'negative'}">${fmt$(margen)}</div><div class="lbl">Margen estimado</div></div>
     </div>
+    <h2 style="font-size:14px;margin-bottom:8px">Cobranza</h2>
+    <p style="font-size:12px;color:#555;margin-bottom:6px">${cobrados} de ${totalAlumnos} alumnos pagaron · ${pctCobranza}% del total esperado (${fmt$(esperado)})</p>
+    ${totalMatriculas > 0 || totalRecargos > 0 ? `<table style="margin-bottom:16px"><thead><tr><th>Concepto</th><th style="text-align:right">Monto</th></tr></thead><tbody>
+      ${totalCuotas > 0 ? `<tr><td>Cuotas</td><td style="text-align:right">${fmt$(totalCuotas)}</td></tr>` : ''}
+      ${totalMatriculas > 0 ? `<tr><td>Matrículas</td><td style="text-align:right">${fmt$(totalMatriculas)}</td></tr>` : ''}
+      ${totalRecargos > 0 ? `<tr><td>Recargos</td><td style="text-align:right">${fmt$(totalRecargos)}</td></tr>` : ''}
+    </tbody></table>` : ''}
     <h2 style="font-size:14px;margin-bottom:8px">Altas del mes</h2>
     ${altasMes?.length > 0 ? `<table><thead><tr><th>Nombre</th><th>Nivel</th><th>Fecha</th></tr></thead><tbody>
       ${altasMes.map((a: any) => `<tr><td>${a.nombre} ${a.apellido}</td><td>${a.nivel}</td><td>${a.fecha_alta ? new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR') : '—'}</td></tr>`).join('')}
@@ -1232,6 +1253,73 @@ function CierreDeMes({ mes, anio, totalCobrado, alumnos, cursos, profesoras, pag
           </div>
           <div style={{fontSize:'11px',color:'var(--text2)',marginTop:'4px'}}>Movimiento del mes</div>
         </div>
+      </div>
+
+      {/* Cobranza: recaudado vs esperado */}
+      <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px',marginBottom:'12px'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px'}}>
+          <div style={{fontSize:'13px',fontWeight:700}}>Cobranza del mes</div>
+          <span style={{fontSize:'12px',fontWeight:700,padding:'3px 10px',borderRadius:'20px',
+            background: pctCobranza >= 80 ? 'var(--greenl)' : pctCobranza >= 60 ? 'var(--amberl)' : 'var(--redl)',
+            color: pctCobranza >= 80 ? 'var(--green)' : pctCobranza >= 60 ? 'var(--amber)' : 'var(--red)',
+          }}>{pctCobranza}%</span>
+        </div>
+        {/* Barra de progreso */}
+        <div style={{background:'var(--bg)',borderRadius:'99px',height:'8px',marginBottom:'10px',overflow:'hidden'}}>
+          <div style={{
+            height:'8px', borderRadius:'99px', transition:'width .4s',
+            background: pctCobranza >= 80 ? 'var(--green)' : pctCobranza >= 60 ? 'var(--amber)' : 'var(--red)',
+            width: `${Math.min(pctCobranza, 100)}%`,
+          }} />
+        </div>
+        <div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',color:'var(--text2)',marginBottom:'14px'}}>
+          <span>{fmt$(totalCobrado)} cobrado</span>
+          <span>{fmt$(esperado)} esperado</span>
+        </div>
+        <div style={{display:'flex',gap:'6px',marginBottom:'10px'}}>
+          <div style={{flex:1,textAlign:'center',padding:'8px',background:'var(--bg)',borderRadius:'10px'}}>
+            <div style={{fontSize:'16px',fontWeight:700,color:'var(--green)'}}>{cobrados}</div>
+            <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>pagaron</div>
+          </div>
+          <div style={{flex:1,textAlign:'center',padding:'8px',background:'var(--bg)',borderRadius:'10px'}}>
+            <div style={{fontSize:'16px',fontWeight:700,color:'var(--red)'}}>{sinPagar}</div>
+            <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>deben</div>
+          </div>
+          <div style={{flex:1,textAlign:'center',padding:'8px',background:'var(--bg)',borderRadius:'10px'}}>
+            <div style={{fontSize:'16px',fontWeight:700,color:'var(--text2)'}}>{totalAlumnos}</div>
+            <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>total</div>
+          </div>
+        </div>
+        {/* Breakdown por tipo */}
+        {(totalMatriculas > 0 || totalRecargos > 0 || totalOtros > 0) && (
+          <div style={{borderTop:'1px solid var(--border)',paddingTop:'10px',display:'flex',flexDirection:'column',gap:'5px'}}>
+            <div style={{fontSize:'10px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em',marginBottom:'4px'}}>Desglose</div>
+            {totalCuotas > 0 && (
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:'12.5px'}}>
+                <span style={{color:'var(--text2)'}}>Cuotas</span>
+                <span style={{fontWeight:600}}>{fmt$(totalCuotas)}</span>
+              </div>
+            )}
+            {totalMatriculas > 0 && (
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:'12.5px'}}>
+                <span style={{color:'var(--text2)'}}>Matrículas</span>
+                <span style={{fontWeight:600}}>{fmt$(totalMatriculas)}</span>
+              </div>
+            )}
+            {totalRecargos > 0 && (
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:'12.5px'}}>
+                <span style={{color:'var(--amber)'}}>Recargos</span>
+                <span style={{fontWeight:600,color:'var(--amber)'}}>{fmt$(totalRecargos)}</span>
+              </div>
+            )}
+            {totalOtros > 100 && (
+              <div style={{display:'flex',justifyContent:'space-between',fontSize:'12.5px'}}>
+                <span style={{color:'var(--text2)'}}>Otros</span>
+                <span style={{fontWeight:600}}>{fmt$(totalOtros)}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Altas */}
