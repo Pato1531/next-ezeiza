@@ -1,19 +1,21 @@
 import type { Metadata, Viewport } from 'next'
+import { Inter } from 'next/font/google'
 import { AuthProvider } from '@/lib/auth-context'
-import { ErrorBoundary } from '@/lib/debug'
 import './globals.css'
 
-// Inter se carga via CSS en globals.css con @import de Google Fonts
-// Esto evita el error "Failed to fetch font" durante el build de Vercel
-// que ocurre cuando next/font/google intenta descargar la fuente en tiempo de build
+const inter = Inter({ subsets: ['latin'] })
 
-// ── El nombre del instituto se lee desde la DB en runtime (auth-context → AppShell).
-// ── El metadata es genérico "EduGest" para que el sistema sea verdaderamente multisede
-// ── sin depender de variables de entorno por sede.
+const nombre = process.env.NEXT_PUBLIC_INSTITUTO_NOMBRE || 'EduGest'
+
 export const metadata: Metadata = {
-  title: 'EduGest — Panel de gestión',
-  description: 'Sistema de gestión para institutos de inglés',
-  appleWebApp: { capable: true, statusBarStyle: 'default', title: 'EduGest' },
+  title: `${nombre} — Panel de gestión`,
+  description: `Sistema de gestión del Instituto de Inglés ${nombre}`,
+  // manifest removido — el icon-192.png faltante causaba recargas del SW
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: nombre,
+  },
 }
 
 export const viewport: Viewport = {
@@ -27,18 +29,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="es">
       <head>
+        {/* apple-touch-icon removido — icon-192.png no existe */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet" />
       </head>
-      <body style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
-        <ErrorBoundary>
-          <AuthProvider>
-            {children}
-          </AuthProvider>
-        </ErrorBoundary>
+      <body className={inter.className}>
+        <AuthProvider>
+          {children}
+        </AuthProvider>
       </body>
     </html>
   )
