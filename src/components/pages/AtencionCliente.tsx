@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 import { logActivity, apiHeaders } from '@/lib/hooks'
+import { showToast } from '@/components/Toast'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 const DIAS_SEMANA = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábados']
@@ -13,6 +14,11 @@ const IS = { width:'100%', padding:'10px 12px', border:'1.5px solid var(--border
 
 function hoy() { return new Date().toISOString().split('T')[0] }
 function fmt(f: string) { if(!f)return'—'; const [y,m,d]=f.split('-'); return `${d}/${m}/${y}` }
+function diasDesde(fechaISO: string): number {
+  if (!fechaISO) return 0
+  const diff = new Date().getTime() - new Date(fechaISO).getTime()
+  return Math.floor(diff / 86400000)
+}
 
 export default function AtencionCliente() {
   const [tab, setTab] = useState<'consultas'|'espera'>('consultas')
@@ -146,11 +152,11 @@ function RegistroConsultas() {
         setTimeout(() => setGuardadoFecha(f => f === fecha ? null : f), 2000)
       } else {
         console.error('[guardarDia] error del servidor:', json.error)
-        alert(`Error al guardar: ${json.error || 'Error desconocido'}`)
+        showToast(`Error al guardar: ${json.error || 'Error desconocido'}`, 'error')
       }
     } catch (e) {
       console.error('[guardarDia] fetch error:', e)
-      alert('Error de conexión al guardar. Intentá de nuevo.')
+      showToast('Error de conexión al guardar. Intentá de nuevo.', 'error')
     }
     setGuardandoFecha(null)
   }
@@ -256,6 +262,16 @@ function RegistroConsultas() {
           </div>
         ))}
       </div>
+      {totalConsultas > 0 && (
+        <div style={{
+          padding:'10px 14px', borderRadius:'12px', marginBottom:'14px', fontSize:'12.5px', lineHeight:1.5,
+          background: conversionRate >= 20 ? 'var(--greenl)' : conversionRate >= 10 ? 'var(--amberl)' : 'var(--redl)',
+          color: conversionRate >= 20 ? 'var(--green)' : conversionRate >= 10 ? 'var(--amber)' : 'var(--red)',
+          border: `1px solid ${conversionRate >= 20 ? '#a3e0bc' : conversionRate >= 10 ? '#e8d080' : '#f5c5c5'}`,
+        }}>
+          De {totalConsultas} consulta{totalConsultas !== 1 ? 's' : ''} ({totales.ws} WS + {totales.instagram} IG), se inscribieron {totales.inscriptos} — tasa de conversión {conversionRate >= 20 ? 'buena ✓' : conversionRate >= 10 ? 'en desarrollo' : 'a mejorar'}.
+        </div>
+      )}
 
       {/* Tabla por días */}
       <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',overflow:'hidden'}}>
@@ -414,9 +430,17 @@ function ListaEspera() {
   const [inscribiendo, setInscribiendo] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const [filtroEstado, setFiltroEstado] = useState<string>('todos')
+  const [nombreInstituto, setNombreInstituto] = useState('el instituto')
   const formVacio = { nombre:'', apellido:'', edad:'', celular:'', dia_interes:'', franja_horaria:'', nivel_curso:'', observaciones:'' }
   const [form, setForm] = useState(formVacio)
   const [guardando, setGuardando] = useState(false)
+
+  useEffect(() => {
+    if (!usuario?.instituto_id) return
+    const sb = createClient()
+    sb.from('institutos').select('nombre').eq('id', usuario.instituto_id).single()
+      .then(({ data }) => { if (data?.nombre) setNombreInstituto(data.nombre) })
+  }, [usuario?.instituto_id])
 
   const [formInscripcion, setFormInscripcion] = useState({
     fecha_alta: hoy(), matricula: '', cuota_mensual: '', nivel: 'Básico', es_menor: false,
@@ -448,7 +472,7 @@ function ListaEspera() {
   }
 
   const guardar = async () => {
-    if (!form.nombre || !form.apellido || !form.celular) return alert('Nombre, apellido y celular son obligatorios')
+    if (!form.nombre || !form.apellido || !form.celular) return showToast('Nombre, apellido y celular son obligatorios', 'warning')
     setGuardando(true)
     const sb = createClient()
     const payload = {
@@ -550,13 +574,13 @@ function ListaEspera() {
         setLista(prev => prev.filter(x => x.id !== a.id))
         logActivity('Inscribió alumno desde lista de espera', 'Alumnos', `${a.nombre} ${a.apellido}`)
         setModalInscribir(null)
-        alert(`✅ ${a.nombre} ${a.apellido} fue inscripto como alumno correctamente.`)
+        showToast(`✓ ${a.nombre} ${a.apellido} fue inscripto como alumno correctamente.`)
       } else {
-        alert('Error al crear el alumno. Intentá de nuevo.')
+        showToast('Error al crear el alumno. Intentá de nuevo.', 'error')
       }
     } catch (e) {
       console.error(e)
-      alert('Error inesperado. Intentá de nuevo.')
+      showToast('Error inesperado. Intentá de nuevo.', 'error')
     }
     setInscribiendo(false)
   }
@@ -569,7 +593,7 @@ function ListaEspera() {
 
   const wsLink = (cel: string, nombre: string) => {
     const num = cel.replace(/\D/g, '')
-    const texto = `Hola ${nombre}, te contactamos desde Next Ezeiza. Tenemos disponibilidad para el curso que consultaste. ¿Podemos coordinar?`
+    const texto = `Hola ${nombre}, te contactamos desde ${nombreInstituto}. Tenemos disponibilidad para el curso que consultaste. ¿Podemos coordinar?`
     return `https://wa.me/54${num}?text=${encodeURIComponent(texto)}`
   }
 
@@ -642,9 +666,18 @@ function ListaEspera() {
                         const prox = estados[(idx3 + 1) % estados.length]
                         cambiarEstado(a.id, prox)
                       }} />
+                      {(() => {
+                        const dias = diasDesde(a.created_at)
+                        const color = dias >= 14 ? 'var(--red)' : dias >= 7 ? 'var(--amber)' : 'var(--text3)'
+                        return (
+                          <span style={{fontSize:'11px',fontWeight:600,color,background:'var(--bg)',padding:'2px 7px',borderRadius:'20px',border:`1px solid ${color}33`}}>
+                            {dias === 0 ? 'Hoy' : `${dias}d en espera`}
+                          </span>
+                        )
+                      })()}
                     </div>
                     <div style={{fontSize:'12px',color:'var(--text3)',marginTop:'1px'}}>
-                      📱 {a.celular||'—'} · Agregado {a.created_at ? new Date(a.created_at).toLocaleDateString('es-AR',{day:'numeric',month:'short'}) : '—'}
+                      📱 {a.celular||'—'}
                     </div>
                     <div style={{display:'flex',flexWrap:'wrap',gap:'5px',marginTop:'7px'}}>
                       {a.edad && <Chip>{a.edad} años</Chip>}
