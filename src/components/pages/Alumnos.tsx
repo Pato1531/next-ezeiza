@@ -242,7 +242,7 @@ export default function Alumnos() {
 
   const guardar = async () => {
     if (!form?.nombre?.trim() || !form?.apellido?.trim()) {
-      return alert('Nombre y apellido son obligatorios')
+      return showToast('Nombre y apellido son obligatorios', 'warning')
     }
     setGuardando(true)
     const { id, activo, ...datos } = form
@@ -296,8 +296,8 @@ export default function Alumnos() {
   }
 
   const registrarBaja = async () => {
-    if (!motivoBaja) return alert('Seleccioná un motivo')
-    if (motivoBaja === 'Otro' && !motivoLibre.trim()) return alert('Escribí el motivo de la baja')
+    if (!motivoBaja) return showToast('Seleccioná un motivo', 'warning')
+    if (motivoBaja === 'Otro' && !motivoLibre.trim()) return showToast('Escribí el motivo de la baja', 'warning')
     if (!sel) return
     setGuardandoBaja(true)
     const sb = createClient()
@@ -553,7 +553,7 @@ export default function Alumnos() {
 
     const validarStep = () => {
       if (formStep === 0 && (!form?.nombre?.trim() || !form?.apellido?.trim())) {
-        alert('Nombre y apellido son obligatorios'); return false
+        showToast('Nombre y apellido son obligatorios', 'warning'); return false
       }
       return true
     }
@@ -584,7 +584,7 @@ export default function Alumnos() {
               <Field2 label="Apellido *"><Input value={form?.apellido||''} onChange={(v:string)=>setForm({...form,apellido:v})} /></Field2>
             </Row2>
             <Row2>
-              <Field2 label="Fecha de nacimiento">
+              <Field2 label="Fecha de nacimiento (opcional)">
                 <input type="date" style={IS} value={form?.fecha_nacimiento||''} onChange={(e:any)=>{
                   const fn = e.target.value
                   const edad = fn ? Math.floor((Date.now() - new Date(fn).getTime()) / (365.25*24*60*60*1000)) : 0
@@ -592,7 +592,7 @@ export default function Alumnos() {
                   setForm({...form, fecha_nacimiento:fn, edad, es_menor: esMenorAuto})
                 }} />
               </Field2>
-              <Field2 label="DNI alumno"><Input value={form?.dni||''} onChange={(v:string)=>setForm({...form,dni:v})} placeholder="Sin puntos..." /></Field2>
+              <Field2 label="DNI alumno (opcional)"><Input value={form?.dni||''} onChange={(v:string)=>setForm({...form,dni:v})} placeholder="Sin puntos..." /></Field2>
             </Row2>
             <Field2 label="Fecha de alta">
               <input type="date" style={IS} value={form?.fecha_alta||new Date().toISOString().split('T')[0]} onChange={(e:any)=>setForm({...form,fecha_alta:e.target.value})} />
@@ -626,8 +626,8 @@ export default function Alumnos() {
           {/* STEP 1 nuevo: Contacto */}
           {!esEdicion && formStep === 1 && <>
             <Row2>
-              <Field2 label="Teléfono"><Input value={form?.telefono||''} onChange={(v:string)=>setForm({...form,telefono:v})} /></Field2>
-              <Field2 label="Email"><Input type="email" value={form?.email||''} onChange={(v:string)=>setForm({...form,email:v})} /></Field2>
+              <Field2 label="Teléfono (opcional)"><Input value={form?.telefono||''} onChange={(v:string)=>setForm({...form,telefono:v})} /></Field2>
+              <Field2 label="Email (opcional)"><Input type="email" value={form?.email||''} onChange={(v:string)=>setForm({...form,email:v})} /></Field2>
             </Row2>
             {form?.edad && form.edad > 0 && (
               <div style={{padding:'10px 14px',background: form.es_menor?'var(--amberl)':'var(--greenl)',borderRadius:'10px',fontSize:'13px',color:form.es_menor?'var(--amber)':'var(--green)',fontWeight:500,marginBottom:'8px'}}>
@@ -652,12 +652,12 @@ export default function Alumnos() {
           {/* STEP 3 nuevo: Tutor (solo si es menor) */}
           {!esEdicion && formStep === 3 && form?.es_menor && <>
             <Row2>
-              <Field2 label="Nombre padre/madre *"><Input value={form?.padre_nombre||''} onChange={(v:string)=>setForm({...form,padre_nombre:v})} /></Field2>
-              <Field2 label="DNI tutor"><Input value={form?.padre_dni||''} onChange={(v:string)=>setForm({...form,padre_dni:v})} placeholder="Sin puntos..." /></Field2>
+              <Field2 label="Nombre padre/madre"><Input value={form?.padre_nombre||''} onChange={(v:string)=>setForm({...form,padre_nombre:v})} /></Field2>
+              <Field2 label="DNI tutor (opcional)"><Input value={form?.padre_dni||''} onChange={(v:string)=>setForm({...form,padre_dni:v})} placeholder="Sin puntos..." /></Field2>
             </Row2>
             <Row2>
-              <Field2 label="Tel. contacto *"><Input value={form?.padre_telefono||''} onChange={(v:string)=>setForm({...form,padre_telefono:v})} /></Field2>
-              <Field2 label="Email contacto"><Input value={form?.padre_email||''} onChange={(v:string)=>setForm({...form,padre_email:v})} /></Field2>
+              <Field2 label="Tel. contacto"><Input value={form?.padre_telefono||''} onChange={(v:string)=>setForm({...form,padre_telefono:v})} /></Field2>
+              <Field2 label="Email contacto (opcional)"><Input value={form?.padre_email||''} onChange={(v:string)=>setForm({...form,padre_email:v})} /></Field2>
             </Row2>
           </>}
         </Card>
@@ -1123,7 +1123,7 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
 
   const abrirWS = (tel: string, msg: string) => {
     const num = normalizarTel(tel)
-    if (!num || num.length < 12) { alert('No hay teléfono cargado para este contacto'); return }
+    if (!num || num.length < 12) { showToast('No hay teléfono cargado para este contacto', 'warning'); return }
     const url = `https://wa.me/${num}?text=${encodeURIComponent(msg)}`
     window.open(url, '_blank')
   }
