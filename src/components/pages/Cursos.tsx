@@ -1266,6 +1266,32 @@ function ExamenNotas({ examen, alumnosCurso, puedeEditar, onVolver, onEliminar }
   const [editando, setEditando] = useState<Record<string,{escrito:string,oral:string,listening:string,ausente:boolean,obs:string}>>({})
   const [guardando, setGuardando] = useState<Record<string,boolean>>({})
   const [saved, setSaved] = useState<Record<string,boolean>>({})
+  const [examenAnterior, setExamenAnterior] = useState<{examen:any, notas:any[]}|null>(null)
+  const [mostrarAnterior, setMostrarAnterior] = useState(false)
+
+  // Carga el examen anterior del mismo curso (por fecha, excluyendo el actual)
+  useEffect(() => {
+    if (!examen?.curso_id || !examen?.id) return
+    const sb = createClient()
+    sb.from('examenes')
+      .select('id, nombre, fecha, tipo')
+      .eq('curso_id', examen.curso_id)
+      .neq('id', examen.id)
+      .order('fecha', { ascending: false })
+      .limit(1)
+      .single()
+      .then(({ data: examPrev }) => {
+        if (!examPrev) return
+        sb.from('notas_examenes')
+          .select('alumno_id, nota, ausente, escrito, oral, listening')
+          .eq('examen_id', examPrev.id)
+          .then(({ data: notasPrev }) => {
+            if (notasPrev && notasPrev.length > 0) {
+              setExamenAnterior({ examen: examPrev, notas: notasPrev })
+            }
+          })
+      })
+  }, [examen?.id, examen?.curso_id])
 
   const esMidFinal = examen.tipo === 'midterm' || examen.tipo === 'final' || examen.nombre === 'Midterm Exam' || examen.nombre === 'Final Exam'
 
@@ -1390,6 +1416,64 @@ function ExamenNotas({ examen, alumnosCurso, puedeEditar, onVolver, onEliminar }
       </div>
 
       {alumnosCurso.length === 0 && <Card><div style={{textAlign:'center',padding:'16px',color:'var(--text3)'}}>Sin alumnos en este curso</div></Card>}
+
+      {/* Panel examen anterior */}
+      {examenAnterior && (
+        <div style={{marginBottom:'14px',border:'1.5px solid var(--border)',borderRadius:'14px',overflow:'hidden'}}>
+          <button
+            onClick={() => setMostrarAnterior(v => !v)}
+            style={{width:'100%',display:'flex',alignItems:'center',justifyContent:'space-between',padding:'11px 14px',background:'var(--bg)',border:'none',cursor:'pointer',textAlign:'left'}}
+          >
+            <div style={{fontSize:'12.5px',fontWeight:600,color:'var(--text2)'}}>
+              Referencia: {examenAnterior.examen.nombre} · {fmtFecha(examenAnterior.examen.fecha)}
+            </div>
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="var(--text3)" strokeWidth="2" style={{transform: mostrarAnterior ? 'rotate(180deg)' : 'none', transition:'transform .2s', flexShrink:0}}>
+              <path d="M5 8l5 5 5-5"/>
+            </svg>
+          </button>
+          {mostrarAnterior && (
+            <div style={{padding:'4px 0 8px'}}>
+              {(() => {
+                const notasPrev = examenAnterior.notas
+                const promAnterior = (() => {
+                  const vals = notasPrev.filter((n:any) => !n.ausente && n.nota != null).map((n:any) => n.nota)
+                  return vals.length ? (vals.reduce((s:number,v:number)=>s+v,0)/vals.length).toFixed(1) : null
+                })()
+                const aprobAnterior = notasPrev.filter((n:any) => !n.ausente && n.nota != null && n.nota >= 60).length
+                return (
+                  <>
+                    <div style={{display:'flex',gap:'16px',padding:'8px 14px 10px',borderBottom:'1px solid var(--border)'}}>
+                      <div style={{fontSize:'12px',color:'var(--text3)'}}>Promedio <strong style={{color:'var(--v)'}}>{promAnterior || '—'}</strong></div>
+                      <div style={{fontSize:'12px',color:'var(--text3)'}}>Aprobados <strong style={{color:'var(--green)'}}>{aprobAnterior}</strong></div>
+                      <div style={{fontSize:'12px',color:'var(--text3)'}}>Total <strong>{notasPrev.length}</strong></div>
+                    </div>
+                    {alumnosCurso.map((al:any) => {
+                      const np = notasPrev.find((n:any) => n.alumno_id === al.id)
+                      if (!np) return null
+                      const ok = !np.ausente && np.nota != null && np.nota >= 60
+                      return (
+                        <div key={al.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 14px',borderBottom:'1px solid var(--border)'}}>
+                          <div style={{fontSize:'12.5px',color:'var(--text)'}}>{al.nombre} {al.apellido}</div>
+                          <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                            {np.ausente ? (
+                              <span style={{fontSize:'11px',fontWeight:600,color:'var(--amber)'}}>Ausente</span>
+                            ) : (
+                              <>
+                                <span style={{fontSize:'13px',fontWeight:700,color: ok ? 'var(--green)' : 'var(--red)'}}>{np.nota ?? '—'}</span>
+                                <span style={{fontSize:'10px',fontWeight:600,padding:'1px 6px',borderRadius:'8px',background: ok ? 'var(--greenl)' : 'var(--redl)',color: ok ? 'var(--green)' : 'var(--red)'}}>{ok ? 'Aprobado' : 'Desaprobado'}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </>
+                )
+              })()}
+            </div>
+          )}
+        </div>
+      )}
 
       {alumnosCurso.map((al:any) => {
         const e = getEdit(al.id)
