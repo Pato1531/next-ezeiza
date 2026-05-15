@@ -835,26 +835,32 @@ export default function Alumnos() {
 
     const aplicarRenovacion = async () => {
       const monto = parseFloat(renovacionMonto)
-      if (isNaN(monto) || monto <= 0) { alert('Ingresá un monto válido'); return }
-      if (renovacionSeleccionados.size === 0) { alert('Seleccioná al menos un alumno'); return }
+      if (isNaN(monto) || monto <= 0) { showToast('Ingresá un monto válido', 'warning'); return }
+      if (renovacionSeleccionados.size === 0) { showToast('Seleccioná al menos un alumno', 'warning'); return }
       const mesNombre = MESES_LISTA2[renovacionMes]
-      if (!window.confirm(`¿Registrar matrícula de $${monto.toLocaleString('es-AR')} a ${renovacionSeleccionados.size} alumno${renovacionSeleccionados.size!==1?'s':''}?`)) return
-      setRenovacionAplicando(true)
-      let ok = 0; let err = 0
-      const fechaHoy = new Date().toISOString().split('T')[0]
-      await Promise.all([...renovacionSeleccionados].map(async (alumno_id) => {
-        try {
-          const res = await fetch('/api/registrar-pago', {
-            method: 'POST', headers: apiHeaders(),
-            body: JSON.stringify({ alumno_id, mes: mesNombre, anio: renovacionAnio, monto, metodo: renovacionMetodo, fecha_pago: fechaHoy, tipo: 'matricula', observaciones: 'Renovación matrícula anual' })
-          })
-          if (res.ok) ok++; else err++
-        } catch { err++ }
-      }))
-      setRenovacionResultado({ ok, err })
-      setRenovacionAplicando(false)
-      showToast(`✓ ${ok} matrículas registradas`)
-      logActivity('Renovación matrícula masiva', 'Alumnos', `${ok} alumnos · $${monto.toLocaleString('es-AR')} · ${mesNombre} ${renovacionAnio}`)
+      window.dispatchEvent(new CustomEvent('confirm-action', { detail: {
+        mensaje: `¿Registrar matrícula a ${renovacionSeleccionados.size} alumno${renovacionSeleccionados.size !== 1 ? 's' : ''}?`,
+        detalle: `$${monto.toLocaleString('es-AR')} · ${mesNombre} ${renovacionAnio}`,
+        labelConfirm: 'Registrar matrículas',
+        onConfirm: async () => {
+          setRenovacionAplicando(true)
+          let ok = 0; let err = 0
+          const fechaHoy = new Date().toISOString().split('T')[0]
+          await Promise.all([...renovacionSeleccionados].map(async (alumno_id) => {
+            try {
+              const res = await fetch('/api/registrar-pago', {
+                method: 'POST', headers: apiHeaders(),
+                body: JSON.stringify({ alumno_id, mes: mesNombre, anio: renovacionAnio, monto, metodo: renovacionMetodo, fecha_pago: fechaHoy, tipo: 'matricula', observaciones: 'Renovación matrícula anual' })
+              })
+              if (res.ok) ok++; else err++
+            } catch { err++ }
+          }))
+          setRenovacionResultado({ ok, err })
+          setRenovacionAplicando(false)
+          showToast(`✓ ${ok} matrículas registradas`)
+          logActivity('Renovación matrícula masiva', 'Alumnos', `${ok} alumnos · $${monto.toLocaleString('es-AR')} · ${mesNombre} ${renovacionAnio}`)
+        }
+      }}))
     }
 
     return (
