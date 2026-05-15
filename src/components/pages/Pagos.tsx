@@ -308,29 +308,7 @@ export default function Pagos() {
   }
 
   // ── Guardar pagos ─────────────────────────────────────────────────────────
-  const guardar = async () => {
-    if (seleccionados.size === 0) return alert('Seleccioná al menos un alumno')
-    if (!cobrarCuota && !cobrarRecargo && !cobrarMatricula && !cobrarProporcional) return alert('Seleccioná al menos un concepto')
-    if (cobrarProporcional && (!montoProporcional || parseFloat(montoProporcional) <= 0)) return alert('Ingresá el monto proporcional')
-    if (cobrarRecargo && (!montoRecargo || parseFloat(montoRecargo) <= 0)) return alert('Ingresá el monto del recargo')
-
-    // ── Advertencia si algún alumno seleccionado ya pagó cuota este mes ─────
-    // El proporcional siempre se suma; la cuota/recargo/matrícula reemplaza.
-    if (seleccionadosQueYaPagaron.length > 0 && (cobrarCuota || cobrarRecargo || cobrarMatricula)) {
-      const nombres = seleccionadosQueYaPagaron
-        .map(id => {
-          const a = alumnos.find((x: any) => x.id === id)
-          return a ? `${a.nombre} ${a.apellido}` : ''
-        })
-        .filter(Boolean)
-        .join(', ')
-      const concepto = [cobrarCuota && 'cuota', cobrarRecargo && 'recargo', cobrarMatricula && 'matrícula'].filter(Boolean).join(', ')
-      const ok = window.confirm(
-        `⚠️ ${seleccionadosQueYaPagaron.length} alumno${seleccionadosQueYaPagaron.length > 1 ? 's' : ''} ya tiene${seleccionadosQueYaPagaron.length > 1 ? 'n' : ''} registrado un pago de ${concepto} para ${mes}:\n\n${nombres}\n\nEl pago anterior de ${concepto} será reemplazado. ¿Continuás?`
-      )
-      if (!ok) return
-    }
-
+  const ejecutarGuardado = async () => {
     setGuardando(true)
     setResultadoRegistro(null)
     const fecha = new Date().toISOString().split('T')[0]
@@ -412,7 +390,29 @@ export default function Pagos() {
     setSeleccionados(new Set())
   }
 
-  // ── Exportar Excel ────────────────────────────────────────────────────────
+  const guardar = () => {
+    if (seleccionados.size === 0) return showToast('Seleccioná al menos un alumno', 'warning')
+    if (!cobrarCuota && !cobrarRecargo && !cobrarMatricula && !cobrarProporcional) return showToast('Seleccioná al menos un concepto', 'warning')
+    if (cobrarProporcional && (!montoProporcional || parseFloat(montoProporcional) <= 0)) return showToast('Ingresá el monto proporcional', 'warning')
+    if (cobrarRecargo && (!montoRecargo || parseFloat(montoRecargo) <= 0)) return showToast('Ingresá el monto del recargo', 'warning')
+
+    // ── Advertencia si algún alumno seleccionado ya pagó cuota este mes ─────
+    if (seleccionadosQueYaPagaron.length > 0 && (cobrarCuota || cobrarRecargo || cobrarMatricula)) {
+      const nombres = seleccionadosQueYaPagaron
+        .map(id => { const a = alumnos.find((x: any) => x.id === id); return a ? `${a.nombre} ${a.apellido}` : '' })
+        .filter(Boolean).join(', ')
+      const concepto = [cobrarCuota && 'cuota', cobrarRecargo && 'recargo', cobrarMatricula && 'matrícula'].filter(Boolean).join(', ')
+      window.dispatchEvent(new CustomEvent('confirm-action', { detail: {
+        mensaje: `${seleccionadosQueYaPagaron.length} alumno${seleccionadosQueYaPagaron.length > 1 ? 's' : ''} ya ${seleccionadosQueYaPagaron.length > 1 ? 'tienen' : 'tiene'} pago de ${concepto} en ${mes}`,
+        detalle: `${nombres}. El pago anterior será reemplazado. ¿Continuás?`,
+        labelConfirm: 'Sí, reemplazar',
+        onConfirm: ejecutarGuardado,
+      }}))
+      return
+    }
+
+    ejecutarGuardado()
+  }
   const descargarExcel = () => {
     const rows = [
       ['REPORTE DE PAGOS'],
@@ -632,21 +632,27 @@ export default function Pagos() {
                             </button>
                             {puedeEliminar && (
                               <button
-                                onClick={async () => {
-                                  if (!confirm(`¿Eliminar el pago de ${p.alumnos?.nombre} ${p.alumnos?.apellido}?`)) return
-                                  const sb = createClient()
-                                  const { error } = await sb.from('pagos_alumnos').delete().eq('id', p.id)
-                                  if (!error) {
-                                    setPagosReporte(prev => prev.filter(x => x.id !== p.id))
-                                    const restantes = pagosReporte.filter(x => x.id !== p.id && x.alumno_id === p.alumno_id)
-                                    if (restantes.length === 0) {
-                                      setAlumnosPagadosMes(prev => { const n = new Set(prev); n.delete(p.alumno_id); return n })
+                                onClick={() => {
+                                  window.dispatchEvent(new CustomEvent('confirm-action', { detail: {
+                                    mensaje: `¿Eliminar el pago de ${p.alumnos?.nombre} ${p.alumnos?.apellido}?`,
+                                    detalle: `${p.mes} ${p.anio} · $${p.monto?.toLocaleString('es-AR')} · ${p.metodo}`,
+                                    labelConfirm: 'Eliminar pago',
+                                    onConfirm: async () => {
+                                      const sb = createClient()
+                                      const { error } = await sb.from('pagos_alumnos').delete().eq('id', p.id)
+                                      if (!error) {
+                                        setPagosReporte(prev => prev.filter(x => x.id !== p.id))
+                                        const restantes = pagosReporte.filter(x => x.id !== p.id && x.alumno_id === p.alumno_id)
+                                        if (restantes.length === 0) {
+                                          setAlumnosPagadosMes(prev => { const n = new Set(prev); n.delete(p.alumno_id); return n })
+                                        }
+                                        logActivity('Eliminó pago', 'Pagos', `${p.alumnos?.nombre} ${p.alumnos?.apellido} · ${p.mes} ${p.anio}`)
+                                        showToast('Pago eliminado')
+                                      } else {
+                                        showToast('Error al eliminar el pago', 'error')
+                                      }
                                     }
-                                    logActivity('Eliminó pago', 'Pagos', `${p.alumnos?.nombre} ${p.alumnos?.apellido} · ${p.mes} ${p.anio}`)
-                                    showToast('Pago eliminado')
-                                  } else {
-                                    alert('Error al eliminar el pago')
-                                  }
+                                  }}))
                                 }}
                                 style={{ padding:'5px 10px', background:'var(--redl, #fef2f2)', color:'var(--red, #dc2626)', border:'1px solid #fca5a5', borderRadius:'7px', fontSize:'11px', fontWeight:600, cursor:'pointer', flexShrink:0 }}>
                                 Eliminar
@@ -799,24 +805,30 @@ export default function Pagos() {
             {puedeEliminar && (
               <button
                 disabled={eliminandoPago}
-                onClick={async () => {
-                  if (!confirm(`¿Eliminar el pago de ${pagoEditando.alumnos?.nombre} ${pagoEditando.alumnos?.apellido}?`)) return
-                  setEliminandoPago(true)
-                  const sb = createClient()
-                  const { error } = await sb.from('pagos_alumnos').delete().eq('id', pagoEditando.id)
-                  if (!error) {
-                    setPagosReporte(prev => prev.filter(x => x.id !== pagoEditando.id))
-                    const restantes = pagosReporte.filter(x => x.id !== pagoEditando.id && x.alumno_id === pagoEditando.alumno_id)
-                    if (restantes.length === 0) {
-                      setAlumnosPagadosMes(prev => { const n = new Set(prev); n.delete(pagoEditando.alumno_id); return n })
+                onClick={() => {
+                  window.dispatchEvent(new CustomEvent('confirm-action', { detail: {
+                    mensaje: `¿Eliminar el pago de ${pagoEditando.alumnos?.nombre} ${pagoEditando.alumnos?.apellido}?`,
+                    detalle: `${pagoEditando.mes} ${pagoEditando.anio} · $${pagoEditando.monto?.toLocaleString('es-AR')} · ${pagoEditando.metodo}`,
+                    labelConfirm: 'Eliminar pago',
+                    onConfirm: async () => {
+                      setEliminandoPago(true)
+                      const sb = createClient()
+                      const { error } = await sb.from('pagos_alumnos').delete().eq('id', pagoEditando.id)
+                      if (!error) {
+                        setPagosReporte(prev => prev.filter(x => x.id !== pagoEditando.id))
+                        const restantes = pagosReporte.filter(x => x.id !== pagoEditando.id && x.alumno_id === pagoEditando.alumno_id)
+                        if (restantes.length === 0) {
+                          setAlumnosPagadosMes(prev => { const n = new Set(prev); n.delete(pagoEditando.alumno_id); return n })
+                        }
+                        logActivity('Eliminó pago', 'Pagos', `${pagoEditando.alumnos?.nombre} ${pagoEditando.alumnos?.apellido} · ${pagoEditando.mes} ${pagoEditando.anio}`)
+                        showToast('Pago eliminado')
+                        setPagoEditando(null)
+                      } else {
+                        showToast('Error al eliminar el pago', 'error')
+                      }
+                      setEliminandoPago(false)
                     }
-                    logActivity('Eliminó pago', 'Pagos', `${pagoEditando.alumnos?.nombre} ${pagoEditando.alumnos?.apellido} · ${pagoEditando.mes} ${pagoEditando.anio}`)
-                    showToast('Pago eliminado')
-                    setPagoEditando(null)
-                  } else {
-                    alert('Error al eliminar el pago')
-                  }
-                  setEliminandoPago(false)
+                  }}))
                 }}
                 style={{ flex:1, padding:'12px', background: eliminandoPago ? '#aaa' : 'var(--redl, #fef2f2)', color: eliminandoPago ? '#fff' : 'var(--red, #dc2626)', border:'1.5px solid #fca5a5', borderRadius:'10px', fontSize:'14px', fontWeight:600, cursor: eliminandoPago ? 'not-allowed' : 'pointer' }}>
                 {eliminandoPago ? 'Eliminando...' : 'Eliminar'}
