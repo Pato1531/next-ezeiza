@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useCursos, useProfesoras, useAlumnos, useCursoAlumnos, useClases, useMiProfesora, useExamenes, useNotasExamen, store, storeTs, apiHeaders } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
+import { showToast } from '../Toast'
 
 function hoy() { return new Date().toISOString().split('T')[0] }
 function fmtFecha(f: string) { if(!f)return'—'; const [y,m,d]=f.split('-'); return `${d}/${m}/${y}` }
@@ -684,12 +685,20 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
   }, [clases.length])
 
   const guardarClase = async () => {
-    if (!nuevaClase.fecha) return alert('La fecha es obligatoria')
+    if (!nuevaClase.fecha) return showToast('La fecha es obligatoria', 'warning')
     if (!nuevaClase.descripcion.trim()) {
-      const continuar = window.confirm('⚠️ No completaste la descripción de los temas vistos.\n\n¿Querés guardar igual? Podés editarla después.')
-      if (!continuar) return
+      window.dispatchEvent(new CustomEvent('confirm-action', { detail: {
+        mensaje: '¿Guardar la clase sin descripción de temas?',
+        detalle: 'No completaste los temas vistos. Podés editarlos después.',
+        labelConfirm: 'Guardar igual',
+        onConfirm: () => _ejecutarGuardarClase(),
+      }}))
+      return
     }
-    // Esperar confirmación antes de cerrar — evita pérdida silenciosa de datos
+    _ejecutarGuardarClase()
+  }
+
+  const _ejecutarGuardarClase = async () => {
     setGuardando(true)
     try {
       const resultado = await agregarClase({
@@ -704,12 +713,13 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
         setClasesLocal(prev => [resultado, ...prev])
         setModalClase(false)
         setNuevaClase({ fecha: hoy(), tema:'', descripcion:'' })
+        showToast('Clase registrada')
       } else {
-        alert('❌ No se pudo registrar la clase. Revisá la conexión e intentá de nuevo.')
+        showToast('No se pudo registrar la clase. Revisá la conexión e intentá de nuevo.', 'error')
       }
     } catch (e) {
       console.error('[guardarClase]', e)
-      alert('❌ Error inesperado al guardar la clase.')
+      showToast('Error inesperado al guardar la clase.', 'error')
     }
     setGuardando(false)
   }
