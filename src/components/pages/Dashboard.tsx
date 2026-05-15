@@ -544,6 +544,26 @@ export default function Dashboard() {
                 <strong>{alertasAusencia.length} alumno{alertasAusencia.length!==1?'s':''}</strong> con ausencias consecutivas
               </Alerta>
             )}
+
+            {/* Detalle expandido de ausencias — visible para director, secretaria, coordinadora */}
+            {alertasAusencia.length > 0 && (usuario?.rol === 'director' || usuario?.rol === 'secretaria' || usuario?.rol === 'coordinadora') && (
+              <div style={{display:'flex',flexDirection:'column',gap:'6px',marginTop:'2px'}}>
+                {alertasAusencia.map((al:any, i:number) => (
+                  <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 14px',background:'var(--white)',border:'1.5px solid #f5c5c5',borderRadius:'14px'}}>
+                    <Av color={al.color} nombre={al.nombre} apellido={al.apellido} size={36} />
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:'13.5px',fontWeight:600}}>{al.nombre} {al.apellido}</div>
+                      <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'1px'}}>
+                        {al.curso ? al.curso + ' · ' : ''}{al.consecutivas} falta{al.consecutivas!==1?'s':''} seguida{al.consecutivas!==1?'s':''}
+                      </div>
+                    </div>
+                    <span style={{padding:'3px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:'var(--redl)',color:'var(--red)',flexShrink:0}}>
+                      {al.consecutivas}×
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
             {alumnosSinCurso > 0 && (
               <Alerta tipo="amber" icono="📋">
                 <strong>{alumnosSinCurso} alumno{alumnosSinCurso!==1?'s':''}</strong> sin curso asignado
