@@ -853,3 +853,4 @@ const EventoCard = ({ev}:any) => {
     </div>
   )
 }
+
