@@ -247,12 +247,12 @@ function FirmaDigital({ institutoId }: { institutoId: string }) {
       // Subir al bucket 'firmas' de Supabase Storage
       const ext   = file.name.split('.').pop()
       const path  = `${institutoId}/firma_director.${ext}`
-      const { error: upErr } = await sb.storage.from('firmas').upload(path, file, {
+      const { error: upErr } = await sb.storage.from('Firma').upload(path, file, {
         upsert: true, contentType: file.type
       })
       if (upErr) throw new Error(upErr.message)
       // Obtener URL pública
-      const { data: urlData } = sb.storage.from('firmas').getPublicUrl(path)
+      const { data: urlData } = sb.storage.from('Firma').getPublicUrl(path)
       const url = urlData.publicUrl + '?t=' + Date.now() // cache-bust
       // Guardar en institutos
       const { error: dbErr } = await sb.from('institutos')
