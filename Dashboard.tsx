@@ -36,6 +36,10 @@ export default function Dashboard() {
   const [cuotasPendientes, setCuotasPendientes] = useState(0)
   const [alertasAusencia, setAlertasAusencia] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
+  const [resMesProfIdx, setResMesProfIdx] = useState(new Date().getMonth())
+  const [resMesProfAnio, setResMesProfAnio] = useState(new Date().getFullYear())
+  const [resumenProfesoras, setResumenProfesoras] = useState<any[]>([])
+  const [loadingResumenProf, setLoadingResumenProf] = useState(false)
   const [proximosEventos, setProximosEventos] = useState<any[]>([])
   const [cumpleanos, setCumpleanos] = useState<any[]>([])
   const [asistModal, setAsistModal] = useState<{curso: any; alumnos: any[]} | null>(null)
@@ -48,23 +52,6 @@ export default function Dashboard() {
   const [totalAlumnosProf, setTotalAlumnosProf] = useState(0)
   const [alumnosAusentesProf, setAlumnosAusentesProf] = useState<any[]>([])
   const [examensPendientes, setExamensPendientes] = useState<any[]>([])
-
-  // ── Resumen mensual profesora ─────────────────────────────────────────────
-  const [mesResumen, setMesResumen] = useState(new Date().getMonth())
-  const [anioResumen, setAnioResumen] = useState(new Date().getFullYear())
-  const [resumenData, setResumenData] = useState<{
-    clasesDadas: number; horasTrabajadas: number; asistenciaPct: number;
-    porcurso: {nombre:string; clases:number; alumnos:number; asistPct:number}[];
-    mesAnt: {clases:number; asistPct:number} | null
-  } | null>(null)
-
-  // ── Resumen por profesora (coordinadora/director) ─────────────────────────
-  const [resMesProfIdx, setResMesProfIdx] = useState(new Date().getMonth())
-  const [resMesProfAnio, setResMesProfAnio] = useState(new Date().getFullYear())
-  const [resumenProfesoras, setResumenProfesoras] = useState<{
-    id: string; nombre: string; apellido: string; color: string;
-    clases: number; horas: number; asistPct: number; cursos: number
-  }[]>([])
 
   const today = new Date()
   const mesActual = MESES[today.getMonth()]
@@ -225,150 +212,62 @@ export default function Dashboard() {
   }, [miProfesora?.id, usuario?.rol])
 
   useEffect(() => {
-    if (!['director','coordinadora'].includes(usuario?.rol||'')) return
-    if (!profesoras.length) return
-    const cargar = async () => {
-      const sb = createClient()
-      const mesStr = String(resMesProfIdx + 1).padStart(2,'0')
-      const inicioMes = `${resMesProfAnio}-${mesStr}-01`
-      const finMes = new Date(resMesProfAnio, resMesProfIdx + 1, 0).toISOString().split('T')[0]
-
-      // Cursos por profesora
-      const { data: todosCursos } = await sb.from('cursos').select('id,nombre,profesora_id,hora_inicio,hora_fin')
-      if (!todosCursos?.length) return
-
-      // Clases del mes
-      const { data: clasesMes } = await sb.from('clases')
-        .select('id,curso_id')
-        .gte('fecha', inicioMes).lte('fecha', finMes)
-      if (!clasesMes?.length) { setResumenProfesoras([]); return }
-
-      const claseIds = clasesMes.map((c:any) => c.id)
-      const { data: asistMes } = await sb.from('asistencia_clases')
-        .select('clase_id,estado').in('clase_id', claseIds)
-
-      const resultado = profesoras.map((prof:any) => {
-        const cursosDeProd = todosCursos.filter((c:any) => c.profesora_id === prof.id)
-        const cursoIdsDeProd = new Set(cursosDeProd.map((c:any) => c.id))
-        const clasesDeProd = clasesMes.filter((cl:any) => cursoIdsDeProd.has(cl.curso_id))
-        const claseIdsDeProd = new Set(clasesDeProd.map((cl:any) => cl.id))
-        const asistDeProd = (asistMes||[]).filter((a:any) => claseIdsDeProd.has(a.clase_id))
-        const presentes = asistDeProd.filter((a:any) => a.estado === 'P' || a.estado === 'T').length
-        const asistPct = asistDeProd.length > 0 ? Math.round((presentes / asistDeProd.length) * 100) : 0
-
-        let horas = 0
-        clasesDeProd.forEach((cl:any) => {
-          const curso = cursosDeProd.find((c:any) => c.id === cl.curso_id)
-          if (curso?.hora_inicio && curso?.hora_fin) {
-            const [h1,m1] = curso.hora_inicio.split(':').map(Number)
-            const [h2,m2] = curso.hora_fin.split(':').map(Number)
-            horas += ((h2*60+m2) - (h1*60+m1)) / 60
-          }
-        })
-
-        return {
-          id: prof.id,
-          nombre: prof.nombre,
-          apellido: prof.apellido,
-          color: prof.color || '#652f8d',
-          clases: clasesDeProd.length,
-          horas: Math.round(horas * 10) / 10,
-          asistPct,
-          cursos: cursosDeProd.length,
-        }
-      }).filter(p => p.clases > 0)
-        .sort((a,b) => b.clases - a.clases)
-
-      setResumenProfesoras(resultado)
-    }
-    cargar()
-  }, [usuario?.rol, profesoras.length, resMesProfIdx, resMesProfAnio])
-
-  useEffect(() => {
     if (!alumnos.length) return
     cargarAlertas()
   }, [alumnos.length, usuario?.instituto_id])
 
   useEffect(() => {
-    if (usuario?.rol !== 'profesora' || !miProfesora?.id) return
-    const cargarResumen = async () => {
+    if (!usuario?.rol || !['director','coordinadora'].includes(usuario.rol)) return
+    if (!profesoras.length) return
+    const cargar = async () => {
+      setLoadingResumenProf(true)
       const sb = createClient()
-      const { data: cursosProf } = await sb.from('cursos')
-        .select('id, nombre, dias, hora_inicio, hora_fin').eq('profesora_id', miProfesora.id)
-      if (!cursosProf?.length) return
-      const cursoIds = cursosProf.map((c:any) => c.id)
+      const mesStr = String(resMesProfIdx + 1).padStart(2,'0')
+      const inicioMes = `${resMesProfAnio}-${mesStr}-01`
+      const finMes = new Date(resMesProfAnio, resMesProfIdx + 1, 0).toISOString().split('T')[0]
 
-      const mesStr = String(mesResumen + 1).padStart(2,'0')
-      const inicioMes = `${anioResumen}-${mesStr}-01`
-      const finMes = new Date(anioResumen, mesResumen + 1, 0).toISOString().split('T')[0]
-
-      // Mes anterior
-      const mesAntIdx = mesResumen === 0 ? 11 : mesResumen - 1
-      const anioAnt = mesResumen === 0 ? anioResumen - 1 : anioResumen
-      const mesAntStr = String(mesAntIdx + 1).padStart(2,'0')
-      const inicioAnt = `${anioAnt}-${mesAntStr}-01`
-      const finAnt = new Date(anioAnt, mesAntIdx + 1, 0).toISOString().split('T')[0]
-
-      const [clasesRes, clasesAntRes] = await Promise.all([
-        sb.from('clases').select('id, curso_id, fecha').in('curso_id', cursoIds).gte('fecha', inicioMes).lte('fecha', finMes),
-        sb.from('clases').select('id, curso_id').in('curso_id', cursoIds).gte('fecha', inicioAnt).lte('fecha', finAnt),
+      const [cursosRes, clasesRes] = await Promise.all([
+        sb.from('cursos').select('id,nombre,profesora_id,hora_inicio,hora_fin'),
+        sb.from('clases').select('id,curso_id').gte('fecha', inicioMes).lte('fecha', finMes),
       ])
-
+      const todosCursos = cursosRes.data || []
       const clasesMes = clasesRes.data || []
+
+      if (!clasesMes.length) { setResumenProfesoras([]); setLoadingResumenProf(false); return }
+
       const claseIds = clasesMes.map((c:any) => c.id)
+      const { data: asistMes } = await sb.from('asistencia_clases')
+        .select('clase_id,estado').in('clase_id', claseIds)
 
-      // Asistencia del mes
-      const { data: asist } = claseIds.length > 0
-        ? await sb.from('asistencia_clases').select('clase_id, alumno_id, estado').in('clase_id', claseIds)
-        : { data: [] }
+      const resultado = profesoras
+        .map((prof:any) => {
+          const cursosDeProd = todosCursos.filter((c:any) => c.profesora_id === prof.id)
+          const cursoIdsDeProd = new Set(cursosDeProd.map((c:any) => c.id))
+          const clasesDeProd = clasesMes.filter((cl:any) => cursoIdsDeProd.has(cl.curso_id))
+          if (!clasesDeProd.length) return null
+          const claseIdsDeProd = new Set(clasesDeProd.map((cl:any) => cl.id))
+          const asistDeProd = (asistMes||[]).filter((a:any) => claseIdsDeProd.has(a.clase_id))
+          const presentes = asistDeProd.filter((a:any) => a.estado === 'P' || a.estado === 'T').length
+          const asistPct = asistDeProd.length > 0 ? Math.round((presentes / asistDeProd.length) * 100) : 0
+          let horas = 0
+          clasesDeProd.forEach((cl:any) => {
+            const curso = cursosDeProd.find((c:any) => c.id === cl.curso_id)
+            if (curso?.hora_inicio && curso?.hora_fin) {
+              const [h1,m1] = curso.hora_inicio.split(':').map(Number)
+              const [h2,m2] = curso.hora_fin.split(':').map(Number)
+              horas += ((h2*60+m2) - (h1*60+m1)) / 60
+            }
+          })
+          return { id: prof.id, nombre: prof.nombre, apellido: prof.apellido, color: prof.color||'#652f8d', clases: clasesDeProd.length, horas: Math.round(horas*10)/10, asistPct, cursos: cursosDeProd.length }
+        })
+        .filter(Boolean)
+        .sort((a:any,b:any) => b.clases - a.clases)
 
-      const totalReg = (asist || []).length
-      const presentes = (asist || []).filter((a:any) => a.estado === 'P' || a.estado === 'T').length
-      const asistenciaPct = totalReg > 0 ? Math.round((presentes / totalReg) * 100) : 0
-
-      // Horas trabajadas: sumar duración de cada clase según el curso
-      let horasTrabajadas = 0
-      clasesMes.forEach((cl:any) => {
-        const curso = cursosProf.find((c:any) => c.id === cl.curso_id)
-        if (curso?.hora_inicio && curso?.hora_fin) {
-          const [h1,m1] = curso.hora_inicio.split(':').map(Number)
-          const [h2,m2] = curso.hora_fin.split(':').map(Number)
-          horasTrabajadas += ((h2*60+m2) - (h1*60+m1)) / 60
-        }
-      })
-
-      // Por curso
-      const porcurso = cursosProf.map((c:any) => {
-        const clsCurso = clasesMes.filter((cl:any) => cl.curso_id === c.id)
-        const clsIds = clsCurso.map((cl:any) => cl.id)
-        const asistCurso = (asist || []).filter((a:any) => clsIds.includes(a.clase_id))
-        const presCurso = asistCurso.filter((a:any) => a.estado === 'P' || a.estado === 'T').length
-        const pct = asistCurso.length > 0 ? Math.round((presCurso / asistCurso.length) * 100) : 0
-        const alumnosCurso = new Set(asistCurso.map((a:any) => a.alumno_id)).size
-        return { nombre: c.nombre, clases: clsCurso.length, alumnos: alumnosCurso || 0, asistPct: pct }
-      }).filter((c:any) => c.clases > 0)
-
-      // Mes anterior stats
-      const clasesAnt = clasesAntRes.data || []
-      let mesAnt = null
-      if (clasesAnt.length > 0) {
-        const claseAntIds = clasesAnt.map((c:any) => c.id)
-        const { data: asistAnt } = await sb.from('asistencia_clases').select('estado').in('clase_id', claseAntIds)
-        const presAnt = (asistAnt || []).filter((a:any) => a.estado === 'P' || a.estado === 'T').length
-        const pctAnt = (asistAnt || []).length > 0 ? Math.round((presAnt / (asistAnt || []).length) * 100) : 0
-        mesAnt = { clases: clasesAnt.length, asistPct: pctAnt }
-      }
-
-      setResumenData({
-        clasesDadas: clasesMes.length,
-        horasTrabajadas: Math.round(horasTrabajadas * 10) / 10,
-        asistenciaPct,
-        porcurso,
-        mesAnt,
-      })
+      setResumenProfesoras(resultado as any[])
+      setLoadingResumenProf(false)
     }
-    cargarResumen()
-  }, [miProfesora?.id, usuario?.rol, mesResumen, anioResumen])
+    cargar()
+  }, [usuario?.rol, profesoras.length, resMesProfIdx, resMesProfAnio])
 
   const abrirAsistencia = async (curso: any) => {
     const sb = createClient()
@@ -667,77 +566,6 @@ export default function Dashboard() {
           </>
         )}
 
-        {/* ── RESUMEN MENSUAL ── */}
-        <div style={{marginBottom:'20px'}}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
-            <SL>Mi actividad</SL>
-            <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
-              <button onClick={() => { const m = mesResumen === 0 ? 11 : mesResumen-1; const a = mesResumen === 0 ? anioResumen-1 : anioResumen; setMesResumen(m); setAnioResumen(a) }}
-                style={{width:'26px',height:'26px',borderRadius:'8px',border:'1.5px solid var(--border)',background:'var(--white)',cursor:'pointer',fontSize:'14px',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text2)'}}>‹</button>
-              <span style={{fontSize:'12px',fontWeight:500,minWidth:'90px',textAlign:'center',color:'var(--text)'}}>
-                {['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'][mesResumen]} {anioResumen}
-              </span>
-              <button onClick={() => { const m = mesResumen === 11 ? 0 : mesResumen+1; const a = mesResumen === 11 ? anioResumen+1 : anioResumen; setMesResumen(m); setAnioResumen(a) }}
-                style={{width:'26px',height:'26px',borderRadius:'8px',border:'1.5px solid var(--border)',background:'var(--white)',cursor:'pointer',fontSize:'14px',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text2)'}}>›</button>
-            </div>
-          </div>
-
-          {!resumenData ? (
-            <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'20px',textAlign:'center',color:'var(--text3)',fontSize:'13px'}}>
-              Sin clases registradas este mes
-            </div>
-          ) : (
-            <>
-              {/* KPIs */}
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginBottom:'10px'}}>
-                {[
-                  { n: resumenData.clasesDadas, l: 'Clases dadas', color: 'var(--v)' },
-                  { n: `${resumenData.horasTrabajadas}h`, l: 'Horas trabajadas', color: 'var(--v)' },
-                  { n: totalAlumnosProf, l: 'Alumnos activos', color: 'var(--green)' },
-                  { n: `${resumenData.asistenciaPct}%`, l: 'Asistencia promedio', color: resumenData.asistenciaPct >= 80 ? 'var(--green)' : resumenData.asistenciaPct >= 60 ? 'var(--amber)' : 'var(--red)' },
-                ].map((k,i) => (
-                  <div key={i} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'12px',textAlign:'center'}}>
-                    <div style={{fontSize:'22px',fontWeight:700,color:k.color}}>{k.n}</div>
-                    <div style={{fontSize:'10px',color:'var(--text3)',fontWeight:600,marginTop:'2px'}}>{k.l}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Por curso */}
-              {resumenData.porcurso.length > 0 && (
-                <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',overflow:'hidden',marginBottom:'8px'}}>
-                  {resumenData.porcurso.map((c,i) => (
-                    <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 14px',borderBottom: i < resumenData.porcurso.length-1 ? '1px solid var(--border)' : 'none'}}>
-                      <div style={{width:34,height:34,borderRadius:'9px',background:'var(--vl)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'9px',fontWeight:700,color:'var(--v)',flexShrink:0}}>{c.nombre.slice(0,3).toUpperCase()}</div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:'13px',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.nombre}</div>
-                        <div style={{fontSize:'11px',color:'var(--text2)',marginTop:'1px'}}>{c.clases} clase{c.clases!==1?'s':''}</div>
-                      </div>
-                      <div style={{textAlign:'right',flexShrink:0}}>
-                        <div style={{fontSize:'13px',fontWeight:700,color: c.asistPct >= 80 ? 'var(--green)' : c.asistPct >= 60 ? 'var(--amber)' : 'var(--red)'}}>{c.asistPct}%</div>
-                        <div style={{fontSize:'10px',color:'var(--text3)'}}>asistencia</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* Comparativa mes anterior */}
-              {resumenData.mesAnt && (
-                <div style={{padding:'10px 14px',background:'var(--bg)',borderRadius:'12px',border:'1.5px solid var(--border)',fontSize:'12px',color:'var(--text2)'}}>
-                  <span style={{color:'var(--text3)'}}>Mes anterior: </span>
-                  <strong style={{color:'var(--text)'}}>{resumenData.mesAnt.clases} clases</strong>
-                  <span style={{color:'var(--text3)'}}> · </span>
-                  <strong style={{color: resumenData.asistenciaPct >= resumenData.mesAnt.asistPct ? 'var(--green)' : 'var(--amber)'}}>
-                    {resumenData.mesAnt.asistPct}% asistencia
-                    {resumenData.asistenciaPct >= resumenData.mesAnt.asistPct ? ' ↑' : ' ↓'}
-                  </strong>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-
         {asistModal && (
           <ModalAsistencia
             modal={asistModal}
@@ -914,41 +742,36 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── ZONA 5: RESUMEN POR PROFESORA (coordinadora + director) ── */}
+      {/* ── RESUMEN POR PROFESORA ── */}
       {['director','coordinadora'].includes(usuario?.rol||'') && (
         <div style={{marginBottom:'20px'}}>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
             <SL>Actividad docente</SL>
             <div style={{display:'flex',alignItems:'center',gap:'5px'}}>
-              <button
-                onClick={() => { const m = resMesProfIdx === 0 ? 11 : resMesProfIdx-1; const a = resMesProfIdx === 0 ? resMesProfAnio-1 : resMesProfAnio; setResMesProfIdx(m); setResMesProfAnio(a) }}
-                style={{width:'24px',height:'24px',borderRadius:'7px',border:'1.5px solid var(--border)',background:'var(--white)',cursor:'pointer',fontSize:'13px',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text2)'}}>‹</button>
-              <span style={{fontSize:'11px',fontWeight:500,minWidth:'80px',textAlign:'center',color:'var(--text)'}}>
+              <button onClick={() => { const m = resMesProfIdx===0?11:resMesProfIdx-1; const a = resMesProfIdx===0?resMesProfAnio-1:resMesProfAnio; setResMesProfIdx(m); setResMesProfAnio(a) }}
+                style={{width:'24px',height:'24px',borderRadius:'7px',border:'1.5px solid var(--border)',background:'var(--white)',cursor:'pointer',fontSize:'13px',color:'var(--text2)'}}>‹</button>
+              <span style={{fontSize:'11px',fontWeight:500,minWidth:'80px',textAlign:'center'}}>
                 {['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][resMesProfIdx]} {resMesProfAnio}
               </span>
-              <button
-                onClick={() => { const m = resMesProfIdx === 11 ? 0 : resMesProfIdx+1; const a = resMesProfIdx === 11 ? resMesProfAnio+1 : resMesProfAnio; setResMesProfIdx(m); setResMesProfAnio(a) }}
-                style={{width:'24px',height:'24px',borderRadius:'7px',border:'1.5px solid var(--border)',background:'var(--white)',cursor:'pointer',fontSize:'13px',display:'flex',alignItems:'center',justifyContent:'center',color:'var(--text2)'}}>›</button>
+              <button onClick={() => { const m = resMesProfIdx===11?0:resMesProfIdx+1; const a = resMesProfIdx===11?resMesProfAnio+1:resMesProfAnio; setResMesProfIdx(m); setResMesProfAnio(a) }}
+                style={{width:'24px',height:'24px',borderRadius:'7px',border:'1.5px solid var(--border)',background:'var(--white)',cursor:'pointer',fontSize:'13px',color:'var(--text2)'}}>›</button>
             </div>
           </div>
-
-          {resumenProfesoras.length === 0 ? (
-            <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'18px',textAlign:'center',color:'var(--text3)',fontSize:'13px'}}>
-              Sin clases registradas este mes
-            </div>
+          {loadingResumenProf ? (
+            <div style={{padding:'18px',textAlign:'center',color:'var(--text3)',fontSize:'13px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px'}}>Cargando...</div>
+          ) : resumenProfesoras.length === 0 ? (
+            <div style={{padding:'18px',textAlign:'center',color:'var(--text3)',fontSize:'13px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px'}}>Sin clases registradas este mes</div>
           ) : (
             <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',overflow:'hidden'}}>
-              {/* Header */}
-              <div style={{display:'grid',gridTemplateColumns:'1fr 52px 52px 52px',gap:'4px',padding:'8px 14px',borderBottom:'1px solid var(--border)',background:'var(--bg)'}}>
-                <span style={{fontSize:'10px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.05em'}}>Docente</span>
-                <span style={{fontSize:'10px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',textAlign:'center'}}>Clases</span>
-                <span style={{fontSize:'10px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',textAlign:'center'}}>Horas</span>
-                <span style={{fontSize:'10px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',textAlign:'center'}}>Asist.</span>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 50px 50px 54px',padding:'7px 14px',borderBottom:'1px solid var(--border)',background:'var(--bg)'}}>
+                {['Docente','Cl.','Hs.','Asist.'].map(h => (
+                  <span key={h} style={{fontSize:'10px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',textAlign: h==='Docente'?'left':'center'}}>{h}</span>
+                ))}
               </div>
-              {resumenProfesoras.map((p, i) => (
-                <div key={p.id} style={{display:'grid',gridTemplateColumns:'1fr 52px 52px 52px',gap:'4px',alignItems:'center',padding:'10px 14px',borderBottom: i < resumenProfesoras.length-1 ? '1px solid var(--border)' : 'none'}}>
+              {resumenProfesoras.map((p:any, i:number) => (
+                <div key={p.id} style={{display:'grid',gridTemplateColumns:'1fr 50px 50px 54px',alignItems:'center',padding:'9px 14px',borderBottom: i<resumenProfesoras.length-1?'1px solid var(--border)':'none'}}>
                   <div style={{display:'flex',alignItems:'center',gap:'8px',minWidth:0}}>
-                    <Av color={p.color} nombre={p.nombre} apellido={p.apellido} size={32} />
+                    <Av color={p.color} nombre={p.nombre} apellido={p.apellido} size={30} />
                     <div style={{minWidth:0}}>
                       <div style={{fontSize:'13px',fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.nombre} {p.apellido}</div>
                       <div style={{fontSize:'10px',color:'var(--text3)'}}>{p.cursos} curso{p.cursos!==1?'s':''}</div>
@@ -956,21 +779,15 @@ export default function Dashboard() {
                   </div>
                   <div style={{textAlign:'center',fontSize:'13px',fontWeight:600}}>{p.clases}</div>
                   <div style={{textAlign:'center',fontSize:'13px',fontWeight:600}}>{p.horas}h</div>
-                  <div style={{textAlign:'center'}}>
-                    <span style={{fontSize:'12px',fontWeight:700,
-                      color: p.asistPct >= 80 ? 'var(--green)' : p.asistPct >= 60 ? 'var(--amber)' : 'var(--red)'}}>
-                      {p.asistPct}%
-                    </span>
-                  </div>
+                  <div style={{textAlign:'center',fontSize:'13px',fontWeight:700,color:p.asistPct>=80?'var(--green)':p.asistPct>=60?'var(--amber)':'var(--red)'}}>{p.asistPct}%</div>
                 </div>
               ))}
-              {/* Totales */}
-              <div style={{display:'grid',gridTemplateColumns:'1fr 52px 52px 52px',gap:'4px',padding:'9px 14px',borderTop:'1.5px solid var(--border)',background:'var(--bg)'}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 50px 50px 54px',padding:'8px 14px',borderTop:'1.5px solid var(--border)',background:'var(--bg)'}}>
                 <span style={{fontSize:'11px',fontWeight:700,color:'var(--text2)'}}>Total</span>
-                <span style={{textAlign:'center',fontSize:'12px',fontWeight:700,color:'var(--v)'}}>{resumenProfesoras.reduce((s,p)=>s+p.clases,0)}</span>
-                <span style={{textAlign:'center',fontSize:'12px',fontWeight:700,color:'var(--v)'}}>{Math.round(resumenProfesoras.reduce((s,p)=>s+p.horas,0)*10)/10}h</span>
+                <span style={{textAlign:'center',fontSize:'12px',fontWeight:700,color:'var(--v)'}}>{resumenProfesoras.reduce((s:number,p:any)=>s+p.clases,0)}</span>
+                <span style={{textAlign:'center',fontSize:'12px',fontWeight:700,color:'var(--v)'}}>{Math.round(resumenProfesoras.reduce((s:number,p:any)=>s+p.horas,0)*10)/10}h</span>
                 <span style={{textAlign:'center',fontSize:'12px',fontWeight:700,color:'var(--text2)'}}>
-                  {resumenProfesoras.length > 0 ? Math.round(resumenProfesoras.reduce((s,p)=>s+p.asistPct,0)/resumenProfesoras.length) : 0}%
+                  {Math.round(resumenProfesoras.reduce((s:number,p:any)=>s+p.asistPct,0)/resumenProfesoras.length)}%
                 </span>
               </div>
             </div>
@@ -978,7 +795,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── ZONA 6: PRÓXIMOS EVENTOS ── */}
+      {/* ── ZONA 5: PRÓXIMOS EVENTOS ── */}
       {proximosEventos.length > 0 && (
         <>
           <SL style={{marginBottom:'10px'}}>Próximos eventos</SL>
