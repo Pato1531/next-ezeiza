@@ -746,6 +746,7 @@ function LiquidacionTab({ prof, licencias }: any) {
                 <span style={{fontSize:'13px',fontWeight:500,color:'var(--text)'}}>{v}</span>
               </div>
             ))}
+          </>
         ) : (
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
             <span style={{fontSize:'13px',color:'var(--text2)'}}>Sueldo fijo del mes</span>
