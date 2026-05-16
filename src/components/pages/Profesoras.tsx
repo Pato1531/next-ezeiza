@@ -458,7 +458,13 @@ function LiquidacionTab({ prof, licencias }: any) {
   const [tipoContrato, setTipoContrato] = useState<'hora'|'fijo'>(
     prof.tipo_contrato === 'fijo' ? 'fijo' : (prof.horas_semana && prof.horas_semana > 0) ? 'hora' : 'fijo'
   )
-  const [semanasLiq, setSemanasLiq] = useState(4)
+  // Semanas del mes calculadas automáticamente desde el calendario
+  const semanasLiq = (() => {
+    const MESES_IDX: Record<string,number> = { Enero:0,Febrero:1,Marzo:2,Abril:3,Mayo:4,Junio:5,Julio:6,Agosto:7,Septiembre:8,Octubre:9,Noviembre:10,Diciembre:11 }
+    const mIdx = MESES_IDX[mesLiq] ?? new Date().getMonth()
+    const diasEnMes = new Date(anioLiq, mIdx + 1, 0).getDate()
+    return diasEnMes >= 29 ? 5 : 4
+  })()
   // Pre-cargar sueldo fijo del perfil
   const [sueldoFijo, setSueldoFijo] = useState<number>(prof.sueldo_fijo || 0)
 
@@ -513,8 +519,7 @@ function LiquidacionTab({ prof, licencias }: any) {
       }
       // Cargar semanas si aplica
       if (liqExistente.horas_mes && liqExistente.horas_semana) {
-        const sems = Math.round(liqExistente.horas_mes / liqExistente.horas_semana)
-        if (sems === 4 || sems === 5) setSemanasLiq(sems)
+        // semanasLiq ahora es calculado automáticamente — no se setea manualmente
       }
     } else {
       // Sin liquidación para este mes — resetear a valores limpios
@@ -734,29 +739,14 @@ function LiquidacionTab({ prof, licencias }: any) {
         {tipoContrato === 'hora' ? (
           <>
             {[
-              ['Horas semanales', `${prof.horas_semana}hs`, null],
-              ['Tarifa por hora', `$${prof.tarifa_hora?.toLocaleString('es-AR')}`, null],
+              ['Horas semanales', `${prof.horas_semana}hs · desde perfil del docente`],
+              ['Tarifa por hora', `$${prof.tarifa_hora?.toLocaleString('es-AR')}`],
             ].map(([k,v]) => (
               <div key={k as string} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
                 <span style={{fontSize:'13px',color:'var(--text2)'}}>{k}</span>
-                <span style={{fontSize:'13px',fontWeight:500}}>{v}</span>
+                <span style={{fontSize:'13px',fontWeight:500,color: k === 'Horas semanales' ? 'var(--text)' : 'var(--text)'}}>{v}</span>
               </div>
             ))}
-            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
-              <span style={{fontSize:'13px',color:'var(--text2)'}}>Semanas en el mes</span>
-              <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
-                {[4,5].map(n => (
-                  <button key={n} onClick={() => setSemanasLiq(n)}
-                    style={{width:'36px',height:'30px',borderRadius:'8px',border:'1.5px solid',fontSize:'13px',fontWeight:600,cursor:'pointer',
-                      borderColor: semanasLiq===n ? 'var(--v)' : 'var(--border)',
-                      background: semanasLiq===n ? 'var(--vl)' : 'var(--white)',
-                      color: semanasLiq===n ? 'var(--v)' : 'var(--text2)'}}>
-                    {n}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </>
         ) : (
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
             <span style={{fontSize:'13px',color:'var(--text2)'}}>Sueldo fijo del mes</span>
