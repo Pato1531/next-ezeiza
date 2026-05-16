@@ -2011,24 +2011,40 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
         <div>
           {unidades.map((u, idx) => {
             const cfg = ESTADO_CFG[u.estado] || ESTADO_CFG.pendiente
+            const isDictada = u.estado === 'dictada'
             return (
-              <div key={u.id} style={{background:'var(--white)',border:`1.5px solid ${u.estado==='en_curso'?'#652f8d':u.estado==='dictada'?'var(--green)':'var(--border)'}`,borderRadius:'14px',padding:'14px 16px',marginBottom:'10px'}}>
+              <div key={u.id} style={{background:'var(--white)',border:`1.5px solid ${u.estado==='en_curso'?'#652f8d':isDictada?'var(--green)':'var(--border)'}`,borderRadius:'14px',padding:'14px 16px',marginBottom:'10px',opacity: isDictada ? 0.75 : 1,transition:'opacity .15s'}}>
                 <div style={{display:'flex',alignItems:'flex-start',gap:'12px'}}>
-                  {/* Número de orden */}
-                  <div style={{width:28,height:28,borderRadius:'50%',background:cfg.bg,border:`1.5px solid ${cfg.color}44`,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:cfg.color,flexShrink:0,marginTop:'1px'}}>
-                    {idx+1}
+                  {/* Checkbox dictada/pendiente — tap rápido */}
+                  <div
+                    onClick={() => { if(puedeEditar) cambiarEstado(u.id, isDictada ? 'pendiente' : 'dictada') }}
+                    style={{width:28,height:28,borderRadius:'8px',
+                      background: isDictada ? 'var(--green)' : 'var(--white)',
+                      border: isDictada ? '2px solid var(--green)' : '2px solid var(--border)',
+                      display:'flex',alignItems:'center',justifyContent:'center',
+                      fontSize:'14px',color:'#fff',flexShrink:0,marginTop:'1px',
+                      cursor:puedeEditar?'pointer':'default',transition:'all .15s'}}
+                  >
+                    {isDictada && '✓'}
                   </div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',marginBottom:'4px'}}>
-                      <div style={{fontSize:'14px',fontWeight:700,color:'var(--text)'}}>{u.titulo}</div>
-                      <span
-                        onClick={() => { if(puedeEditar) { const estados = Object.keys(ESTADO_CFG); const idx2=estados.indexOf(u.estado); cambiarEstado(u.id, estados[(idx2+1)%estados.length]) } }}
-                        style={{display:'inline-block',padding:'2px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:600,background:cfg.bg,color:cfg.color,border:`1px solid ${cfg.color}33`,cursor:puedeEditar?'pointer':'default',userSelect:'none'}}
-                      >
-                        {cfg.label}
-                      </span>
+                      <div style={{fontSize:'14px',fontWeight:700,color:'var(--text)',textDecoration: isDictada ? 'line-through' : 'none'}}>{u.titulo}</div>
+                      {!isDictada && (
+                        <span
+                          onClick={() => { if(puedeEditar) { const estados = Object.keys(ESTADO_CFG); const idx2=estados.indexOf(u.estado); cambiarEstado(u.id, estados[(idx2+1)%estados.length]) } }}
+                          style={{display:'inline-block',padding:'2px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:600,background:cfg.bg,color:cfg.color,border:`1px solid ${cfg.color}33`,cursor:puedeEditar?'pointer':'default',userSelect:'none'}}
+                        >
+                          {cfg.label}
+                        </span>
+                      )}
+                      {isDictada && (
+                        <span style={{display:'inline-block',padding:'2px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:600,background:'var(--greenl)',color:'var(--green)',border:'1px solid #a3e0bc'}}>
+                          Dictada
+                        </span>
+                      )}
                     </div>
-                    {u.descripcion && (
+                    {u.descripcion && !isDictada && (
                       <div style={{fontSize:'12px',color:'var(--text3)',lineHeight:1.5}}>{u.descripcion}</div>
                     )}
                     {(u.fecha_inicio || u.fecha_cierre) && (
@@ -2038,7 +2054,7 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
                       </div>
                     )}
                   </div>
-                  {puedeEditar && (
+                  {puedeEditar && !isDictada && (
                     <div style={{display:'flex',gap:'4px',flexShrink:0}}>
                       {idx > 0 && (
                         <button onClick={() => moverArriba(idx)} title="Mover arriba" style={{padding:'5px 7px',background:'var(--bg)',border:'1.5px solid var(--border)',borderRadius:'7px',cursor:'pointer',fontSize:'12px',color:'var(--text2)'}}>↑</button>
