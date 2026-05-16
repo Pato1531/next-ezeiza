@@ -204,6 +204,11 @@ export default function Dashboard() {
     cargarCumpleanos()
   }, [miProfesora?.id, usuario?.rol])
 
+  useEffect(() => {
+    if (!alumnos.length) return
+    cargarAlertas()
+  }, [alumnos.length, usuario?.instituto_id])
+
   const abrirAsistencia = async (curso: any) => {
     const sb = createClient()
     const { data } = await sb.from('cursos_alumnos')
