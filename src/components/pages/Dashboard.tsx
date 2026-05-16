@@ -228,19 +228,18 @@ export default function Dashboard() {
       const finMes = new Date(resMesProfAnio, resMesProfIdx + 1, 0).toISOString().split('T')[0]
 
       const [cursosRes, clasesRes] = await Promise.all([
-        sb.from('cursos').select('id,nombre,profesora_id,hora_inicio,hora_fin').eq('instituto_id', usuario.instituto_id),
-        sb.from('clases').select('id,curso_id').gte('fecha', inicioMes).lte('fecha', finMes),
+        sb.from('cursos').select('id,nombre,profesora_id,hora_inicio,hora_fin')
+          .eq('instituto_id', usuario.instituto_id),
+        sb.from('clases').select('id,curso_id')
+          .eq('instituto_id', usuario.instituto_id)
+          .gte('fecha', inicioMes).lte('fecha', finMes),
       ])
       const todosCursos = cursosRes.data || []
       const clasesMes = clasesRes.data || []
 
-      // Filtrar clases que pertenezcan a cursos de este instituto
-      const cursoIdsInstituto = new Set(todosCursos.map((c:any) => c.id))
-      const clasesFiltradas = clasesMes.filter((cl:any) => cursoIdsInstituto.has(cl.curso_id))
+      if (!clasesMes.length) { setResumenProfesoras([]); setLoadingResumenProf(false); return }
 
-      if (!clasesFiltradas.length) { setResumenProfesoras([]); setLoadingResumenProf(false); return }
-
-      const claseIds = clasesFiltradas.map((c:any) => c.id)
+      const claseIds = clasesMes.map((c:any) => c.id)
       const { data: asistMes } = await sb.from('asistencia_clases')
         .select('clase_id,estado').in('clase_id', claseIds)
 
@@ -248,7 +247,7 @@ export default function Dashboard() {
         .map((prof:any) => {
           const cursosDeProd = todosCursos.filter((c:any) => c.profesora_id === prof.id)
           const cursoIdsDeProd = new Set(cursosDeProd.map((c:any) => c.id))
-          const clasesDeProd = clasesFiltradas.filter((cl:any) => cursoIdsDeProd.has(cl.curso_id))
+          const clasesDeProd = clasesMes.filter((cl:any) => cursoIdsDeProd.has(cl.curso_id))
           if (!clasesDeProd.length) return null
           const claseIdsDeProd = new Set(clasesDeProd.map((cl:any) => cl.id))
           const asistDeProd = (asistMes||[]).filter((a:any) => claseIdsDeProd.has(a.clase_id))
