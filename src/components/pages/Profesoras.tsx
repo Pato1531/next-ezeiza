@@ -458,11 +458,10 @@ function LiquidacionTab({ prof, licencias }: any) {
   const [tipoContrato, setTipoContrato] = useState<'hora'|'fijo'>(
     prof.tipo_contrato === 'fijo' ? 'fijo' : (prof.horas_semana && prof.horas_semana > 0) ? 'hora' : 'fijo'
   )
-  // Semanas del mes calculadas automáticamente desde el calendario
-  const _mesesIdx = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-  const _mIdx = _mesesIdx.indexOf(mesLiq)
-  const _diasEnMes = new Date(anioLiq, _mIdx >= 0 ? _mIdx + 1 : new Date().getMonth() + 1, 0).getDate()
-  const semanasLiq = _diasEnMes >= 29 ? 5 : 4
+  // Semanas calculadas del calendario
+  const _mesesArr = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+  const _mIdxCalc = _mesesArr.indexOf(mesLiq)
+  const semanasCalc = _mIdxCalc >= 0 && new Date(anioLiq, _mIdxCalc + 1, 0).getDate() >= 29 ? 5 : 4
   // Pre-cargar sueldo fijo del perfil
   const [sueldoFijo, setSueldoFijo] = useState<number>(prof.sueldo_fijo || 0)
 
@@ -517,7 +516,8 @@ function LiquidacionTab({ prof, licencias }: any) {
       }
       // Cargar semanas si aplica
       if (liqExistente.horas_mes && liqExistente.horas_semana) {
-        // semanasLiq ahora es calculado automáticamente — no se setea manualmente
+        const sems = Math.round(liqExistente.horas_mes / liqExistente.horas_semana)
+        if (sems === 4 || sems === 5) { /* semanasCalc se calcula automáticamente */ }
       }
     } else {
       // Sin liquidación para este mes — resetear a valores limpios
@@ -529,7 +529,7 @@ function LiquidacionTab({ prof, licencias }: any) {
 
   // ── Cálculos ─────────────────────────────────────────────────────────
   const base = tipoContrato === 'hora'
-    ? (prof.horas_semana || 0) * semanasLiq * (prof.tarifa_hora || 0)
+    ? (prof.horas_semana || 0) * semanasCalc * (prof.tarifa_hora || 0)
     : (sueldoFijo || prof.sueldo_fijo || 0)
 
   // Filtrar reemplazos solo del mes seleccionado
@@ -571,7 +571,7 @@ function LiquidacionTab({ prof, licencias }: any) {
       mes: mesLiq,
       anio: anioLiq,
       horas_semana: tipoContrato === 'hora' ? prof.horas_semana : 0,
-      horas_mes: tipoContrato === 'hora' ? (prof.horas_semana || 0) * semanasLiq : 0,
+      horas_mes: tipoContrato === 'hora' ? (prof.horas_semana || 0) * semanasCalc : 0,
       tarifa_hora: tipoContrato === 'hora' ? prof.tarifa_hora : 0,
       subtotal: base,
       ajuste: totalConceptos,
@@ -649,7 +649,7 @@ function LiquidacionTab({ prof, licencias }: any) {
 
     const filaBase = tipoContrato === 'hora'
       ? `<tr><td style="color:#888">Hs/semana</td><td style="text-align:right">${prof.horas_semana}hs</td></tr>
-         <tr><td style="color:#888">Hs/mes (${semanasLiq} sem)</td><td style="text-align:right">${(prof.horas_semana||0)*semanasLiq}hs</td></tr>
+         <tr><td style="color:#888">Hs/mes (${semanasCalc} sem)</td><td style="text-align:right">${(prof.horas_semana||0)*semanasCalc}hs</td></tr>
          <tr><td style="color:#888">Tarifa/hora</td><td style="text-align:right">$${prof.tarifa_hora?.toLocaleString('es-AR')}</td></tr>`
       : `<tr><td style="color:#888">Modalidad</td><td style="text-align:right">Sueldo fijo</td></tr>`
 
@@ -739,10 +739,11 @@ function LiquidacionTab({ prof, licencias }: any) {
             {[
               ['Horas semanales', `${prof.horas_semana}hs · desde perfil del docente`],
               ['Tarifa por hora', `$${prof.tarifa_hora?.toLocaleString('es-AR')}`],
+              ['Semanas en el mes', `${semanasCalc} (calculado automáticamente)`],
             ].map(([k,v]) => (
               <div key={k as string} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
                 <span style={{fontSize:'13px',color:'var(--text2)'}}>{k}</span>
-                <span style={{fontSize:'13px',fontWeight:500,color: k === 'Horas semanales' ? 'var(--text)' : 'var(--text)'}}>{v}</span>
+                <span style={{fontSize:'13px',fontWeight:500,color:'var(--text)'}}>{v}</span>
               </div>
             ))}
         ) : (
