@@ -459,12 +459,10 @@ function LiquidacionTab({ prof, licencias }: any) {
     prof.tipo_contrato === 'fijo' ? 'fijo' : (prof.horas_semana && prof.horas_semana > 0) ? 'hora' : 'fijo'
   )
   // Semanas del mes calculadas automáticamente desde el calendario
-  const semanasLiq = (() => {
-    const MESES_IDX: Record<string,number> = { Enero:0,Febrero:1,Marzo:2,Abril:3,Mayo:4,Junio:5,Julio:6,Agosto:7,Septiembre:8,Octubre:9,Noviembre:10,Diciembre:11 }
-    const mIdx = MESES_IDX[mesLiq] ?? new Date().getMonth()
-    const diasEnMes = new Date(anioLiq, mIdx + 1, 0).getDate()
-    return diasEnMes >= 29 ? 5 : 4
-  })()
+  const _mesesIdx = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+  const _mIdx = _mesesIdx.indexOf(mesLiq)
+  const _diasEnMes = new Date(anioLiq, _mIdx >= 0 ? _mIdx + 1 : new Date().getMonth() + 1, 0).getDate()
+  const semanasLiq = _diasEnMes >= 29 ? 5 : 4
   // Pre-cargar sueldo fijo del perfil
   const [sueldoFijo, setSueldoFijo] = useState<number>(prof.sueldo_fijo || 0)
 
