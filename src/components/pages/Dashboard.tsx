@@ -79,7 +79,9 @@ export default function Dashboard() {
     if (usuario?.rol !== 'profesora' || !miProfesora?.id) return
     const cargarDatosProf = async () => {
       const sb = createClient()
-      const hoyStr = new Date().toISOString().split('T')[0]
+      // Fecha local (no UTC) para evitar mismatch de timezone
+      const ahora = new Date()
+      const hoyStr = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`
 
       // 1. Cursos de esta profesora
       const { data: cursosProf } = await sb.from('cursos').select('id,nombre').eq('profesora_id', miProfesora.id)
@@ -151,7 +153,8 @@ export default function Dashboard() {
   useEffect(() => {
     const cargarEventos = async () => {
       const sb = createClient()
-      const hoyStr = new Date().toISOString().split('T')[0]
+      const ahora = new Date()
+      const hoyStr = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`
       const { data } = await sb.from('agenda_eventos')
         .select('*').gte('fecha', hoyStr).order('fecha').order('hora_inicio').limit(5)
       setProximosEventos(data || [])
@@ -225,7 +228,8 @@ export default function Dashboard() {
   const guardarAsistencia = async () => {
     if (!asistModal) return
     setAsistGuardando(true)
-    const hoy = new Date().toISOString().split('T')[0]
+    const ahora = new Date()
+    const hoy = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`
     const sb = createClient()
     try {
       // Crear clase
