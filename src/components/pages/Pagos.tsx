@@ -545,6 +545,7 @@ export default function Pagos() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
+    <>
     <div className="fade-in">
       {/* Tabs */}
       <div style={{ display:'flex', gap:'8px', marginBottom:'16px' }}>
@@ -1243,5 +1244,6 @@ export default function Pagos() {
         </div>
       </div>
     )}
+    </>
   )
 }
