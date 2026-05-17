@@ -69,6 +69,13 @@ export default function Pagos() {
 
   const [vistaTab, setVistaTab] = useState<'registrar' | 'reporte' | 'deudores'>('registrar')
 
+  // ── Mapa alumno_id → nombre del curso (para reemplazar chip de nivel) ────
+  const [cursosPorAlumno, setCursosPorAlumno] = useState<Record<string, string>>({})
+  const [notasPorAlumno, setNotasPorAlumno] = useState<Record<string, string>>({})
+  const [editandoNota, setEditandoNota] = useState<string | null>(null) // alumno_id
+  const [notaInput, setNotaInput] = useState('')
+  const [guardandoNota, setGuardandoNota] = useState(false)
+
   // ── Estado: Reporte ───────────────────────────────────────────────────────
   const [repMes, setRepMes] = useState(mesActual)
   const [repAnio, setRepAnio] = useState(anioActual)
@@ -131,6 +138,54 @@ export default function Pagos() {
   useEffect(() => {
     if (vistaTab === 'reporte') cargarReporte()
   }, [vistaTab, repMes, repAnio])
+
+  // ── Cargar cursos y notas de cobro por alumno ────────────────────────────
+  useEffect(() => {
+    if (!usuario?.instituto_id) return
+    const sb = createClient()
+    // Cursos: alumno_id → nombre del primer curso activo
+    sb.from('cursos_alumnos').select('alumno_id, cursos(nombre)').eq('cursos.instituto_id', usuario.instituto_id)
+      .then(({ data }) => {
+        const mapa: Record<string, string> = {}
+        ;(data || []).forEach((r: any) => {
+          if (r.alumno_id && r.cursos?.nombre && !mapa[r.alumno_id]) {
+            mapa[r.alumno_id] = r.cursos.nombre
+          }
+        })
+        setCursosPorAlumno(mapa)
+      })
+    // Notas de cobro: alumno_id → nota
+    sb.from('alumnos').select('id, nota_cobro').eq('instituto_id', usuario.instituto_id).not('nota_cobro', 'is', null)
+      .then(({ data }) => {
+        const mapa: Record<string, string> = {}
+        ;(data || []).forEach((r: any) => { if (r.nota_cobro) mapa[r.id] = r.nota_cobro })
+        setNotasPorAlumno(mapa)
+      })
+  }, [usuario?.instituto_id])
+
+  const abrirNota = (alumnoId: string) => {
+    setEditandoNota(alumnoId)
+    setNotaInput(notasPorAlumno[alumnoId] || '')
+  }
+
+  const guardarNota = async (alumnoId: string) => {
+    setGuardandoNota(true)
+    const sb = createClient()
+    const { error } = await sb.from('alumnos').update({ nota_cobro: notaInput.trim() || null }).eq('id', alumnoId)
+    if (!error) {
+      setNotasPorAlumno(prev => {
+        const n = { ...prev }
+        if (notaInput.trim()) n[alumnoId] = notaInput.trim()
+        else delete n[alumnoId]
+        return n
+      })
+      showToast(notaInput.trim() ? 'Nota guardada' : 'Nota eliminada')
+    } else {
+      showToast('Error al guardar la nota', 'error')
+    }
+    setEditandoNota(null)
+    setGuardandoNota(false)
+  }
 
   // ── Cargar deudores del mes ───────────────────────────────────────────────
   // Trae directamente de Supabase los alumnos activos con fecha_alta <= mes consultado
@@ -736,7 +791,14 @@ export default function Pagos() {
                           </div>
                           <div>
                             <div style={{ fontSize:'13.5px', fontWeight:600 }}>{a.nombre} {a.apellido}</div>
-                            <div style={{ fontSize:'11px', color:'var(--text3)' }}>{a.nivel} · ${a.cuota_mensual?.toLocaleString('es-AR')}/mes</div>
+                            <div style={{ fontSize:'11px', color:'var(--text3)' }}>
+                              {cursosPorAlumno[a.id] || a.nivel || '—'} · ${a.cuota_mensual?.toLocaleString('es-AR')}/mes
+                            </div>
+                            {notasPorAlumno[a.id] && (
+                              <div style={{ fontSize:'11px', color:'var(--amber)', fontWeight:600, marginTop:'1px' }}>
+                                📌 {notasPorAlumno[a.id]}
+                              </div>
+                            )}
                           </div>
                         </div>
                         <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
@@ -1073,8 +1135,26 @@ export default function Pagos() {
                     <Av color={a.color} size={32}>{a.nombre[0]}{a.apellido[0]}</Av>
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ fontSize:'13.5px', fontWeight:600 }}>{a.nombre} {a.apellido}</div>
-                      <div style={{ fontSize:'11.5px', color:'var(--text2)' }}>{a.nivel}</div>
+                      <div style={{ fontSize:'11.5px', color:'var(--text2)' }}>
+                        {cursosPorAlumno[a.id] || a.nivel || '—'}
+                      </div>
+                      {notasPorAlumno[a.id] && (
+                        <div
+                          onClick={e => { e.stopPropagation(); abrirNota(a.id) }}
+                          style={{ fontSize:'11px', color:'var(--amber)', fontWeight:600, marginTop:'2px', display:'flex', alignItems:'center', gap:'4px', cursor:'pointer' }}>
+                          <span>📌</span>{notasPorAlumno[a.id]}
+                        </div>
+                      )}
                     </div>
+                    {/* Botón agregar nota si no tiene */}
+                    {!notasPorAlumno[a.id] && !yaPago && (
+                      <button
+                        onClick={e => { e.stopPropagation(); abrirNota(a.id) }}
+                        style={{ background:'none', border:'none', cursor:'pointer', fontSize:'14px', color:'var(--text3)', padding:'2px 4px', flexShrink:0, opacity:.5 }}
+                        title="Agregar nota de cobro">
+                        📌
+                      </button>
+                    )}
                     {yaPago
                       ? <span style={{ fontSize:'11px', fontWeight:700, color:'var(--green)', background:'var(--greenl)', padding:'3px 10px', borderRadius:'20px', flexShrink:0 }}>✓ Ya pagó</span>
                       : <div style={{ fontSize:'13px', fontWeight:700, color: sel ? 'var(--v)' : 'var(--text3)', flexShrink:0 }}>${monto.toLocaleString('es-AR')}</div>
@@ -1115,5 +1195,53 @@ export default function Pagos() {
         </>
       )}
     </div>
+
+    {/* ── MODAL EDITAR NOTA DE COBRO ── */}
+    {editandoNota && (
+      <div
+        style={{ position:'fixed', inset:0, background:'rgba(20,0,40,.45)', display:'flex', alignItems:'flex-end', justifyContent:'center', zIndex:300 }}
+        onClick={() => setEditandoNota(null)}
+      >
+        <div
+          style={{ background:'var(--white)', borderRadius:'24px 24px 0 0', padding:'24px 20px 32px', width:'100%', maxWidth:'480px' }}
+          onClick={e => e.stopPropagation()}
+        >
+          <div style={{ width:'40px', height:'4px', background:'var(--border)', borderRadius:'2px', margin:'0 auto 20px' }} />
+          <div style={{ fontSize:'17px', fontWeight:700, marginBottom:'6px' }}>Nota de cobro</div>
+          <div style={{ fontSize:'12px', color:'var(--text2)', marginBottom:'16px' }}>
+            Visible en la lista de pagos todos los meses. Sirve para recordar fechas, métodos o acuerdos especiales.
+          </div>
+          <textarea
+            value={notaInput}
+            onChange={e => setNotaInput(e.target.value)}
+            placeholder="Ej: Paga los 20 de cada mes · Solo efectivo · Acordar con director..."
+            rows={3}
+            style={{ width:'100%', padding:'11px 12px', border:'1.5px solid var(--border)', borderRadius:'12px', fontSize:'14px', fontFamily:'Inter,sans-serif', outline:'none', resize:'none', color:'var(--text)', background:'var(--white)', marginBottom:'14px' }}
+            autoFocus
+          />
+          <div style={{ display:'flex', gap:'10px' }}>
+            {notasPorAlumno[editandoNota] && (
+              <button
+                onClick={() => { setNotaInput(''); guardarNota(editandoNota) }}
+                disabled={guardandoNota}
+                style={{ padding:'12px 16px', background:'var(--redl)', color:'var(--red)', border:'1px solid #fca5a5', borderRadius:'12px', fontSize:'13px', fontWeight:600, cursor:'pointer' }}>
+                Eliminar
+              </button>
+            )}
+            <button
+              onClick={() => setEditandoNota(null)}
+              style={{ flex:1, padding:'12px', background:'transparent', border:'1.5px solid var(--border)', borderRadius:'12px', fontSize:'14px', fontWeight:600, cursor:'pointer', color:'var(--text2)' }}>
+              Cancelar
+            </button>
+            <button
+              onClick={() => guardarNota(editandoNota)}
+              disabled={guardandoNota}
+              style={{ flex:2, padding:'12px', background:'var(--v)', color:'#fff', border:'none', borderRadius:'12px', fontSize:'14px', fontWeight:700, cursor:'pointer' }}>
+              {guardandoNota ? 'Guardando...' : 'Guardar nota'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   )
 }
