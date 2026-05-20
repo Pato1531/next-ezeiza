@@ -1316,7 +1316,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
           </div>
         )}
 
-        {histCuotas.length > 0 && (
+        {!ocultarMontos && histCuotas.length > 0 && (
           <div style={{marginTop:'14px'}}>
             <SL style={{marginBottom:'8px'}}>Historial de cuotas</SL>
             {histCuotas.map((h:any) => (
@@ -1470,7 +1470,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
             </>}
 
             {/* Historial de cuotas */}
-            {histCuotas.length > 0 && <>
+            {!ocultarMontos && histCuotas.length > 0 && <>
               <SL style={{marginBottom:'10px',marginTop:'16px'}}>Historial de cuotas</SL>
               {histCuotas.map((h:any) => (
                 <div key={h.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 0',borderBottom:'1px solid var(--border)',fontSize:'12.5px'}}>
@@ -1483,7 +1483,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
               ))}
             </>}
 
-            {historial.length === 0 && histCuotas.length === 0 && (
+            {historial.length === 0 && (ocultarMontos || histCuotas.length === 0) && (
               <div style={{textAlign:'center',padding:'24px',color:'var(--text3)',fontSize:'13px'}}>
                 <div style={{fontSize:'32px',marginBottom:'8px'}}>📊</div>
                 <div>Sin historial registrado todavía</div>
