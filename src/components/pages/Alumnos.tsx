@@ -54,6 +54,7 @@ type Vista = 'lista' | 'detalle' | 'form' | 'baja' | 'bajas_historicas' | 'renov
 export default function Alumnos() {
   const { alumnos: todosAlumnos, loading, actualizar, agregar, recargar } = useAlumnos()
   const { usuario } = useAuth()
+  const ocultarMontos = usuario?.rol === 'profesora' || usuario?.rol === 'coordinadora'
   const { miProfesora, loading: loadingProf } = useMiProfesora()
 
   // Si es profesora, mostrar solo alumnos de sus cursos
@@ -158,7 +159,7 @@ export default function Alumnos() {
       return `<tr>
         <td>${a.apellido}, ${a.nombre}</td>
         <td>${a.nivel || '—'}</td>
-        <td>${a.cuota_mensual ? '$' + a.cuota_mensual.toLocaleString('es-AR') : '—'}</td>
+        ${!ocultarMontos ? `<td>${a.cuota_mensual ? '$' + a.cuota_mensual.toLocaleString('es-AR') : '—'}</td>` : ''}
         <td style="color:${pagado?'#2d7a4f':'#c0392b'};font-weight:600">${pagado ? '✓ Pagó' : '✗ Debe'}</td>
         <td>${a.es_menor && a.padre_dni ? a.padre_dni + ' (tutor)' : a.dni || '—'}</td>
       </tr>`
@@ -185,7 +186,7 @@ export default function Alumnos() {
     <h1>Lista de alumnos</h1>
     <div class="sub">${fecha}${filtroLabel ? ' · ' + filtroLabel : ''}</div>
     <table>
-      <thead><tr><th>Alumno</th><th>Nivel</th><th>Cuota</th><th>${mesFiltroNombre}</th><th>DNI</th></tr></thead>
+      <thead><tr><th>Alumno</th><th>Nivel</th>${!ocultarMontos ? '<th>Cuota</th>' : ''}<th>${mesFiltroNombre}</th><th>DNI</th></tr></thead>
       <tbody>${filas}</tbody>
     </table>
     <div class="total">${filtrados.length} alumno${filtrados.length!==1?'s':''} · Generado por EduGest</div>
@@ -194,17 +195,13 @@ export default function Alumnos() {
   }
 
   const exportarExcel = () => {
-    const headers = ['Apellido', 'Nombre', 'Nivel', 'Cuota mensual', mesFiltroNombre, 'DNI', 'Email', 'Fecha nacimiento']
-    const rows = filtrados.map((a:any) => [
-      a.apellido,
-      a.nombre,
-      a.nivel || '',
-      a.cuota_mensual || 0,
-      alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe',
-      (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '',
-      a.email || '',
-      a.fecha_nacimiento || '',
-    ])
+    const headers = ocultarMontos
+      ? ['Apellido', 'Nombre', 'Nivel', mesFiltroNombre, 'DNI', 'Email', 'Fecha nacimiento']
+      : ['Apellido', 'Nombre', 'Nivel', 'Cuota mensual', mesFiltroNombre, 'DNI', 'Email', 'Fecha nacimiento']
+    const rows = filtrados.map((a:any) => ocultarMontos
+      ? [a.apellido, a.nombre, a.nivel || '', alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe', (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '', a.email || '', a.fecha_nacimiento || '']
+      : [a.apellido, a.nombre, a.nivel || '', a.cuota_mensual || 0, alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe', (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '', a.email || '', a.fecha_nacimiento || '']
+    )
     const bom = '\uFEFF'
     const csv = bom + [headers, ...rows]
       .map((row:any[]) => row.map((v:any) => `"${String(v).replace(/"/g, '""')}"`).join(','))
@@ -432,7 +429,7 @@ export default function Alumnos() {
           Sin curso
           {alumnosSinCurso.size > 0 && <span style={{background:soloSinCurso?'var(--amber)':'var(--border)',color:soloSinCurso?'#fff':'var(--text2)',borderRadius:'20px',padding:'1px 7px',fontSize:'11px',fontWeight:700}}>{alumnosSinCurso.size}</span>}
         </button>
-        <button onClick={() => setSoloSinCuota(!soloSinCuota)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'7px 14px',borderRadius:'20px',fontSize:'12.5px',fontWeight:600,cursor:'pointer',border:'1.5px solid',borderColor:soloSinCuota?'var(--red)':'var(--border)',background:soloSinCuota?'var(--redl)':'var(--white)',color:soloSinCuota?'var(--red)':'var(--text2)',transition:'all .15s'}}>
+        {!ocultarMontos && <button onClick={() => setSoloSinCuota(!soloSinCuota)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'7px 14px',borderRadius:'20px',fontSize:'12.5px',fontWeight:600,cursor:'pointer',border:'1.5px solid',borderColor:soloSinCuota?'var(--red)':'var(--border)',background:soloSinCuota?'var(--redl)':'var(--white)',color:soloSinCuota?'var(--red)':'var(--text2)',transition:'all .15s'}}>
           <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2H4a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/><path d="M14 2v6h6"/></svg>
           Sin cuota
           {alumnos.filter((a:any) => !a.cuota_mensual || a.cuota_mensual === 0).length > 0 && (
@@ -440,7 +437,7 @@ export default function Alumnos() {
               {alumnos.filter((a:any) => !a.cuota_mensual || a.cuota_mensual === 0).length}
             </span>
           )}
-        </button>
+        </button>}
         <button onClick={() => setSoloSinTel(!soloSinTel)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'7px 14px',borderRadius:'20px',fontSize:'12.5px',fontWeight:600,cursor:'pointer',border:'1.5px solid',borderColor:soloSinTel?'#1a6b8a':'var(--border)',background:soloSinTel?'#e0f0f7':'var(--white)',color:soloSinTel?'#1a6b8a':'var(--text2)',transition:'all .15s'}}>
           <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 4a1 1 0 011-1h3l1 4-2 1a11 11 0 005 5l1-2 4 1v3a1 1 0 01-1 1C7 16 4 10 3 4z"/></svg>
           Sin teléfono
@@ -602,10 +599,10 @@ export default function Alumnos() {
                 <Field2 label="Teléfono"><Input value={form?.telefono||''} onChange={(v:string)=>setForm({...form,telefono:v})} /></Field2>
                 <Field2 label="Email"><Input type="email" value={form?.email||''} onChange={(v:string)=>setForm({...form,email:v})} /></Field2>
               </Row2>
-              <Row2>
+              {!ocultarMontos && <Row2>
                 <Field2 label="Matrícula ($)"><Input type="number" value={form?.matricula||''} onChange={(v:string)=>setForm({...form,matricula:+v})} /></Field2>
                 <Field2 label="Cuota mensual ($)"><Input type="number" value={form?.cuota_mensual||''} onChange={(v:string)=>setForm({...form,cuota_mensual:+v})} /></Field2>
-              </Row2>
+              </Row2>}
               <Row2>
                 
                 <Field2 label="¿Es menor?"><select style={IS} value={form?.es_menor?'si':'no'} onChange={(e:any)=>setForm({...form,es_menor:e.target.value==='si'})}><option value="no">No</option><option value="si">Sí</option></select></Field2>
@@ -639,14 +636,13 @@ export default function Alumnos() {
 
           {/* STEP 2 nuevo: Académico */}
           {!esEdicion && formStep === 2 && <>
-            <Row2>
-              
+            {!ocultarMontos && <Row2>
               <Field2 label="Cuota mensual ($)"><Input type="number" value={form?.cuota_mensual||''} onChange={(v:string)=>setForm({...form,cuota_mensual:+v})} /></Field2>
-            </Row2>
-            <Field2 label="Matrícula de inscripción ($)"><Input type="number" value={form?.matricula||''} onChange={(v:string)=>setForm({...form,matricula:+v})} /></Field2>
+            </Row2>}
+            {!ocultarMontos && <><Field2 label="Matrícula de inscripción ($)"><Input type="number" value={form?.matricula||''} onChange={(v:string)=>setForm({...form,matricula:+v})} /></Field2>
             <div style={{padding:'10px 14px',background:'var(--vl)',borderRadius:'10px',fontSize:'12px',color:'var(--text2)',marginTop:'4px'}}>
               💡 El monto de matrícula queda registrado en el perfil del alumno. Para cobrarlo, usá el módulo de Pagos → Registrar pago → tipo Matrícula.
-            </div>
+            </div></>}
           </>}
 
           {/* STEP 3 nuevo: Tutor (solo si es menor) */}
@@ -709,7 +705,7 @@ export default function Alumnos() {
         <Av color={sel.color} size={48}>{sel.nombre[0]}{sel.apellido[0]}</Av>
         <div>
           <div style={{fontSize:'16px',fontWeight:700}}>{sel.nombre} {sel.apellido}</div>
-          <div style={{fontSize:'13px',color:'var(--text2)',marginTop:'2px'}}>${sel.cuota_mensual?.toLocaleString('es-AR')}/mes</div>
+          {!ocultarMontos && <div style={{fontSize:'13px',color:'var(--text2)',marginTop:'2px'}}>${sel.cuota_mensual?.toLocaleString('es-AR')}/mes</div>}
         </div>
       </div>
 
@@ -790,7 +786,7 @@ export default function Alumnos() {
                 <td>${b.alumno_nombre} ${b.alumno_apellido}</td>
                 <td>${b.curso_nombre||'—'}</td>
                 <td>${b.nivel||'—'}</td>
-                <td>$${b.cuota_mensual?.toLocaleString('es-AR')||'—'}</td>
+                ${!ocultarMontos ? `<td>$${b.cuota_mensual?.toLocaleString('es-AR')||'—'}</td>` : ''}
                 <td>${b.motivo}</td>
               </tr>`).join('')}
             </table>
@@ -826,15 +822,15 @@ export default function Alumnos() {
               </div>
             </div>
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'8px',marginTop:'8px'}}>
+          <div style={{display:'grid',gridTemplateColumns: ocultarMontos ? '1fr' : '1fr 1fr',gap:'8px',marginTop:'8px'}}>
             <div style={{padding:'8px 10px',background:'var(--bg)',borderRadius:'8px'}}>
               <div style={{fontSize:'10px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'2px'}}>Motivo</div>
               <div style={{fontSize:'13px',color:'var(--text)'}}>{b.motivo}</div>
             </div>
-            <div style={{padding:'8px 10px',background:'var(--bg)',borderRadius:'8px'}}>
+            {!ocultarMontos && <div style={{padding:'8px 10px',background:'var(--bg)',borderRadius:'8px'}}>
               <div style={{fontSize:'10px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'2px'}}>Cuota al momento</div>
               <div style={{fontSize:'13px',color:'var(--text)',fontWeight:600}}>${b.cuota_mensual?.toLocaleString('es-AR')||'—'}</div>
-            </div>
+            </div>}
           </div>
         </div>
       ))}
@@ -1134,8 +1130,7 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
     const msg = `Hola ${contacto}! 👋 Te escribimos de *Next Ezeiza English Institute*.
 
 Te recordamos que la cuota de *${pago.mes} ${pago.anio}* de *${a.nombre} ${a.apellido}* se encuentra pendiente de pago.
-
-💰 Monto: *$${(a.cuota_mensual||0).toLocaleString('es-AR')}*
+${!ocultarMontos ? `\n💰 Monto: *$${(a.cuota_mensual||0).toLocaleString('es-AR')}*` : ''}
 📚 Curso: *${cursoActual?.nombre || '—'}*
 
 Podés abonar en el instituto o por transferencia. Ante cualquier consulta estamos a disposición. ¡Muchas gracias! 🙏`
@@ -1275,7 +1270,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
         {a.fecha_alta && <FieldRO label="Alumno activo desde" value={new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})} />}
         <FieldRO label="Teléfono" value={a.telefono||'—'} />
         <FieldRO label="Email" value={a.email||'—'} />
-        <FieldRO label="Cuota mensual" value={`$${a.cuota_mensual?.toLocaleString('es-AR')}`} />
+        {!ocultarMontos && <FieldRO label="Cuota mensual" value={`$${a.cuota_mensual?.toLocaleString('es-AR')}`} />}
 
         {/* CURSO */}
         <div style={{marginBottom:'11px'}}>
