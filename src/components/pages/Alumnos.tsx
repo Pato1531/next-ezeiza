@@ -141,7 +141,7 @@ export default function Alumnos() {
   const [renovacionAplicando, setRenovacionAplicando] = useState(false)
   const [renovacionResultado, setRenovacionResultado] = useState<{ok:number;err:number}|null>(null)
 
-  const puedeVerPagos = ['director','coordinadora','secretaria'].includes(usuario?.rol||'')
+  const puedeVerPagos = ['director','secretaria'].includes(usuario?.rol||'')
   const puedeEditar = usuario?.rol !== 'profesora'
   const selLive = alumnos.find(a => a.id === selId)
   const selRef = useRef<any>(null)
