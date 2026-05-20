@@ -1024,6 +1024,7 @@ function FechaNacimientoField({ alumnoId, fechaActual, puedeEditar, onActualizar
 
 function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVolver, onEditar, onEliminar, confirmDelete, onCancelDelete, onConfirmDelete, modalPago, setModalPago, pago, setPago }: any) {
   const { usuario } = useAuth()
+  const ocultarMontos = usuario?.rol === 'profesora' || usuario?.rol === 'coordinadora'
   const { pagos: _pagos, registrar } = usePagos(a.id)
   const [pagos, setPagosLocal] = useState<any[]>([])
   useEffect(() => { setPagosLocal(_pagos) }, [_pagos])
