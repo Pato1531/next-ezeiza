@@ -24,6 +24,7 @@ export default function Cursos() {
   const { profesoras, recargar: recargarProfs } = useProfesoras()
   const { alumnos, recargar: recargarAlumnos } = useAlumnos()
   const { usuario } = useAuth()
+  const ocultarMontos = usuario?.rol === 'profesora' || usuario?.rol === 'coordinadora'
   const { miProfesora, loading: loadingProf } = useMiProfesora()
 
   // Si es profesora filtrar solo sus cursos — esperar que cargue primero
@@ -860,7 +861,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
             <p style="color:#9b8eaa;font-size:12px">${c.nivel} · ${c.dias||'—'} · ${c.hora_inicio?.slice(0,5)||'—'}–${c.hora_fin?.slice(0,5)||'—'} · ${alumnosCurso.length} alumnos</p>
             <table>
               <tr><th>#</th><th>Nombre</th><th>Apellido</th><th>Nivel</th><th>Cuota</th></tr>
-              ${alumnosCurso.map((a:any,i:number)=>`<tr><td>${i+1}</td><td>${a.nombre}</td><td>${a.apellido}</td><td>${a.nivel}</td><td>$${a.cuota_mensual?.toLocaleString('es-AR')||'—'}</td></tr>`).join('')}
+              ${alumnosCurso.map((a:any,i:number)=>`<tr><td>${i+1}</td><td>${a.nombre}</td><td>${a.apellido}</td><td>${a.nivel}</td>${!ocultarMontos?`<td>$${a.cuota_mensual?.toLocaleString('es-AR')||'—'}</td>`:''}</tr>`).join('')}
             </table>
             <script>window.onload=()=>window.print()<\/script></body></html>`
             const _rb = new Blob([_rhtml], {type:'text/html;charset=utf-8'})
