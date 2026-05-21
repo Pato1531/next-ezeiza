@@ -195,11 +195,11 @@ export default function Comunicados() {
   // Filtrar comunicados para el usuario actual:
   // ve los de su rol, los de 'todos', y los individuales donde su ID aparece
   const misComunicados = comunicados.filter((c: any) => {
-    if (c.rol_destino === 'todos') return true
-    if (c.rol_destino === usuario?.rol) return true
+    if (c.dirigido_a === 'todos') return true
+    if (c.dirigido_a === usuario?.rol) return true
     // coordinacion cubre coordinadora
-    if (c.rol_destino === 'coordinacion' && usuario?.rol === 'coordinadora') return true
-    if (c.rol_destino === 'individual') {
+    if (c.dirigido_a === 'coordinacion' && usuario?.rol === 'coordinadora') return true
+    if (c.dirigido_a === 'individual') {
       return Array.isArray(c.destinatarios_ids) && c.destinatarios_ids.includes(usuario?.id)
     }
     return false
@@ -279,15 +279,15 @@ export default function Comunicados() {
 
   // Badge de destino en la lista
   const destinoBadge = (c: any) => {
-    if (c.rol_destino === 'individual') {
+    if (c.dirigido_a === 'individual') {
       const count = c.destinatarios_ids?.length || 0
       return { label: `${count} persona${count !== 1 ? 's' : ''}`, bg: '#e8f0fe', color: '#1a73e8' }
     }
-    const found = ROLES_DESTINO.find(r => r.id === c.rol_destino)
+    const found = ROLES_DESTINO.find(r => r.id === c.dirigido_a)
     return {
-      label: found?.label || c.rol_destino,
-      bg:    c.rol_destino === 'todos' ? 'var(--vl)' : 'var(--amberl)',
-      color: c.rol_destino === 'todos' ? 'var(--v)'  : 'var(--amber)',
+      label: found?.label || c.dirigido_a,
+      bg:    c.dirigido_a === 'todos' ? 'var(--vl)' : 'var(--amberl)',
+      color: c.dirigido_a === 'todos' ? 'var(--v)'  : 'var(--amber)',
     }
   }
 
@@ -468,7 +468,7 @@ export default function Comunicados() {
             const fecha = c.created_at
               ? new Date(c.created_at).toLocaleDateString('es-AR', { day:'numeric', month:'short', year:'numeric' })
               : '—'
-            const esIndividual = c.rol_destino === 'individual'
+            const esIndividual = c.dirigido_a === 'individual'
             return (
               <div key={c.id} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'10px'}}>
                 <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'8px',marginBottom:'8px'}}>
