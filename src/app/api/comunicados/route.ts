@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     const insert: Record<string, any> = {
       titulo:      titulo.trim(),
       contenido:   contenido.trim(),
-      rol_destino: rol_destino || 'todos',
+      dirigido_a:   rol_destino || 'todos',
       creado_por:  creado_por || 'Sistema',
     }
 
