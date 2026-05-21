@@ -1,7 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
 import { useComunicados } from '@/lib/hooks'
-import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 import { logActivity, apiHeaders } from '@/lib/hooks'
 
@@ -223,18 +222,21 @@ export default function Comunicados() {
       return alert('Si querés agregar a la Agenda, indicá la fecha')
 
     setGuardando(true)
-    const sb = createClient()
 
-    // 1. Guardar comunicado
-    const { error } = await sb.from('comunicados').insert({
-      titulo:            form.titulo.trim(),
-      contenido:         form.contenido.trim(),
-      rol_destino:       form.rol_destino,
-      destinatarios_ids: form.rol_destino === 'individual' ? form.destinatarios_ids : null,
-      creado_por:        usuario?.nombre || 'Sistema',
+    // 1. Guardar comunicado via API Route (service_role, evita problemas de schema cache)
+    const resCom = await fetch('/api/comunicados', {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({
+        titulo:            form.titulo.trim(),
+        contenido:         form.contenido.trim(),
+        rol_destino:       form.rol_destino,
+        destinatarios_ids: form.rol_destino === 'individual' ? form.destinatarios_ids : null,
+        creado_por:        usuario?.nombre || 'Sistema',
+      }),
     })
-
-    if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
+    const jsonCom = await resCom.json()
+    if (jsonCom.error) { alert('Error al guardar: ' + jsonCom.error); setGuardando(false); return }
 
     // 2. Crear evento en agenda si corresponde
     if (form.agregar_agenda) {
