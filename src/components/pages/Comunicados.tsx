@@ -3,13 +3,14 @@ import { useState, useEffect } from 'react'
 import { useComunicados } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
-import { logActivity } from '@/lib/hooks'
+import { logActivity, apiHeaders } from '@/lib/hooks'
 
 const ROLES_DESTINO = [
   { id: 'todos',          label: 'Todos' },
   { id: 'docentes',       label: 'Docentes' },
   { id: 'coordinacion',   label: 'Coordinación' },
   { id: 'secretaria',     label: 'Secretaría' },
+  { id: 'individual',     label: 'Usuarios específicos' },
 ]
 
 // ── PLANTILLAS PREDEFINIDAS ──────────────────────────────────────────────────
@@ -124,7 +125,7 @@ function OnboardingBanner({ onDismiss }: { onDismiss: () => void }) {
         {[
           { num:'1', texto:'Escribí un comunicado nuevo con el botón "+ Nuevo comunicado"' },
           { num:'2', texto:'Usá una plantilla para ahorrar tiempo en mensajes frecuentes' },
-          { num:'3', texto:'Elegí a quién va dirigido: todos, docentes, coordinación o secretaría' },
+          { num:'3', texto:'Elegí a quién va dirigido: todos, docentes, coordinación, secretaría, o usuarios específicos' },
         ].map(p => (
           <div key={p.num} style={{display:'flex',alignItems:'flex-start',gap:'10px'}}>
             <div style={{width:22,height:22,borderRadius:'50%',background:'var(--v)',color:'#fff',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,flexShrink:0}}>
@@ -147,24 +148,37 @@ export default function Comunicados() {
   const [guardando, setGuardando]         = useState(false)
   const [mostrarOnboarding, setMostrarOnboarding] = useState(false)
 
+  // Lista de usuarios del instituto para destinatarios individuales
+  const [usuariosInstituto, setUsuariosInstituto] = useState<any[]>([])
+
   const [form, setForm] = useState({
-    titulo:      '',
-    contenido:   '',
-    rol_destino: 'todos',
+    titulo:             '',
+    contenido:          '',
+    rol_destino:        'todos',
+    destinatarios_ids:  [] as string[],   // para modo individual
+    agregar_agenda:     false,
+    agenda_fecha:       '',
+    agenda_hora:        '',
   })
 
   const puedeCrear = ['director','coordinadora'].includes(usuario?.rol || '')
 
-  // Onboarding: mostrar si es la primera vez en el módulo
+  // Onboarding
   useEffect(() => {
     if (!usuario) return
     try {
       const visitados = JSON.parse(localStorage.getItem(`onboarding_${usuario.id}`) || '[]')
-      if (!visitados.includes('comunicados_interno')) {
-        setMostrarOnboarding(true)
-      }
+      if (!visitados.includes('comunicados_interno')) setMostrarOnboarding(true)
     } catch {}
   }, [usuario?.id])
+
+  // Cargar usuarios del instituto para selector individual
+  useEffect(() => {
+    if (!puedeCrear) return
+    const sb = createClient()
+    sb.from('usuarios').select('id, nombre, apellido, rol').eq('activo', true)
+      .then(({ data }) => setUsuariosInstituto(data || []))
+  }, [puedeCrear])
 
   const dismissOnboarding = () => {
     setMostrarOnboarding(false)
@@ -177,37 +191,101 @@ export default function Comunicados() {
     } catch {}
   }
 
-  // Filtrar comunicados para el rol del usuario
-  const misComunicados = comunicados.filter(c =>
-    c.rol_destino === 'todos' || c.rol_destino === usuario?.rol
-  )
+  // Filtrar comunicados para el usuario actual:
+  // ve los de su rol, los de 'todos', y los individuales donde su ID aparece
+  const misComunicados = comunicados.filter((c: any) => {
+    if (c.rol_destino === 'todos') return true
+    if (c.rol_destino === usuario?.rol) return true
+    // coordinacion cubre coordinadora
+    if (c.rol_destino === 'coordinacion' && usuario?.rol === 'coordinadora') return true
+    if (c.rol_destino === 'individual') {
+      return Array.isArray(c.destinatarios_ids) && c.destinatarios_ids.includes(usuario?.id)
+    }
+    return false
+  })
+
+  const toggleDestinatario = (id: string) => {
+    setForm(f => ({
+      ...f,
+      destinatarios_ids: f.destinatarios_ids.includes(id)
+        ? f.destinatarios_ids.filter(x => x !== id)
+        : [...f.destinatarios_ids, id],
+    }))
+  }
 
   const guardar = async () => {
     if (!form.titulo.trim() || !form.contenido.trim()) return alert('Título y contenido son obligatorios')
+    if (form.rol_destino === 'individual' && form.destinatarios_ids.length === 0)
+      return alert('Seleccioná al menos un destinatario')
+    if (form.agregar_agenda && !form.agenda_fecha)
+      return alert('Si querés agregar a la Agenda, indicá la fecha')
+
     setGuardando(true)
     const sb = createClient()
+
+    // 1. Guardar comunicado
     const { error } = await sb.from('comunicados').insert({
-      titulo:      form.titulo.trim(),
-      contenido:   form.contenido.trim(),
-      rol_destino: form.rol_destino,
-      creado_por:  usuario?.nombre || 'Sistema',
+      titulo:            form.titulo.trim(),
+      contenido:         form.contenido.trim(),
+      rol_destino:       form.rol_destino,
+      destinatarios_ids: form.rol_destino === 'individual' ? form.destinatarios_ids : null,
+      creado_por:        usuario?.nombre || 'Sistema',
     })
-    if (!error) {
-      logActivity('Creó comunicado', 'Comunicados', form.titulo)
-      recargar()
-      setForm({ titulo: '', contenido: '', rol_destino: 'todos' })
-      setTab('lista')
+
+    if (error) { alert('Error al guardar: ' + error.message); setGuardando(false); return }
+
+    // 2. Crear evento en agenda si corresponde
+    if (form.agregar_agenda) {
+      // Determinar convocados para el evento
+      const convocadosEvento = form.rol_destino === 'individual' ? 'individual' : form.rol_destino
+
+      await fetch('/api/guardar-evento', {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({
+          titulo:              form.titulo.trim(),
+          tipo:                'admin',
+          fecha:               form.agenda_fecha,
+          hora_inicio:         form.agenda_hora || '',
+          hora_fin:            '',
+          descripcion:         form.contenido.trim(),
+          convocados:          convocadosEvento,
+          destinatarios_ids:   form.rol_destino === 'individual' ? form.destinatarios_ids : null,
+          creado_por:          usuario?.nombre,
+        }),
+      })
     }
+
+    logActivity('Creó comunicado', 'Comunicados', form.titulo)
+    recargar()
+    setForm({ titulo:'', contenido:'', rol_destino:'todos', destinatarios_ids:[], agregar_agenda:false, agenda_fecha:'', agenda_hora:'' })
+    setTab('lista')
     setGuardando(false)
   }
 
   const aplicarPlantilla = (p: typeof PLANTILLAS[0]['items'][0]) => {
-    setForm({ titulo: p.titulo, contenido: p.texto, rol_destino: p.destino })
+    setForm(f => ({ ...f, titulo: p.titulo, contenido: p.texto, rol_destino: p.destino }))
     setPlantillaOpen(false)
     setTab('nuevo')
   }
 
+  function hoy() { return new Date().toISOString().split('T')[0] }
+
   const IS = { width:'100%', padding:'10px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'14px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
+
+  // Badge de destino en la lista
+  const destinoBadge = (c: any) => {
+    if (c.rol_destino === 'individual') {
+      const count = c.destinatarios_ids?.length || 0
+      return { label: `${count} persona${count !== 1 ? 's' : ''}`, bg: '#e8f0fe', color: '#1a73e8' }
+    }
+    const found = ROLES_DESTINO.find(r => r.id === c.rol_destino)
+    return {
+      label: found?.label || c.rol_destino,
+      bg:    c.rol_destino === 'todos' ? 'var(--vl)' : 'var(--amberl)',
+      color: c.rol_destino === 'todos' ? 'var(--v)'  : 'var(--amber)',
+    }
+  }
 
   return (
     <div className="fade-in">
@@ -232,7 +310,7 @@ export default function Comunicados() {
               📋 Plantillas
             </button>
             <button
-              onClick={() => { setForm({ titulo:'', contenido:'', rol_destino:'todos' }); setTab('nuevo') }}
+              onClick={() => { setForm({ titulo:'', contenido:'', rol_destino:'todos', destinatarios_ids:[], agregar_agenda:false, agenda_fecha:'', agenda_hora:'' }); setTab('nuevo') }}
               style={{padding:'9px 14px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}
             >
               + Nuevo
@@ -241,32 +319,73 @@ export default function Comunicados() {
         )}
       </div>
 
-      {/* Tabs */}
+      {/* FORMULARIO NUEVO COMUNICADO */}
       {tab === 'nuevo' && puedeCrear && (
         <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'20px',marginBottom:'14px'}}>
           <div style={{fontSize:'16px',fontWeight:700,marginBottom:'16px'}}>Nuevo comunicado</div>
 
+          {/* ── DIRIGIDO A ── */}
           <div style={{marginBottom:'12px'}}>
-            <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Dirigido a</div>
+            <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'6px'}}>Dirigido a</div>
             <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
               {ROLES_DESTINO.map(r => (
-                <button key={r.id} onClick={() => setForm(f => ({...f, rol_destino: r.id}))}
+                <button key={r.id} onClick={() => setForm(f => ({...f, rol_destino: r.id, destinatarios_ids: []}))}
                   style={{padding:'7px 14px',borderRadius:'20px',fontSize:'13px',fontWeight:600,cursor:'pointer',border:'1.5px solid',
                     borderColor: form.rol_destino === r.id ? 'var(--v)' : 'var(--border)',
                     background:  form.rol_destino === r.id ? 'var(--v)' : 'var(--white)',
                     color:       form.rol_destino === r.id ? '#fff'     : 'var(--text2)',
                   }}>
-                  {r.label}
+                  {r.id === 'individual' ? '👤 ' : ''}{r.label}
                 </button>
               ))}
             </div>
           </div>
 
+          {/* ── SELECTOR DE USUARIOS INDIVIDUALES ── */}
+          {form.rol_destino === 'individual' && (
+            <div style={{marginBottom:'12px',background:'var(--bg)',border:'1.5px solid var(--border)',borderRadius:'10px',padding:'12px'}}>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'8px'}}>
+                Seleccioná los destinatarios
+                {form.destinatarios_ids.length > 0 && (
+                  <span style={{marginLeft:'8px',fontWeight:700,color:'var(--v)'}}>({form.destinatarios_ids.length} seleccionado{form.destinatarios_ids.length !== 1 ? 's' : ''})</span>
+                )}
+              </div>
+              {usuariosInstituto.length === 0 ? (
+                <div style={{fontSize:'13px',color:'var(--text3)'}}>Cargando usuarios...</div>
+              ) : (
+                <div style={{display:'flex',flexDirection:'column',gap:'4px',maxHeight:'200px',overflowY:'auto'}}>
+                  {usuariosInstituto
+                    .filter(u => u.id !== usuario?.id) // no mostrarse a uno mismo
+                    .map(u => {
+                      const seleccionado = form.destinatarios_ids.includes(u.id)
+                      return (
+                        <label key={u.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 10px',borderRadius:'8px',cursor:'pointer',background:seleccionado?'var(--vl)':'transparent',border:`1.5px solid ${seleccionado?'var(--v)':'transparent'}`,transition:'all .12s'}}>
+                          <input
+                            type="checkbox"
+                            checked={seleccionado}
+                            onChange={() => toggleDestinatario(u.id)}
+                            style={{accentColor:'var(--v)',width:'15px',height:'15px',cursor:'pointer'}}
+                          />
+                          <div style={{flex:1}}>
+                            <span style={{fontSize:'13px',fontWeight:600,color:'var(--text)'}}>{u.nombre} {u.apellido}</span>
+                            <span style={{fontSize:'11px',color:'var(--text3)',marginLeft:'6px',textTransform:'capitalize'}}>{u.rol}</span>
+                          </div>
+                          {seleccionado && <span style={{fontSize:'14px'}}>✓</span>}
+                        </label>
+                      )
+                    })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── TÍTULO ── */}
           <div style={{marginBottom:'12px'}}>
             <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Título</div>
             <input style={IS} value={form.titulo} onChange={e => setForm(f => ({...f, titulo: e.target.value}))} placeholder="Ej: Reunión de equipo — martes 15" />
           </div>
 
+          {/* ── CONTENIDO ── */}
           <div style={{marginBottom:'16px'}}>
             <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Contenido</div>
             <textarea
@@ -278,6 +397,36 @@ export default function Comunicados() {
             />
           </div>
 
+          {/* ── AGREGAR A AGENDA ── */}
+          <div style={{marginBottom:'16px',background: form.agregar_agenda ? 'var(--vl)' : 'var(--bg)',border:`1.5px solid ${form.agregar_agenda ? 'var(--v)' : 'var(--border)'}`,borderRadius:'10px',padding:'12px',transition:'all .15s'}}>
+            <label style={{display:'flex',alignItems:'center',gap:'10px',cursor:'pointer'}}>
+              <input
+                type="checkbox"
+                checked={form.agregar_agenda}
+                onChange={e => setForm(f => ({...f, agregar_agenda: e.target.checked, agenda_fecha: e.target.checked ? hoy() : '', agenda_hora: ''}))}
+                style={{accentColor:'var(--v)',width:'16px',height:'16px',cursor:'pointer'}}
+              />
+              <div>
+                <div style={{fontSize:'13px',fontWeight:600,color: form.agregar_agenda ? 'var(--v)' : 'var(--text)'}}>📅 Agregar a la Agenda</div>
+                <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'1px'}}>El comunicado aparecerá como evento en la agenda de los destinatarios</div>
+              </div>
+            </label>
+
+            {form.agregar_agenda && (
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginTop:'12px'}}>
+                <div>
+                  <div style={{fontSize:'10px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Fecha *</div>
+                  <input style={{...IS,fontSize:'13px'}} type="date" value={form.agenda_fecha} onChange={e => setForm(f => ({...f, agenda_fecha: e.target.value}))} />
+                </div>
+                <div>
+                  <div style={{fontSize:'10px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Hora (opcional)</div>
+                  <input style={{...IS,fontSize:'13px'}} type="time" value={form.agenda_hora} onChange={e => setForm(f => ({...f, agenda_hora: e.target.value}))} />
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ── BOTONES ── */}
           <div style={{display:'flex',gap:'10px'}}>
             <button onClick={() => setTab('lista')} style={{flex:1,padding:'12px',background:'transparent',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>
               Cancelar
@@ -289,7 +438,7 @@ export default function Comunicados() {
         </div>
       )}
 
-      {/* Lista de comunicados */}
+      {/* ── LISTA DE COMUNICADOS ── */}
       {misComunicados.length === 0 ? (
         <div style={{textAlign:'center',padding:'48px 24px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',color:'var(--text3)'}}>
           <div style={{fontSize:'32px',marginBottom:'8px'}}>📭</div>
@@ -302,7 +451,7 @@ export default function Comunicados() {
               <button onClick={() => setPlantillaOpen(true)} style={{padding:'9px 16px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
                 📋 Usar plantilla
               </button>
-              <button onClick={() => { setForm({ titulo:'', contenido:'', rol_destino:'todos' }); setTab('nuevo') }} style={{padding:'9px 16px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
+              <button onClick={() => { setForm({ titulo:'', contenido:'', rol_destino:'todos', destinatarios_ids:[], agregar_agenda:false, agenda_fecha:'', agenda_hora:'' }); setTab('nuevo') }} style={{padding:'9px 16px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
                 + Nuevo comunicado
               </button>
             </div>
@@ -311,27 +460,29 @@ export default function Comunicados() {
       ) : (
         <div>
           {[...misComunicados].reverse().map((c: any) => {
-            const destLabel = ROLES_DESTINO.find(r => r.id === c.rol_destino)?.label || c.rol_destino
+            const badge = destinoBadge(c)
             const fecha = c.created_at
               ? new Date(c.created_at).toLocaleDateString('es-AR', { day:'numeric', month:'short', year:'numeric' })
               : '—'
+            const esIndividual = c.rol_destino === 'individual'
             return (
               <div key={c.id} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'10px'}}>
                 <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'8px',marginBottom:'8px'}}>
                   <div style={{fontSize:'15px',fontWeight:700,color:'var(--text)',flex:1}}>{c.titulo}</div>
-                  <span style={{
-                    padding:'3px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:600,whiteSpace:'nowrap',flexShrink:0,
-                    background: c.rol_destino==='todos' ? 'var(--vl)' : 'var(--amberl)',
-                    color:      c.rol_destino==='todos' ? 'var(--v)'  : 'var(--amber)',
-                  }}>
-                    {destLabel}
+                  <span style={{padding:'3px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:600,whiteSpace:'nowrap',flexShrink:0,background:badge.bg,color:badge.color}}>
+                    {esIndividual ? '👤 ' : ''}{badge.label}
                   </span>
                 </div>
                 <div style={{fontSize:'14px',color:'var(--text2)',lineHeight:1.6,marginBottom:'8px',whiteSpace:'pre-wrap'}}>
                   {c.contenido}
                 </div>
-                <div style={{fontSize:'11px',color:'var(--text3)'}}>
-                  {c.creado_por} · {fecha}
+                <div style={{fontSize:'11px',color:'var(--text3)',display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+                  <span>{c.creado_por} · {fecha}</span>
+                  {c.agregar_agenda && (
+                    <span style={{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 8px',borderRadius:'10px',background:'#e8f0fe',color:'#1a73e8',fontSize:'10px',fontWeight:600}}>
+                      📅 En agenda
+                    </span>
+                  )}
                 </div>
               </div>
             )
@@ -339,7 +490,7 @@ export default function Comunicados() {
         </div>
       )}
 
-      {/* MODAL PLANTILLAS */}
+      {/* ── MODAL PLANTILLAS ── */}
       {plantillaOpen && (
         <div style={{position:'fixed',inset:0,background:'rgba(20,0,40,.45)',display:'flex',alignItems:'flex-end',justifyContent:'center',zIndex:200}} onClick={e => { if(e.target===e.currentTarget) setPlantillaOpen(false) }}>
           <div style={{background:'var(--white)',borderRadius:'24px 24px 0 0',padding:'24px 20px 32px',width:'100%',maxWidth:'520px',maxHeight:'85vh',overflowY:'auto'}}>
@@ -355,12 +506,7 @@ export default function Comunicados() {
                 <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
                   {cat.items.map((item, i) => (
                     <button key={i} onClick={() => aplicarPlantilla(item)}
-                      style={{
-                        display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px',
-                        padding:'12px 14px',background:'var(--white)',border:'1.5px solid var(--border)',
-                        borderRadius:'10px',cursor:'pointer',textAlign:'left',
-                        transition:'border-color .15s',
-                      }}
+                      style={{display:'flex',alignItems:'center',justifyContent:'space-between',gap:'12px',padding:'12px 14px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'10px',cursor:'pointer',textAlign:'left',transition:'border-color .15s'}}
                       onMouseEnter={e => (e.currentTarget.style.borderColor='var(--v)')}
                       onMouseLeave={e => (e.currentTarget.style.borderColor='var(--border)')}
                     >
