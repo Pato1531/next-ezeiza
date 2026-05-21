@@ -173,11 +173,13 @@ export default function Comunicados() {
   }, [usuario?.id])
 
   // Cargar usuarios del instituto para selector individual
+  // Usa /api/usuarios (service_role) porque RLS bloquea la lectura directa desde el browser
   useEffect(() => {
     if (!puedeCrear) return
-    const sb = createClient()
-    sb.from('usuarios').select('id, nombre, apellido, rol').eq('activo', true)
-      .then(({ data }) => setUsuariosInstituto(data || []))
+    fetch('/api/usuarios', { headers: apiHeaders() })
+      .then(r => r.json())
+      .then(json => setUsuariosInstituto((json.data || []).filter((u: any) => u.activo)))
+      .catch(() => setUsuariosInstituto([]))
   }, [puedeCrear])
 
   const dismissOnboarding = () => {
