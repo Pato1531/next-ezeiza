@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
     const admin = getAdminClient()
     const { data, error } = await admin
       .from('usuarios')
-      .select('id, nombre, apellido, email, rol, color, initials, activo, instituto_id')
+      .select('id, nombre, email, rol, color, initials, activo, instituto_id')
       .eq('instituto_id', institutoId)
       .order('nombre', { ascending: true })
     if (error) {
