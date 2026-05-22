@@ -202,7 +202,7 @@ export default function Comunicados() {
           id:             c.id,
           accion:         'marcar_leido',
           usuario_id:     usuario.id,
-          usuario_nombre: `${usuario.nombre} ${usuario.apellido || ''}`.trim(),
+          usuario_nombre: usuario.nombre || 'Usuario',
         }),
       }).catch(() => {})
     })
@@ -338,11 +338,11 @@ export default function Comunicados() {
       const entrada = (c.leido_por || []).find((e: any) => e.id === uid)
       return {
         id:       uid,
-        nombre:   u ? `${u.nombre} ${u.apellido || ''}`.trim() : (entrada?.nombre || 'Usuario'),
+        nombre:   u ? u.nombre : (entrada?.nombre || 'Usuario'),
         rol:      u?.rol || '',
         leyo:     !!entrada,
         ts:       entrada?.ts || null,
-        initials: u ? `${u.nombre?.[0] || ''}${u.apellido?.[0] || ''}`.toUpperCase() : '?',
+        initials: u ? (u.initials || u.nombre?.slice(0,2).toUpperCase() || '?') : '?',
         color:    u?.color || '#888',
       }
     })
@@ -438,7 +438,7 @@ export default function Comunicados() {
                             style={{accentColor:'var(--v)',width:'15px',height:'15px',cursor:'pointer'}}
                           />
                           <div style={{flex:1}}>
-                            <span style={{fontSize:'13px',fontWeight:600,color:'var(--text)'}}>{u.nombre} {u.apellido}</span>
+                            <span style={{fontSize:'13px',fontWeight:600,color:'var(--text)'}}>{u.nombre}</span>
                             <span style={{fontSize:'11px',color:'var(--text3)',marginLeft:'6px',textTransform:'capitalize'}}>{u.rol}</span>
                           </div>
                           {seleccionado && <span style={{fontSize:'14px'}}>✓</span>}
