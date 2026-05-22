@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useComunicados } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { logActivity, apiHeaders } from '@/lib/hooks'
+import { useToast } from '@/components/Toast'
 
 const ROLES_DESTINO = [
   { id: 'todos',          label: 'Todos' },
@@ -141,7 +142,8 @@ function OnboardingBanner({ onDismiss }: { onDismiss: () => void }) {
 // ── COMPONENTE PRINCIPAL ─────────────────────────────────────────────────────
 export default function Comunicados() {
   const { usuario } = useAuth()
-  const { comunicados, recargar } = useComunicados()
+  const { comunicados, recargar, eliminar } = useComunicados()
+  const { success: toastSuccess, error: toastError } = useToast()
   const [tab, setTab]           = useState<'lista'|'nuevo'>('lista')
   const [plantillaOpen, setPlantillaOpen] = useState(false)
   const [guardando, setGuardando]         = useState(false)
@@ -214,6 +216,12 @@ export default function Comunicados() {
     }))
   }
 
+  const archivar = async (id: string, titulo: string) => {
+    if (!confirm(`¿Archivar "${titulo}"? Ya no aparecerá en la lista.`)) return
+    await eliminar(id)
+    toastSuccess('Comunicado archivado')
+  }
+
   const guardar = async () => {
     if (!form.titulo.trim() || !form.contenido.trim()) return alert('Título y contenido son obligatorios')
     if (form.rol_destino === 'individual' && form.destinatarios_ids.length === 0)
@@ -237,7 +245,7 @@ export default function Comunicados() {
       }),
     })
     const jsonCom = await resCom.json()
-    if (jsonCom.error) { alert('Error al guardar: ' + jsonCom.error); setGuardando(false); return }
+    if (jsonCom.error) { toastError('Error al guardar: ' + jsonCom.error); setGuardando(false); return }
 
     // 2. Crear evento en agenda si corresponde
     if (form.agregar_agenda) {
@@ -262,6 +270,7 @@ export default function Comunicados() {
     }
 
     logActivity('Creó comunicado', 'Comunicados', form.titulo)
+    toastSuccess('Comunicado publicado correctamente')
     recargar()
     setForm({ titulo:'', contenido:'', rol_destino:'todos', destinatarios_ids:[], agregar_agenda:false, agenda_fecha:'', agenda_hora:'' })
     setTab('lista')
@@ -481,12 +490,25 @@ export default function Comunicados() {
                 <div style={{fontSize:'14px',color:'var(--text2)',lineHeight:1.6,marginBottom:'8px',whiteSpace:'pre-wrap'}}>
                   {c.contenido}
                 </div>
-                <div style={{fontSize:'11px',color:'var(--text3)',display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
-                  <span>{c.autor_nombre} · {fecha}</span>
-                  {c.agregar_agenda && (
-                    <span style={{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 8px',borderRadius:'10px',background:'#e8f0fe',color:'#1a73e8',fontSize:'10px',fontWeight:600}}>
-                      📅 En agenda
-                    </span>
+                <div style={{fontSize:'11px',color:'var(--text3)',display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap',justifyContent:'space-between'}}>
+                  <div style={{display:'flex',alignItems:'center',gap:'8px',flexWrap:'wrap'}}>
+                    <span>{c.autor_nombre} · {fecha}</span>
+                    {c.agregar_agenda && (
+                      <span style={{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 8px',borderRadius:'10px',background:'#e8f0fe',color:'#1a73e8',fontSize:'10px',fontWeight:600}}>
+                        📅 En agenda
+                      </span>
+                    )}
+                  </div>
+                  {puedeCrear && (
+                    <button
+                      onClick={() => archivar(c.id, c.titulo)}
+                      title="Archivar comunicado"
+                      style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'12px',padding:'2px 6px',borderRadius:'6px',fontWeight:500,lineHeight:1,display:'inline-flex',alignItems:'center',gap:'3px'}}
+                      onMouseEnter={e => { e.currentTarget.style.color='var(--red)'; e.currentTarget.style.background='var(--redl)' }}
+                      onMouseLeave={e => { e.currentTarget.style.color='var(--text3)'; e.currentTarget.style.background='none' }}
+                    >
+                      × archivar
+                    </button>
                   )}
                 </div>
               </div>
