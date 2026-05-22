@@ -76,12 +76,17 @@ export default function Agenda() {
   const esVisible = (ev: any) => {
     if (esCoord) return true  // director/coordinadora/secretaria ven todo
     if (ev.convocados === 'todos') return true
-    // individual: solo visible si el usuario está explícitamente en destinatarios_ids
-    // Si el array es null o vacío → invisible para docentes (dato incompleto)
     if (ev.convocados === 'individual') {
-      return Array.isArray(ev.destinatarios_ids) &&
-        ev.destinatarios_ids.length > 0 &&
-        ev.destinatarios_ids.includes(usuario?.id)
+      const ids = ev.destinatarios_ids
+      const uid = usuario?.id
+      // destinatarios_ids puede ser jsonb (array de strings) o uuid[]
+      // Normalizar comparando como strings
+      const lista: string[] = Array.isArray(ids) ? ids.map((x: any) => String(x)) : []
+      const resultado = lista.length > 0 && lista.includes(String(uid || ''))
+      if (ev.convocados === 'individual') {
+        console.log('[esVisible]', ev.titulo, '| uid:', uid, '| lista:', lista, '| visible:', resultado)
+      }
+      return resultado
     }
     if (ev.convocados === 'docentes' && usuario?.rol === 'profesora') return true
     if (ev.convocados === 'coordinacion' && usuario?.rol === 'coordinadora') return true
