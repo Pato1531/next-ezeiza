@@ -394,14 +394,30 @@ export default function AppShell() {
 
   useEffect(() => {
     if (!comunicados.length || !usuario) return
-    const misComunicados = comunicados.filter(c => c.rol_destino === 'todos' || c.rol_destino === usuario.rol)
+    const misComunicados = comunicados.filter(c => {
+      if (c.rol_destino === 'todos') return true
+      if (c.rol_destino === usuario.rol) return true
+      if (c.rol_destino === 'coordinacion' && usuario.rol === 'coordinadora') return true
+      if (c.rol_destino === 'individual') {
+        return Array.isArray(c.destinatarios_ids) && c.destinatarios_ids.includes(usuario.id)
+      }
+      return false
+    })
     const noLeidos = misComunicados.filter(c => !vistosLocal.includes(c.id)).length
     setComunicadosBadge(noLeidos)
   }, [comunicados, vistosLocal, usuario?.id])
 
   const irAComunicados = () => {
     if (!usuario) return
-    const misComunicados = comunicados.filter(c => c.rol_destino === 'todos' || c.rol_destino === usuario.rol)
+    const misComunicados = comunicados.filter(c => {
+      if (c.rol_destino === 'todos') return true
+      if (c.rol_destino === usuario.rol) return true
+      if (c.rol_destino === 'coordinacion' && usuario.rol === 'coordinadora') return true
+      if (c.rol_destino === 'individual') {
+        return Array.isArray(c.destinatarios_ids) && c.destinatarios_ids.includes(usuario.id)
+      }
+      return false
+    })
     const ids = misComunicados.map(c => c.id)
     try { localStorage.setItem(`comunicados_vistos_${usuario.id}`, JSON.stringify(ids)) } catch {}
     setVistosLocal(ids)
