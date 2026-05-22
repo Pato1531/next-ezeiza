@@ -469,7 +469,7 @@ export default function Agenda() {
                             style={{accentColor:'var(--v)',width:'15px',height:'15px',cursor:'pointer'}}
                           />
                           <div style={{flex:1}}>
-                            <span style={{fontSize:'13px',fontWeight:600,color:'var(--text)'}}>{u.nombre} {u.apellido}</span>
+                            <span style={{fontSize:'13px',fontWeight:600,color:'var(--text)'}}>{u.nombre}</span>
                             <span style={{fontSize:'11px',color:'var(--text3)',marginLeft:'6px',textTransform:'capitalize'}}>{u.rol}</span>
                           </div>
                           {sel && <span style={{fontSize:'13px',color:'var(--v)'}}>✓</span>}
