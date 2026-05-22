@@ -396,11 +396,13 @@ export default function AppShell() {
     if (!comunicados.length || !usuario) return
     const misComunicados = comunicados.filter(c => {
       if (c.rol_destino === 'todos') return true
+      if (c.rol_destino === 'individual') {
+        return Array.isArray(c.destinatarios_ids) &&
+          c.destinatarios_ids.length > 0 &&
+          c.destinatarios_ids.includes(usuario.id)
+      }
       if (c.rol_destino === usuario.rol) return true
       if (c.rol_destino === 'coordinacion' && usuario.rol === 'coordinadora') return true
-      if (c.rol_destino === 'individual') {
-        return Array.isArray(c.destinatarios_ids) && c.destinatarios_ids.includes(usuario.id)
-      }
       return false
     })
     const noLeidos = misComunicados.filter(c => !vistosLocal.includes(c.id)).length
@@ -411,11 +413,13 @@ export default function AppShell() {
     if (!usuario) return
     const misComunicados = comunicados.filter(c => {
       if (c.rol_destino === 'todos') return true
+      if (c.rol_destino === 'individual') {
+        return Array.isArray(c.destinatarios_ids) &&
+          c.destinatarios_ids.length > 0 &&
+          c.destinatarios_ids.includes(usuario.id)
+      }
       if (c.rol_destino === usuario.rol) return true
       if (c.rol_destino === 'coordinacion' && usuario.rol === 'coordinadora') return true
-      if (c.rol_destino === 'individual') {
-        return Array.isArray(c.destinatarios_ids) && c.destinatarios_ids.includes(usuario.id)
-      }
       return false
     })
     const ids = misComunicados.map(c => c.id)
