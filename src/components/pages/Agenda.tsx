@@ -65,12 +65,16 @@ export default function Agenda() {
   const esVisible = (ev: any) => {
     if (esCoord) return true  // director/coordinadora/secretaria ven todo
     if (ev.convocados === 'todos') return true
+    // individual: solo visible si el usuario está explícitamente en destinatarios_ids
+    // Si el array es null o vacío → invisible para docentes (dato incompleto)
+    if (ev.convocados === 'individual') {
+      return Array.isArray(ev.destinatarios_ids) &&
+        ev.destinatarios_ids.length > 0 &&
+        ev.destinatarios_ids.includes(usuario?.id)
+    }
     if (ev.convocados === 'docentes' && usuario?.rol === 'profesora') return true
     if (ev.convocados === 'coordinacion' && usuario?.rol === 'coordinadora') return true
     if (ev.convocados === 'secretaria' && usuario?.rol === 'secretaria') return true
-    if (ev.convocados === 'individual') {
-      return Array.isArray(ev.destinatarios_ids) && ev.destinatarios_ids.includes(usuario?.id)
-    }
     return false
   }
 
