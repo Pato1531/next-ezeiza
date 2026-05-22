@@ -148,7 +148,7 @@ export default function Comunicados() {
   const [plantillaOpen, setPlantillaOpen] = useState(false)
   const [guardando, setGuardando]         = useState(false)
   const [mostrarOnboarding, setMostrarOnboarding] = useState(false)
-  const [detalleLectura, setDetalleLectura] = useState<string | null>(null) // id del comunicado con panel abierto
+  const [detalleLectura, setDetalleLectura] = useState<string | null>(null)
   const [tabDetalle, setTabDetalle]         = useState<'leido'|'pendiente'>('leido')
 
   // Lista de usuarios del instituto para destinatarios individuales
@@ -176,7 +176,6 @@ export default function Comunicados() {
   }, [usuario?.id])
 
   // Cargar usuarios del instituto para selector individual
-  // Usa /api/usuarios (service_role) porque RLS bloquea la lectura directa desde el browser
   useEffect(() => {
     if (!puedeCrear) return
     fetch('/api/usuarios', { headers: apiHeaders() })
@@ -186,12 +185,12 @@ export default function Comunicados() {
   }, [puedeCrear])
 
   // Registrar lectura automáticamente para comunicados individuales
-  // Se ejecuta cuando llegan los comunicados y hay usuario cargado
   useEffect(() => {
     if (!usuario || !comunicados.length) return
     const individuales = comunicados.filter((c: any) =>
       c.rol_destino === 'individual' &&
       Array.isArray(c.destinatarios_ids) &&
+      c.destinatarios_ids.length > 0 &&
       c.destinatarios_ids.includes(usuario.id) &&
       !(c.leido_por || []).some((e: any) => e.id === usuario.id)
     )
@@ -207,9 +206,10 @@ export default function Comunicados() {
         }),
       }).catch(() => {})
     })
-    // Si hubo marcas, refrescar para mostrar lecturas actualizadas
     if (individuales.length > 0) setTimeout(() => recargar(), 1200)
   }, [comunicados.length, usuario?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const dismissOnboarding = () => {
     setMostrarOnboarding(false)
     if (!usuario) return
     try {
@@ -224,12 +224,14 @@ export default function Comunicados() {
   // ve los de su rol, los de 'todos', y los individuales donde su ID aparece
   const misComunicados = comunicados.filter((c: any) => {
     if (c.rol_destino === 'todos') return true
-    if (c.rol_destino === usuario?.rol) return true
-    // coordinacion cubre coordinadora
-    if (c.rol_destino === 'coordinacion' && usuario?.rol === 'coordinadora') return true
+    // individual: solo mostrar si el usuario está explícitamente en destinatarios_ids
     if (c.rol_destino === 'individual') {
-      return Array.isArray(c.destinatarios_ids) && c.destinatarios_ids.includes(usuario?.id)
+      return Array.isArray(c.destinatarios_ids) &&
+        c.destinatarios_ids.length > 0 &&
+        c.destinatarios_ids.includes(usuario?.id)
     }
+    if (c.rol_destino === usuario?.rol) return true
+    if (c.rol_destino === 'coordinacion' && usuario?.rol === 'coordinadora') return true
     return false
   })
 
@@ -327,10 +329,8 @@ export default function Comunicados() {
     }
   }
 
-  // ── Helpers para confirmación de lectura ───────────────────────────────────
-  const getLeidoPor = (c: any): string[] =>
-    (c.leido_por || []).map((e: any) => e.id)
 
+  // ── Helpers confirmación de lectura ──────────────────────────────────────
   const getDestinatariosInfo = (c: any) => {
     if (c.rol_destino !== 'individual' || !Array.isArray(c.destinatarios_ids)) return []
     return c.destinatarios_ids.map((uid: string) => {
@@ -569,21 +569,19 @@ export default function Comunicados() {
                   )}
                 </div>
 
-                {/* ── Panel de lecturas — solo comunicados individuales ── */}
+                {/* Panel de lecturas — solo comunicados individuales */}
                 {esIndividual && (() => {
                   const destinatariosInfo = getDestinatariosInfo(c)
-                  const leyeron  = destinatariosInfo.filter(d => d.leyo)
+                  const leyeron   = destinatariosInfo.filter(d => d.leyo)
                   const pendientes = destinatariosInfo.filter(d => !d.leyo)
-                  const abierto  = detalleLectura === c.id
-
+                  const abierto   = detalleLectura === c.id
                   return (
                     <div style={{marginTop:'10px',paddingTop:'10px',borderTop:'1px solid var(--border)'}}>
-                      {/* Fila de avatares */}
                       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'8px'}}>
                         <div style={{display:'flex',alignItems:'center',gap:'4px'}}>
                           {destinatariosInfo.map(d => (
                             <div key={d.id} title={`${d.nombre} — ${d.leyo ? 'leyó' : 'pendiente'}`}
-                              style={{width:'26px',height:'26px',borderRadius:'50%',background:d.leyo ? d.color : 'var(--border)',color:'#fff',fontSize:'10px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',opacity:d.leyo?1:0.5,border:d.leyo?`2px solid ${d.color}`:'2px solid var(--border)',flexShrink:0}}>
+                              style={{width:'26px',height:'26px',borderRadius:'50%',background:d.leyo?d.color:'var(--border)',color:'#fff',fontSize:'10px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',opacity:d.leyo?1:0.5,border:d.leyo?`2px solid ${d.color}`:'2px solid var(--border)',flexShrink:0}}>
                               {d.initials}
                             </div>
                           ))}
@@ -597,32 +595,25 @@ export default function Comunicados() {
                           )}
                         </div>
                         {puedeCrear && destinatariosInfo.length > 0 && (
-                          <button
-                            onClick={() => { setDetalleLectura(abierto ? null : c.id); setTabDetalle('leido') }}
-                            style={{fontSize:'11px',color:'var(--v)',background:'var(--vl)',border:'none',borderRadius:'6px',padding:'3px 10px',cursor:'pointer',fontWeight:600}}
-                          >
+                          <button onClick={() => { setDetalleLectura(abierto ? null : c.id); setTabDetalle('leido') }}
+                            style={{fontSize:'11px',color:'var(--v)',background:'var(--vl)',border:'none',borderRadius:'6px',padding:'3px 10px',cursor:'pointer',fontWeight:600}}>
                             {abierto ? 'Cerrar' : 'Ver detalle'}
                           </button>
                         )}
                       </div>
-
-                      {/* Panel de detalle expandible */}
                       {abierto && (
                         <div style={{marginTop:'10px',background:'var(--bg)',borderRadius:'10px',padding:'12px'}}>
-                          {/* Tabs */}
                           <div style={{display:'flex',gap:'6px',marginBottom:'10px'}}>
                             {(['leido','pendiente'] as const).map(t => (
                               <button key={t} onClick={() => setTabDetalle(t)}
                                 style={{padding:'4px 12px',borderRadius:'20px',border:'1.5px solid',fontSize:'11px',fontWeight:700,cursor:'pointer',
-                                  background: tabDetalle===t ? 'var(--v)' : 'transparent',
-                                  color:      tabDetalle===t ? '#fff'    : 'var(--text2)',
-                                  borderColor:tabDetalle===t ? 'var(--v)' : 'var(--border)',
-                                }}>
+                                  background: tabDetalle===t?'var(--v)':'transparent',
+                                  color:      tabDetalle===t?'#fff':'var(--text2)',
+                                  borderColor:tabDetalle===t?'var(--v)':'var(--border)'}}>
                                 {t === 'leido' ? `✓ Leído (${leyeron.length})` : `⏳ Pendiente (${pendientes.length})`}
                               </button>
                             ))}
                           </div>
-                          {/* Lista */}
                           <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
                             {(tabDetalle === 'leido' ? leyeron : pendientes).map(d => (
                               <div key={d.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 10px',background:'var(--white)',borderRadius:'8px',border:'1px solid var(--border)'}}>
@@ -636,15 +627,11 @@ export default function Comunicados() {
                                 <div style={{textAlign:'right',flexShrink:0}}>
                                   {d.leyo ? (
                                     <>
-                                      <span style={{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 8px',borderRadius:'10px',background:'var(--greenl)',color:'var(--green)',fontSize:'10px',fontWeight:600}}>
-                                        ✓ Leído
-                                      </span>
+                                      <span style={{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 8px',borderRadius:'10px',background:'var(--greenl)',color:'var(--green)',fontSize:'10px',fontWeight:600}}>✓ Leído</span>
                                       <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>{formatTs(d.ts)}</div>
                                     </>
                                   ) : (
-                                    <span style={{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 8px',borderRadius:'10px',background:'var(--bg)',color:'var(--text3)',fontSize:'10px',fontWeight:600,border:'1px solid var(--border)'}}>
-                                      ⏳ Pendiente
-                                    </span>
+                                    <span style={{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 8px',borderRadius:'10px',background:'var(--bg)',color:'var(--text3)',fontSize:'10px',fontWeight:600,border:'1px solid var(--border)'}}>⏳ Pendiente</span>
                                   )}
                                 </div>
                               </div>
