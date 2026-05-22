@@ -44,12 +44,18 @@ export default function Agenda() {
     if (!usuario?.id || !esCoord) return
     setCargandoUsuarios(true)
     fetch('/api/usuarios', { headers: apiHeaders() })
-      .then(r => r.json())
-      .then(json => {
-        setUsuariosInstituto((json.data || []).filter((u: any) => u.activo))
+      .then(async r => {
+        const json = await r.json()
+        console.log('[Agenda] /api/usuarios status:', r.status, 'data:', json)
+        if (json.data) {
+          setUsuariosInstituto(json.data.filter((u: any) => u.activo))
+        } else {
+          console.warn('[Agenda] sin data:', json.error)
+          setUsuariosInstituto([])
+        }
         setCargandoUsuarios(false)
       })
-      .catch(() => { setUsuariosInstituto([]); setCargandoUsuarios(false) })
+      .catch(e => { console.error('[Agenda] fetch error:', e); setUsuariosInstituto([]); setCargandoUsuarios(false) })
   }, [usuario?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const cargarEventos = async () => {
