@@ -872,29 +872,43 @@ export function useHorario() {
 }
 
 // ── useComunicados ────────────────────────────────────────────────────────────
+// Lee via API route (service_role + instituto_id) para garantizar multi-tenancy.
+// La query directa desde el browser no pasa x-instituto-id y mezcla datos entre sedes.
 export function useComunicados() {
   const { data, setData, isLoading, refetch } = useSupabaseQuery<any>(
     'comunicados',
     async () => {
-      const { data, error } = await createClient().from('comunicados')
-        .select('*').eq('activo', true).order('created_at', { ascending: false })
-      if (error) throw new Error(error.message)
-      return (data as any[]) ?? []
+      const res = await fetch('/api/comunicados', { headers: apiHeaders() })
+      if (!res.ok) throw new Error(`[useComunicados] HTTP ${res.status}`)
+      const json = await res.json()
+      if (json.error) throw new Error(json.error)
+      return (json.data as any[]) ?? []
     }
   )
 
+  // agregar: ya no se usa desde el hook (Comunicados.tsx usa POST /api/comunicados directo),
+  // pero se mantiene por compatibilidad por si algún componente lo llama.
   const agregar = async (c: any) => {
-    const { data: row, error } = await createClient().from('comunicados').insert(c).select().single()
-    if (error) { console.error('[useComunicados agregar]', error.message); return null }
-    if (row) {
-      setData(prev => [row, ...prev])
+    const res = await fetch('/api/comunicados', {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify(c),
+    })
+    const json = await res.json()
+    if (json.error) { console.error('[useComunicados agregar]', json.error); return null }
+    if (json.data) {
+      setData(prev => [json.data, ...prev])
       invalidateQuery('comunicados')
     }
-    return row ?? null
+    return json.data ?? null
   }
 
   const eliminar = async (id: string) => {
-    await createClient().from('comunicados').update({ activo: false }).eq('id', id)
+    await fetch('/api/comunicados', {
+      method: 'PATCH',
+      headers: apiHeaders(),
+      body: JSON.stringify({ id, activo: false }),
+    })
     setData(prev => prev.filter(c => c.id !== id))
     invalidateQuery('comunicados')
   }
