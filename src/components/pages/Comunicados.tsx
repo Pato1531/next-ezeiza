@@ -148,6 +148,8 @@ export default function Comunicados() {
   const [plantillaOpen, setPlantillaOpen] = useState(false)
   const [guardando, setGuardando]         = useState(false)
   const [mostrarOnboarding, setMostrarOnboarding] = useState(false)
+  const [detalleLectura, setDetalleLectura] = useState<string | null>(null) // id del comunicado con panel abierto
+  const [tabDetalle, setTabDetalle]         = useState<'leido'|'pendiente'>('leido')
 
   // Lista de usuarios del instituto para destinatarios individuales
   const [usuariosInstituto, setUsuariosInstituto] = useState<any[]>([])
@@ -183,7 +185,31 @@ export default function Comunicados() {
       .catch(() => setUsuariosInstituto([]))
   }, [puedeCrear])
 
-  const dismissOnboarding = () => {
+  // Registrar lectura automáticamente para comunicados individuales
+  // Se ejecuta cuando llegan los comunicados y hay usuario cargado
+  useEffect(() => {
+    if (!usuario || !comunicados.length) return
+    const individuales = comunicados.filter((c: any) =>
+      c.rol_destino === 'individual' &&
+      Array.isArray(c.destinatarios_ids) &&
+      c.destinatarios_ids.includes(usuario.id) &&
+      !(c.leido_por || []).some((e: any) => e.id === usuario.id)
+    )
+    individuales.forEach((c: any) => {
+      fetch('/api/comunicados', {
+        method: 'PATCH',
+        headers: apiHeaders(),
+        body: JSON.stringify({
+          id:             c.id,
+          accion:         'marcar_leido',
+          usuario_id:     usuario.id,
+          usuario_nombre: `${usuario.nombre} ${usuario.apellido || ''}`.trim(),
+        }),
+      }).catch(() => {})
+    })
+    // Si hubo marcas, refrescar para mostrar lecturas actualizadas
+    if (individuales.length > 0) setTimeout(() => recargar(), 1200)
+  }, [comunicados.length, usuario?.id]) // eslint-disable-line react-hooks/exhaustive-deps
     setMostrarOnboarding(false)
     if (!usuario) return
     try {
@@ -299,6 +325,37 @@ export default function Comunicados() {
       bg:    c.rol_destino === 'todos' ? 'var(--vl)' : 'var(--amberl)',
       color: c.rol_destino === 'todos' ? 'var(--v)'  : 'var(--amber)',
     }
+  }
+
+  // ── Helpers para confirmación de lectura ───────────────────────────────────
+  const getLeidoPor = (c: any): string[] =>
+    (c.leido_por || []).map((e: any) => e.id)
+
+  const getDestinatariosInfo = (c: any) => {
+    if (c.rol_destino !== 'individual' || !Array.isArray(c.destinatarios_ids)) return []
+    return c.destinatarios_ids.map((uid: string) => {
+      const u = usuariosInstituto.find((x: any) => x.id === uid)
+      const entrada = (c.leido_por || []).find((e: any) => e.id === uid)
+      return {
+        id:       uid,
+        nombre:   u ? `${u.nombre} ${u.apellido || ''}`.trim() : (entrada?.nombre || 'Usuario'),
+        rol:      u?.rol || '',
+        leyo:     !!entrada,
+        ts:       entrada?.ts || null,
+        initials: u ? `${u.nombre?.[0] || ''}${u.apellido?.[0] || ''}`.toUpperCase() : '?',
+        color:    u?.color || '#888',
+      }
+    })
+  }
+
+  const formatTs = (ts: string | null) => {
+    if (!ts) return ''
+    const d = new Date(ts)
+    const diffH = Math.floor((Date.now() - d.getTime()) / 3600000)
+    if (diffH < 1)  return 'hace menos de 1 h'
+    if (diffH < 24) return `hoy ${d.toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' })}`
+    if (diffH < 48) return `ayer ${d.toLocaleTimeString('es-AR', { hour:'2-digit', minute:'2-digit' })}`
+    return d.toLocaleDateString('es-AR', { day:'numeric', month:'short' })
   }
 
   return (
@@ -511,6 +568,98 @@ export default function Comunicados() {
                     </button>
                   )}
                 </div>
+
+                {/* ── Panel de lecturas — solo comunicados individuales ── */}
+                {esIndividual && (() => {
+                  const destinatariosInfo = getDestinatariosInfo(c)
+                  const leyeron  = destinatariosInfo.filter(d => d.leyo)
+                  const pendientes = destinatariosInfo.filter(d => !d.leyo)
+                  const abierto  = detalleLectura === c.id
+
+                  return (
+                    <div style={{marginTop:'10px',paddingTop:'10px',borderTop:'1px solid var(--border)'}}>
+                      {/* Fila de avatares */}
+                      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'8px'}}>
+                        <div style={{display:'flex',alignItems:'center',gap:'4px'}}>
+                          {destinatariosInfo.map(d => (
+                            <div key={d.id} title={`${d.nombre} — ${d.leyo ? 'leyó' : 'pendiente'}`}
+                              style={{width:'26px',height:'26px',borderRadius:'50%',background:d.leyo ? d.color : 'var(--border)',color:'#fff',fontSize:'10px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',opacity:d.leyo?1:0.5,border:d.leyo?`2px solid ${d.color}`:'2px solid var(--border)',flexShrink:0}}>
+                              {d.initials}
+                            </div>
+                          ))}
+                          <span style={{fontSize:'11px',color:'var(--text3)',marginLeft:'6px'}}>
+                            {leyeron.length} de {destinatariosInfo.length} {leyeron.length === 1 ? 'leyó' : 'leyeron'}
+                          </span>
+                          {pendientes.length > 0 && (
+                            <span style={{marginLeft:'4px',padding:'1px 7px',borderRadius:'10px',background:'var(--amberl)',color:'var(--amber)',fontSize:'10px',fontWeight:600}}>
+                              {pendientes.length} pendiente{pendientes.length > 1 ? 's' : ''}
+                            </span>
+                          )}
+                        </div>
+                        {puedeCrear && destinatariosInfo.length > 0 && (
+                          <button
+                            onClick={() => { setDetalleLectura(abierto ? null : c.id); setTabDetalle('leido') }}
+                            style={{fontSize:'11px',color:'var(--v)',background:'var(--vl)',border:'none',borderRadius:'6px',padding:'3px 10px',cursor:'pointer',fontWeight:600}}
+                          >
+                            {abierto ? 'Cerrar' : 'Ver detalle'}
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Panel de detalle expandible */}
+                      {abierto && (
+                        <div style={{marginTop:'10px',background:'var(--bg)',borderRadius:'10px',padding:'12px'}}>
+                          {/* Tabs */}
+                          <div style={{display:'flex',gap:'6px',marginBottom:'10px'}}>
+                            {(['leido','pendiente'] as const).map(t => (
+                              <button key={t} onClick={() => setTabDetalle(t)}
+                                style={{padding:'4px 12px',borderRadius:'20px',border:'1.5px solid',fontSize:'11px',fontWeight:700,cursor:'pointer',
+                                  background: tabDetalle===t ? 'var(--v)' : 'transparent',
+                                  color:      tabDetalle===t ? '#fff'    : 'var(--text2)',
+                                  borderColor:tabDetalle===t ? 'var(--v)' : 'var(--border)',
+                                }}>
+                                {t === 'leido' ? `✓ Leído (${leyeron.length})` : `⏳ Pendiente (${pendientes.length})`}
+                              </button>
+                            ))}
+                          </div>
+                          {/* Lista */}
+                          <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                            {(tabDetalle === 'leido' ? leyeron : pendientes).map(d => (
+                              <div key={d.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 10px',background:'var(--white)',borderRadius:'8px',border:'1px solid var(--border)'}}>
+                                <div style={{width:'30px',height:'30px',borderRadius:'50%',background:d.leyo?d.color:'var(--border)',color:'#fff',fontSize:'11px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0,opacity:d.leyo?1:0.55}}>
+                                  {d.initials}
+                                </div>
+                                <div style={{flex:1,minWidth:0}}>
+                                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text)'}}>{d.nombre}</div>
+                                  <div style={{fontSize:'11px',color:'var(--text3)',textTransform:'capitalize'}}>{d.rol}</div>
+                                </div>
+                                <div style={{textAlign:'right',flexShrink:0}}>
+                                  {d.leyo ? (
+                                    <>
+                                      <span style={{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 8px',borderRadius:'10px',background:'var(--greenl)',color:'var(--green)',fontSize:'10px',fontWeight:600}}>
+                                        ✓ Leído
+                                      </span>
+                                      <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>{formatTs(d.ts)}</div>
+                                    </>
+                                  ) : (
+                                    <span style={{display:'inline-flex',alignItems:'center',gap:'3px',padding:'2px 8px',borderRadius:'10px',background:'var(--bg)',color:'var(--text3)',fontSize:'10px',fontWeight:600,border:'1px solid var(--border)'}}>
+                                      ⏳ Pendiente
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            ))}
+                            {(tabDetalle === 'leido' ? leyeron : pendientes).length === 0 && (
+                              <div style={{textAlign:'center',padding:'16px',color:'var(--text3)',fontSize:'13px'}}>
+                                {tabDetalle === 'leido' ? 'Nadie leyó este comunicado aún' : 'Todos leyeron este comunicado ✓'}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })()}
               </div>
             )
           })}
