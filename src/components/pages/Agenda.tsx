@@ -36,16 +36,21 @@ export default function Agenda() {
   const [anioActual, setAnioActual] = useState(new Date().getFullYear())
   const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(null)
   const [usuariosInstituto, setUsuariosInstituto] = useState<any[]>([])
+  const [cargandoUsuarios, setCargandoUsuarios] = useState(false)
 
   useEffect(() => { cargarEventos() }, [])
 
   useEffect(() => {
-    if (!esCoord) return
+    if (!usuario?.id || !esCoord) return
+    setCargandoUsuarios(true)
     fetch('/api/usuarios', { headers: apiHeaders() })
       .then(r => r.json())
-      .then(json => setUsuariosInstituto((json.data || []).filter((u: any) => u.activo)))
-      .catch(() => setUsuariosInstituto([]))
-  }, [esCoord])
+      .then(json => {
+        setUsuariosInstituto((json.data || []).filter((u: any) => u.activo))
+        setCargandoUsuarios(false)
+      })
+      .catch(() => { setUsuariosInstituto([]); setCargandoUsuarios(false) })
+  }, [usuario?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const cargarEventos = async () => {
     // Usa API route (service_role + instituto_id) — no query directa desde el browser
@@ -438,8 +443,10 @@ export default function Agenda() {
                   <span style={{marginLeft:'8px',fontWeight:700,color:'var(--v)'}}>({form.destinatarios_ids.length} seleccionado{form.destinatarios_ids.length !== 1 ? 's' : ''})</span>
                 )}
               </div>
-              {usuariosInstituto.length === 0 ? (
+              {cargandoUsuarios ? (
                 <div style={{fontSize:'13px',color:'var(--text3)'}}>Cargando usuarios...</div>
+              ) : usuariosInstituto.length === 0 ? (
+                <div style={{fontSize:'13px',color:'var(--text3)'}}>Sin usuarios disponibles</div>
               ) : (
                 <div style={{display:'flex',flexDirection:'column',gap:'4px',maxHeight:'200px',overflowY:'auto'}}>
                   {usuariosInstituto
