@@ -160,11 +160,30 @@ export default function Dashboard() {
       const ahora = new Date()
       const hoyStr = `${ahora.getFullYear()}-${String(ahora.getMonth()+1).padStart(2,'0')}-${String(ahora.getDate()).padStart(2,'0')}`
       const { data } = await sb.from('agenda_eventos')
-        .select('*').gte('fecha', hoyStr).order('fecha').order('hora_inicio').limit(5)
-      setProximosEventos(data || [])
+        .select('*').gte('fecha', hoyStr).order('fecha').order('hora_inicio').limit(20)
+      const todos = data || []
+      // Filtrar según visibilidad del usuario — mismo criterio que Agenda.tsx
+      const rol = usuario?.rol
+      const uid = usuario?.id
+      const esCoord = rol === 'director' || rol === 'coordinadora' || rol === 'secretaria'
+      const visibles = todos.filter((ev: any) => {
+        if (esCoord) return true
+        if (ev.convocados === 'todos') return true
+        if (ev.convocados === 'individual') {
+          const lista: string[] = Array.isArray(ev.destinatarios_ids)
+            ? ev.destinatarios_ids.map((x: any) => String(x))
+            : []
+          return lista.length > 0 && lista.includes(String(uid || ''))
+        }
+        if (ev.convocados === 'docentes' && rol === 'profesora') return true
+        if (ev.convocados === 'coordinacion' && rol === 'coordinadora') return true
+        if (ev.convocados === 'secretaria' && rol === 'secretaria') return true
+        return false
+      })
+      setProximosEventos(visibles.slice(0, 5))
     }
     cargarEventos()
-  }, [])
+  }, [usuario?.id, usuario?.rol])
 
   useEffect(() => {
     const cargarCumpleanos = async () => {
