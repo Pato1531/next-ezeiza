@@ -1,6 +1,5 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 import { useProfesoras, apiHeaders } from '@/lib/hooks'
 
@@ -38,9 +37,12 @@ export default function Agenda() {
   useEffect(() => { cargarEventos() }, [])
 
   const cargarEventos = async () => {
-    const sb = createClient()
-    const { data } = await sb.from('agenda_eventos').select('*').order('fecha').order('hora_inicio')
-    setEventos(data || [])
+    // Usa API route (service_role + instituto_id) — no query directa desde el browser
+    const res = await fetch('/api/agenda-eventos', { headers: apiHeaders() })
+    if (!res.ok) { console.error('[Agenda] cargarEventos HTTP', res.status); return }
+    const json = await res.json()
+    if (json.error) { console.error('[Agenda] cargarEventos', json.error); return }
+    setEventos(json.data || [])
   }
 
   // ── Filtrar eventos según visibilidad del usuario actual ──────────────────
@@ -84,9 +86,12 @@ export default function Agenda() {
 
   const eliminar = async (id: string) => {
     if (!confirm('¿Eliminar este evento?')) return
-    const sb = createClient()
-    await sb.from('agenda_eventos').delete().eq('id', id)
-    setEventos(prev => prev.filter(e => e.id !== id))
+    const res = await fetch('/api/agenda-eventos', {
+      method: 'DELETE',
+      headers: apiHeaders(),
+      body: JSON.stringify({ id }),
+    })
+    if (res.ok) setEventos(prev => prev.filter(e => e.id !== id))
   }
 
   const hoyStr = hoy()
