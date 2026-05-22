@@ -77,16 +77,10 @@ export default function Agenda() {
     if (esCoord) return true  // director/coordinadora/secretaria ven todo
     if (ev.convocados === 'todos') return true
     if (ev.convocados === 'individual') {
-      const ids = ev.destinatarios_ids
-      const uid = usuario?.id
-      // destinatarios_ids puede ser jsonb (array de strings) o uuid[]
-      // Normalizar comparando como strings
-      const lista: string[] = Array.isArray(ids) ? ids.map((x: any) => String(x)) : []
-      const resultado = lista.length > 0 && lista.includes(String(uid || ''))
-      if (ev.convocados === 'individual') {
-        console.log('[esVisible]', ev.titulo, '| uid:', uid, '| lista:', lista, '| visible:', resultado)
-      }
-      return resultado
+      const lista: string[] = Array.isArray(ev.destinatarios_ids)
+        ? ev.destinatarios_ids.map((x: any) => String(x))
+        : []
+      return lista.length > 0 && lista.includes(String(usuario?.id || ''))
     }
     if (ev.convocados === 'docentes' && usuario?.rol === 'profesora') return true
     if (ev.convocados === 'coordinacion' && usuario?.rol === 'coordinadora') return true
