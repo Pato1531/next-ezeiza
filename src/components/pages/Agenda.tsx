@@ -115,6 +115,65 @@ export default function Agenda() {
     return map[ev.convocados] || ev.convocados
   }
 
+
+  // ── Generar y descargar archivo .ICS para Google/Apple/Outlook Calendar ──
+  const exportarICS = (ev: any) => {
+    const pad = (n: number) => String(n).padStart(2, '0')
+
+    // Construir fecha en formato YYYYMMDD
+    const [anio, mes, dia] = ev.fecha.split('-').map(Number)
+
+    let dtStart: string
+    let dtEnd: string
+
+    if (ev.hora_inicio) {
+      const [h, m] = ev.hora_inicio.split(':').map(Number)
+      dtStart = `${anio}${pad(mes)}${pad(dia)}T${pad(h)}${pad(m)}00`
+      if (ev.hora_fin) {
+        const [hf, mf] = ev.hora_fin.split(':').map(Number)
+        dtEnd = `${anio}${pad(mes)}${pad(dia)}T${pad(hf)}${pad(mf)}00`
+      } else {
+        // Por defecto 1 hora de duración
+        const finH = h + 1
+        dtEnd = `${anio}${pad(mes)}${pad(dia)}T${pad(finH)}${pad(m)}00`
+      }
+    } else {
+      // Evento de día completo
+      dtStart = `${anio}${pad(mes)}${pad(dia)}`
+      const diaSig = new Date(anio, mes - 1, dia + 1)
+      dtEnd = `${diaSig.getFullYear()}${pad(diaSig.getMonth()+1)}${pad(diaSig.getDate())}`
+    }
+
+    const uid = `${ev.id || Date.now()}@edugest`
+    const ahora = new Date().toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z'
+    const descripcion = (ev.descripcion || '').replace(/\n/g, '\\n')
+
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//EduGest//Agenda//ES',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      `UID:${uid}`,
+      `DTSTAMP:${ahora}`,
+      ev.hora_inicio ? `DTSTART:${dtStart}` : `DTSTART;VALUE=DATE:${dtStart}`,
+      ev.hora_inicio ? `DTEND:${dtEnd}`   : `DTEND;VALUE=DATE:${dtEnd}`,
+      `SUMMARY:${ev.titulo}`,
+      descripcion ? `DESCRIPTION:${descripcion}` : '',
+      'END:VEVENT',
+      'END:VCALENDAR',
+    ].filter(Boolean).join('\r\n')
+
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href     = url
+    a.download = `${ev.titulo.replace(/[^a-z0-9]/gi, '_')}.ics`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   const IS = { width:'100%', padding:'10px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'14px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
 
   return (
@@ -172,9 +231,18 @@ export default function Agenda() {
                       </div>
                       {ev.descripcion && <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'4px',lineHeight:1.4}}>{ev.descripcion}</div>}
                     </div>
-                    {esCoord && (
-                      <button onClick={() => eliminar(ev.id)} style={{flexShrink:0,background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'16px',padding:'2px 4px',lineHeight:1}} title="Eliminar">×</button>
-                    )}
+                    <div style={{display:'flex',flexDirection:'column',gap:'4px',flexShrink:0,alignItems:'flex-end'}}>
+                      <button
+                        onClick={() => exportarICS(ev)}
+                        title="Agregar a Google Calendar / Apple Calendar"
+                        style={{background:'var(--vl)',border:'1.5px solid var(--v)',borderRadius:'8px',cursor:'pointer',padding:'4px 8px',fontSize:'11px',fontWeight:700,color:'var(--v)',whiteSpace:'nowrap'}}
+                      >
+                        📅 +Cal
+                      </button>
+                      {esCoord && (
+                        <button onClick={() => eliminar(ev.id)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'16px',padding:'2px 4px',lineHeight:1}} title="Eliminar">×</button>
+                      )}
+                    </div>
                   </div>
                 )
               })}
@@ -310,3 +378,4 @@ export default function Agenda() {
     </div>
   )
 }
+
