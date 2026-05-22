@@ -177,12 +177,12 @@ export default function Comunicados() {
 
   // Cargar usuarios del instituto para selector individual
   useEffect(() => {
-    if (!puedeCrear) return
+    if (!usuario?.id || !puedeCrear) return
     fetch('/api/usuarios', { headers: apiHeaders() })
       .then(r => r.json())
       .then(json => setUsuariosInstituto((json.data || []).filter((u: any) => u.activo)))
       .catch(() => setUsuariosInstituto([]))
-  }, [puedeCrear])
+  }, [usuario?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Registrar lectura automáticamente para comunicados individuales
   useEffect(() => {
