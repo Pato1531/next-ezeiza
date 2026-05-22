@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
       autor_nombre: creado_por || 'Sistema',
       activo:       true,
       instituto_id: institutoId,
+      leido_por:    [],
     }
 
     if (autor_id) insert.autor_id = autor_id
@@ -75,8 +76,9 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// PATCH — Archivar comunicado (activo: false)
-// Usado por el hook eliminar() en useComunicados
+// PATCH — Dos operaciones según payload:
+//   1. Archivar:        { id, activo: false }
+//   2. Marcar leído:    { id, accion: 'marcar_leido', usuario_id, usuario_nombre }
 export async function PATCH(req: NextRequest) {
   try {
     const institutoId = getInstitutoId(req)
@@ -85,11 +87,56 @@ export async function PATCH(req: NextRequest) {
     }
 
     const body = await req.json()
-    const { id, activo } = body
+    const { id, accion } = body
 
     if (!id) return NextResponse.json({ error: 'id requerido' }, { status: 400 })
 
-    // Doble filtro: id + instituto_id — nunca puede archivar comunicados de otra sede
+    // ── Operación: marcar como leído ─────────────────────────────────────────
+    if (accion === 'marcar_leido') {
+      const { usuario_id, usuario_nombre } = body
+      if (!usuario_id) return NextResponse.json({ error: 'usuario_id requerido' }, { status: 400 })
+
+      // Leer leido_por actual para no duplicar
+      const { data: actual, error: errLeer } = await sb()
+        .from('comunicados')
+        .select('leido_por, destinatarios_ids, instituto_id')
+        .eq('id', id)
+        .eq('instituto_id', institutoId)
+        .single()
+
+      if (errLeer || !actual) {
+        return NextResponse.json({ error: 'Comunicado no encontrado' }, { status: 404 })
+      }
+
+      // Verificar que el usuario es destinatario
+      const esDestinatario = Array.isArray(actual.destinatarios_ids) &&
+        actual.destinatarios_ids.includes(usuario_id)
+      if (!esDestinatario) {
+        return NextResponse.json({ error: 'No autorizado' }, { status: 403 })
+      }
+
+      // Evitar duplicar — si ya está en leido_por, responder ok sin escribir
+      const yaLeyo = (actual.leido_por || []).some((e: any) => e.id === usuario_id)
+      if (yaLeyo) return NextResponse.json({ ok: true, yaLeido: true })
+
+      // Agregar entrada al array con jsonb_insert / concatenación
+      const nuevaEntrada = { id: usuario_id, nombre: usuario_nombre || 'Usuario', ts: new Date().toISOString() }
+      const nuevoArray = [...(actual.leido_por || []), nuevaEntrada]
+
+      const { data, error } = await sb()
+        .from('comunicados')
+        .update({ leido_por: nuevoArray })
+        .eq('id', id)
+        .eq('instituto_id', institutoId)
+        .select('leido_por')
+        .single()
+
+      if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+      return NextResponse.json({ ok: true, leido_por: data.leido_por })
+    }
+
+    // ── Operación: archivar (activo: false) ──────────────────────────────────
+    const { activo } = body
     const { data, error } = await sb()
       .from('comunicados')
       .update({ activo: activo ?? false })
