@@ -29,13 +29,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
-    const { nombre, email, password, rol } = await req.json()
+    const { nombre, email, rol } = await req.json()
 
-    if (!nombre || !email || !password || !rol) {
+    if (!nombre || !email || !rol) {
       return NextResponse.json({ error: 'Faltan campos requeridos' }, { status: 400 })
-    }
-    if (password.length < 8) {
-      return NextResponse.json({ error: 'La contraseña debe tener al menos 8 caracteres' }, { status: 400 })
     }
 
     const rolesValidos = ['profesora', 'secretaria', 'coordinadora']
@@ -45,15 +42,17 @@ export async function POST(req: NextRequest) {
 
     const supabase = sb()
 
-    // 1. Crear usuario en Supabase Auth
-    const { data: authData, error: authUserError } = await supabase.auth.admin.createUser({
+    // 1. Invitar usuario por email real — Supabase envía el link de activación
+    // El usuario elige su propia contraseña al activar la cuenta
+    const { data: authData, error: authUserError } = await supabase.auth.admin.inviteUserByEmail(
       email,
-      password,
-      email_confirm: true, // confirmar email automáticamente
-    })
+      {
+        data: { nombre, rol }, // metadata accesible en el trigger de onboarding
+      }
+    )
 
     if (authUserError) {
-      console.error('[admin-crear-usuario] auth error:', authUserError)
+      console.error('[admin-crear-usuario] invite error:', authUserError)
       if (authUserError.message.includes('already registered')) {
         return NextResponse.json({ error: 'Ya existe un usuario con ese email' }, { status: 400 })
       }
@@ -106,7 +105,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ ok: true, userId })
+    return NextResponse.json({ ok: true, userId, invitado: true })
   } catch (e: any) {
     console.error('[admin-crear-usuario] catch:', e)
     return NextResponse.json({ error: e.message }, { status: 500 })
