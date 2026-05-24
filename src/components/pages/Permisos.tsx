@@ -43,6 +43,21 @@ export default function Permisos() {
   const [usuarios, setUsuarios] = useState<any[]>([])
   const [loadingUsuarios, setLoadingUsuarios] = useState(true)
 
+  // Helper: headers con token garantizado via getSession()
+  const authHeaders = async (): Promise<Record<string,string>> => {
+    const institutoId = usuario?.instituto_id || ''
+    const headers: Record<string,string> = {
+      'Content-Type': 'application/json',
+      'x-instituto-id': institutoId,
+    }
+    try {
+      const { createClient } = await import('@/lib/supabase')
+      const { data: { session } } = await createClient().auth.getSession()
+      if (session?.access_token) headers['Authorization'] = `Bearer ${session.access_token}`
+    } catch {}
+    return headers
+  }
+
   // Usuario seleccionado para editar
   const [selUsuarioId, setSelUsuarioId] = useState<string | null>(null)
   // Permisos en edición para el usuario seleccionado
@@ -70,13 +85,8 @@ export default function Permisos() {
   const cargarUsuarios = async () => {
     setLoadingUsuarios(true)
     try {
-      // Usar el instituto_id directamente del usuario en lugar de apiHeaders()
-      // para evitar el lag entre React state y la variable global _institutoId
-      const institutoId = usuario?.instituto_id
-      if (!institutoId) { setLoadingUsuarios(false); return }
-      const res = await fetch('/api/usuarios', {
-        headers: { 'Content-Type': 'application/json', 'x-instituto-id': institutoId }
-      })
+      if (!usuario?.instituto_id) { setLoadingUsuarios(false); return }
+      const res = await fetch('/api/usuarios', { headers: await authHeaders() })
       const json = await res.json()
       if (json.error) {
         console.error('[Permisos] cargarUsuarios error:', json.error)
@@ -125,7 +135,7 @@ export default function Permisos() {
     try {
       const res = await fetch('/api/usuarios', {
         method: 'POST',
-        headers: apiHeaders(),
+        headers: await authHeaders(),
         body: JSON.stringify({
           accion: 'actualizar_permisos',
           user_id: selUsuarioId,
@@ -157,7 +167,7 @@ export default function Permisos() {
     try {
       const res = await fetch('/api/usuarios', {
         method: 'POST',
-        headers: apiHeaders(),
+        headers: await authHeaders(),
         body: JSON.stringify({ accion: 'actualizar_permisos', user_id: selUsuarioId, permisos: null }),
       })
       const json = await res.json()
@@ -182,7 +192,7 @@ export default function Permisos() {
     try {
       const res = await fetch('/api/admin-crear-usuario', {
         method: 'POST',
-        headers: apiHeaders(),
+        headers: await authHeaders(),
         body: JSON.stringify({
           nombre: formNuevo.nombre.trim(),
           email:  formNuevo.email.trim().toLowerCase(),
@@ -208,7 +218,7 @@ export default function Permisos() {
     try {
       await fetch('/api/usuarios', {
         method: 'POST',
-        headers: apiHeaders(),
+        headers: await authHeaders(),
         body: JSON.stringify({ accion, user_id: u.id }),
       })
     } catch (e) { console.error('[toggleActivo]', e) }
@@ -222,7 +232,7 @@ export default function Permisos() {
     try {
       const res = await fetch('/api/usuarios', {
         method: 'POST',
-        headers: apiHeaders(),
+        headers: await authHeaders(),
         body: JSON.stringify({ accion: 'cambiar_password', user_id: modalPwd.id, nueva_password: nuevaPwd }),
       })
       const json = await res.json()
