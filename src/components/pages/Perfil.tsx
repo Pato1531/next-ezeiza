@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { createClient, PERMISOS } from '@/lib/supabase'
-import { apiHeaders } from '@/lib/hooks'
 
 
 const LABEL_MODULOS: Record<string, string> = {
@@ -204,11 +203,6 @@ export default function Perfil() {
         <FirmaDigital institutoId={usuario.instituto_id} />
       )}
 
-      {/* ── Gestión de usuarios (solo director) ── */}
-      {usuario.rol === 'director' && usuario.instituto_id && (
-        <GestionUsuarios institutoId={usuario.instituto_id} />
-      )}
-
       {/* ── Cerrar sesión ── */}
       <div style={s.section}>
         <button
@@ -225,180 +219,6 @@ export default function Perfil() {
 }
 
 
-// ── Componente GestionUsuarios ───────────────────────────────────────────────
-function GestionUsuarios({ institutoId }: { institutoId: string }) {
-  const ROLES = [
-    { id: 'profesora',    label: 'Docente' },
-    { id: 'coordinadora', label: 'Coordinadora' },
-    { id: 'secretaria',   label: 'Secretaria' },
-  ]
-
-  const [usuarios, setUsuarios] = useState<any[]>([])
-  const [cargando, setCargando] = useState(true)
-  const [form, setForm] = useState({ nombre: '', email: '', rol: 'profesora' })
-  const [guardando, setGuardando] = useState(false)
-  const [msg, setMsg] = useState<{tipo:'ok'|'error', texto:string}|null>(null)
-  const [mostrarForm, setMostrarForm] = useState(false)
-
-  const cargarUsuarios = async () => {
-    setCargando(true)
-    const res = await fetch('/api/usuarios', { headers: apiHeaders() })
-    const json = await res.json()
-    setUsuarios((json.data || []).filter((u: any) => u.activo && u.rol !== 'director'))
-    setCargando(false)
-  }
-
-  useEffect(() => { cargarUsuarios() }, [institutoId])
-
-  const invitar = async () => {
-    if (!form.nombre.trim() || !form.email.trim()) {
-      setMsg({ tipo: 'error', texto: 'Nombre y email son obligatorios' })
-      return
-    }
-    if (!form.email.includes('@') || !form.email.includes('.')) {
-      setMsg({ tipo: 'error', texto: 'Ingresá un email válido (ej: nombre@gmail.com)' })
-      return
-    }
-    setGuardando(true)
-    setMsg(null)
-    const res = await fetch('/api/admin-crear-usuario', {
-      method: 'POST',
-      headers: apiHeaders(),
-      body: JSON.stringify({ nombre: form.nombre.trim(), email: form.email.trim().toLowerCase(), rol: form.rol }),
-    })
-    const json = await res.json()
-    setGuardando(false)
-    if (json.error) {
-      setMsg({ tipo: 'error', texto: json.error })
-      return
-    }
-    setMsg({ tipo: 'ok', texto: `Invitación enviada a ${form.email}. El usuario recibirá un email para activar su cuenta y elegir su contraseña.` })
-    setForm({ nombre: '', email: '', rol: 'profesora' })
-    setMostrarForm(false)
-    cargarUsuarios()
-  }
-
-  const ROL_LABEL: Record<string, string> = {
-    profesora: 'Docente', coordinadora: 'Coordinadora', secretaria: 'Secretaria', director: 'Director'
-  }
-  const ROL_COLOR: Record<string, {bg:string,color:string}> = {
-    profesora:    { bg:'var(--vl)',      color:'var(--v)' },
-    coordinadora: { bg:'var(--amberl)',  color:'var(--amber)' },
-    secretaria:   { bg:'var(--greenl)',  color:'var(--green)' },
-    director:     { bg:'var(--redl)',    color:'var(--red)' },
-  }
-
-  return (
-    <div style={s.section}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}}>
-        <div style={s.sectionTitle}>Equipo del instituto</div>
-        <button
-          onClick={() => { setMostrarForm(f => !f); setMsg(null) }}
-          style={{padding:'7px 14px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}
-        >
-          {mostrarForm ? 'Cancelar' : '+ Invitar usuario'}
-        </button>
-      </div>
-
-      {/* Formulario de invitación */}
-      {mostrarForm && (
-        <div style={{background:'var(--bg)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'16px',marginBottom:'16px'}}>
-          <div style={{fontSize:'13px',fontWeight:600,marginBottom:'12px'}}>Nueva invitación</div>
-
-          <div style={{marginBottom:'10px'}}>
-            <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Nombre completo</div>
-            <input
-              style={{width:'100%',padding:'9px 12px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'14px',background:'var(--white)',color:'var(--text)',boxSizing:'border-box'}}
-              value={form.nombre}
-              onChange={e => setForm(f => ({...f, nombre: e.target.value}))}
-              placeholder="Ej: Sol Pereyra"
-            />
-          </div>
-
-          <div style={{marginBottom:'10px'}}>
-            <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Email real</div>
-            <input
-              type="email"
-              style={{width:'100%',padding:'9px 12px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'14px',background:'var(--white)',color:'var(--text)',boxSizing:'border-box'}}
-              value={form.email}
-              onChange={e => setForm(f => ({...f, email: e.target.value}))}
-              placeholder="sol.pereyra@gmail.com"
-            />
-            <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'4px'}}>El usuario recibirá un email para activar su cuenta y elegir su contraseña.</div>
-          </div>
-
-          <div style={{marginBottom:'14px'}}>
-            <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'6px'}}>Rol</div>
-            <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
-              {ROLES.map(r => (
-                <button key={r.id} onClick={() => setForm(f => ({...f, rol: r.id}))}
-                  style={{padding:'6px 14px',borderRadius:'20px',fontSize:'13px',fontWeight:600,cursor:'pointer',border:'1.5px solid',
-                    borderColor: form.rol === r.id ? 'var(--v)' : 'var(--border)',
-                    background:  form.rol === r.id ? 'var(--v)' : 'transparent',
-                    color:       form.rol === r.id ? '#fff'    : 'var(--text2)',
-                  }}>
-                  {r.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {msg && (
-            <div style={{padding:'10px 14px',borderRadius:'8px',fontSize:'13px',marginBottom:'12px',
-              background: msg.tipo === 'ok' ? 'var(--greenl)' : 'var(--redl)',
-              color:      msg.tipo === 'ok' ? 'var(--green)'  : 'var(--red)',
-            }}>
-              {msg.tipo === 'ok' ? '✓ ' : '⚠ '}{msg.texto}
-            </div>
-          )}
-
-          <button
-            onClick={invitar}
-            disabled={guardando}
-            style={{width:'100%',padding:'11px',background:guardando?'#aaa':'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:guardando?'not-allowed':'pointer'}}
-          >
-            {guardando ? 'Enviando invitación...' : 'Enviar invitación'}
-          </button>
-        </div>
-      )}
-
-      {/* Mensaje si se cerró el form */}
-      {!mostrarForm && msg?.tipo === 'ok' && (
-        <div style={{padding:'10px 14px',borderRadius:'8px',fontSize:'13px',marginBottom:'12px',background:'var(--greenl)',color:'var(--green)'}}>
-          ✓ {msg.texto}
-        </div>
-      )}
-
-      {/* Lista de usuarios activos */}
-      {cargando ? (
-        <div style={{fontSize:'13px',color:'var(--text3)',padding:'12px 0'}}>Cargando equipo...</div>
-      ) : usuarios.length === 0 ? (
-        <div style={{fontSize:'13px',color:'var(--text3)',padding:'12px 0'}}>No hay usuarios en el equipo todavía.</div>
-      ) : (
-        <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
-          {usuarios.map(u => {
-            const rc = ROL_COLOR[u.rol] || ROL_COLOR.profesora
-            const initials = u.initials || (u.nombre?.slice(0,2).toUpperCase() || '?')
-            return (
-              <div key={u.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'10px 12px',background:'var(--white)',border:'1px solid var(--border)',borderRadius:'10px'}}>
-                <div style={{width:'36px',height:'36px',borderRadius:'50%',background:u.color||'var(--v)',color:'#fff',fontSize:'12px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
-                  {initials}
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:'13px',fontWeight:600,color:'var(--text)'}}>{u.nombre}</div>
-                  <div style={{fontSize:'11px',color:'var(--text3)',overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{u.email}</div>
-                </div>
-                <span style={{padding:'3px 10px',borderRadius:'20px',fontSize:'10px',fontWeight:600,background:rc.bg,color:rc.color,flexShrink:0}}>
-                  {ROL_LABEL[u.rol] || u.rol}
-                </span>
-              </div>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
 
 // ── Componente FirmaDigital ──────────────────────────────────────────────────
 function FirmaDigital({ institutoId }: { institutoId: string }) {
