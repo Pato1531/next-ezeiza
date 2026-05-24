@@ -53,7 +53,7 @@ export default function Permisos() {
   // Vista secundaria: gestión de usuarios (crear / activar / contraseña)
   const [vistaGestion, setVistaGestion] = useState(false)
   // Formulario nuevo usuario
-  const [formNuevo, setFormNuevo] = useState({ nombre:'', email:'', password:'', rol:'coordinadora', color:'#652f8d' })
+  const [formNuevo, setFormNuevo] = useState({ nombre:'', email:'', rol:'coordinadora', color:'#652f8d' })
   const [creando, setCreando]   = useState(false)
   // Modal cambio contraseña
   const [modalPwd, setModalPwd] = useState<{id:string,nombre:string}|null>(null)
@@ -174,31 +174,33 @@ export default function Permisos() {
     setTimeout(() => setMsg(null), 4000)
   }
 
-  // Crear nuevo usuario
+  // Invitar nuevo usuario — usa email real, Supabase envía link de activación
   const crearUsuario = async () => {
-    if (!formNuevo.nombre || !formNuevo.email || !formNuevo.password) return alert('Completá todos los campos')
-    if (formNuevo.password.length < 6) return alert('La contraseña debe tener al menos 6 caracteres')
+    if (!formNuevo.nombre || !formNuevo.email) return alert('Completá nombre y email')
+    if (!formNuevo.email.includes('@') || !formNuevo.email.includes('.')) return alert('Ingresá un email válido')
     setCreando(true)
     try {
-      const res = await fetch('/api/usuarios', {
+      const res = await fetch('/api/admin-crear-usuario', {
         method: 'POST',
         headers: apiHeaders(),
-        body: JSON.stringify({ accion: 'crear', ...formNuevo }),
+        body: JSON.stringify({
+          nombre: formNuevo.nombre.trim(),
+          email:  formNuevo.email.trim().toLowerCase(),
+          rol:    formNuevo.rol,
+        }),
       })
       const json = await res.json()
       if (json.ok) {
-        setFormNuevo({ nombre:'', email:'', password:'', rol:'coordinadora', color:'#652f8d' })
+        setFormNuevo({ nombre:'', email:'', rol:'coordinadora', color:'#652f8d' })
+        setMsg({ tipo:'ok', texto:`✓ Invitación enviada a ${formNuevo.email}. El usuario recibirá un email para activar su cuenta y elegir su contraseña.` })
         await cargarUsuarios()
-        logActivity('Creó usuario', 'Permisos', formNuevo.nombre)
-        // Navegar a Colaboradores para completar la ficha del nuevo usuario
-        setTimeout(() => {
-          window.dispatchEvent(new CustomEvent('navigate-to', { detail: { page: 'profesoras' } }))
-        }, 400)
+        logActivity('Invitó usuario', 'Permisos', formNuevo.nombre)
       } else {
-        alert(json.error || 'Error al crear usuario')
+        alert(json.error || 'Error al enviar invitación')
       }
     } catch { alert('Error de conexión') }
     setCreando(false)
+    setTimeout(() => setMsg(null), 6000)
   }
 
   const toggleActivo = async (u: any) => {
@@ -409,33 +411,38 @@ export default function Permisos() {
         <div>
           {/* Crear nuevo usuario */}
           <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'16px'}}>
-            <div style={{fontSize:'14px',fontWeight:700,marginBottom:'14px'}}>Crear nuevo usuario</div>
+            <div style={{fontSize:'14px',fontWeight:700,marginBottom:'14px'}}>Invitar nuevo usuario</div>
             <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
               <div>
                 <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Nombre completo</div>
                 <input style={IS} value={formNuevo.nombre} onChange={e=>setFormNuevo(f=>({...f,nombre:e.target.value}))} placeholder="Ana García" />
               </div>
               <div>
-                <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Email</div>
-                <input style={IS} type="email" value={formNuevo.email} onChange={e=>setFormNuevo(f=>({...f,email:e.target.value}))} placeholder="ana@instituto.com" />
+                <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Email real</div>
+                <input style={IS} type="email" value={formNuevo.email} onChange={e=>setFormNuevo(f=>({...f,email:e.target.value}))} placeholder="ana@gmail.com" />
               </div>
-              <div>
-                <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Contraseña inicial</div>
-                <input style={IS} type="password" value={formNuevo.password} onChange={e=>setFormNuevo(f=>({...f,password:e.target.value}))} placeholder="Mínimo 6 caracteres" />
+              <div style={{gridColumn:'1 / -1'}}>
+                <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'6px'}}>Rol</div>
+                <div style={{display:'flex',gap:'6px',flexWrap:'wrap'}}>
+                  {['coordinadora','secretaria','profesora'].map(r => (
+                    <button key={r} onClick={()=>setFormNuevo(f=>({...f,rol:r}))}
+                      style={{padding:'6px 14px',borderRadius:'20px',fontSize:'13px',fontWeight:600,cursor:'pointer',border:'1.5px solid',
+                        borderColor: formNuevo.rol===r ? 'var(--v)' : 'var(--border)',
+                        background:  formNuevo.rol===r ? 'var(--v)' : 'transparent',
+                        color:       formNuevo.rol===r ? '#fff'    : 'var(--text2)',
+                      }}>
+                      {{coordinadora:'Coordinadora',secretaria:'Secretaria',profesora:'Docente'}[r]}
+                    </button>
+                  ))}
+                </div>
               </div>
-              <div>
-                <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Rol</div>
-                <select style={IS} value={formNuevo.rol} onChange={e=>setFormNuevo(f=>({...f,rol:e.target.value}))}>
-                  <option value="coordinadora">Coordinadora</option>
-                  <option value="secretaria">Secretaria</option>
-                  <option value="profesora">Profesora</option>
-                  <option value="director">Director</option>
-                </select>
-              </div>
+            </div>
+            <div style={{fontSize:'11px',color:'var(--text3)',marginBottom:'10px'}}>
+              📧 El usuario recibirá un email para activar su cuenta y elegir su propia contraseña.
             </div>
             <button onClick={crearUsuario} disabled={creando}
               style={{width:'100%',padding:'11px',background:creando?'#aaa':'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:creando?'not-allowed':'pointer'}}>
-              {creando ? 'Creando...' : '+ Crear usuario'}
+              {creando ? 'Enviando invitación...' : '✉ Invitar usuario'}
             </button>
           </div>
 
@@ -479,7 +486,7 @@ export default function Permisos() {
                       <div style={{display:'flex',gap:'6px',flexShrink:0}}>
                         <button onClick={() => { setModalPwd({id:u.id,nombre:u.nombre}); setNuevaPwd('') }}
                           style={{padding:'6px 10px',background:'var(--bg)',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'11px',fontWeight:600,cursor:'pointer',color:'var(--text2)'}}>
-                          Contraseña
+                          Cambiar contraseña
                         </button>
                         <button onClick={() => toggleActivo(u)}
                           style={{padding:'6px 10px',background:u.activo?'var(--redl)':'var(--greenl)',border:`1px solid ${u.activo?'#f5c5c5':'#a8d8b4'}`,borderRadius:'8px',fontSize:'11px',fontWeight:600,cursor:'pointer',color:u.activo?'var(--red)':'var(--green)'}}>
