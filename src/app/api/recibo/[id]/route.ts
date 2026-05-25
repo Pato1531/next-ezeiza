@@ -14,6 +14,9 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const sb = getSupabase()
 
     // ── Un solo query: pago + alumno + instituto en un JOIN ──────────────────
