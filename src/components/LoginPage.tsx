@@ -98,7 +98,7 @@ export default function LoginPage() {
       <div style={s.page}>
         <div style={s.card}>
           <div style={s.logoWrap}>
-            <div style={s.logoIcon}>{iniciales}</div>
+            <img src="/edugest-icon.png" alt="EduGest" style={s.logoIcon} />
           </div>
           <h1 style={s.title}>Recuperar contraseña</h1>
 
@@ -161,7 +161,7 @@ export default function LoginPage() {
     <div style={s.page}>
       <div style={s.card}>
         <div style={s.logoWrap}>
-          <div style={s.logoIcon}>{iniciales}</div>
+          <img src="/edugest-icon.png" alt="EduGest" style={s.logoIcon} />
         </div>
         <h1 style={s.title}>Iniciar sesión</h1>
         <p style={s.subtitle}>{nombre}</p>
@@ -236,17 +236,12 @@ const s: Record<string, React.CSSProperties> = {
     marginBottom: '20px',
   },
   logoIcon: {
-    width: '56px',
-    height: '56px',
-    background: 'var(--v)',
-    borderRadius: '14px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    color: '#fff',
-    fontSize: '18px',
-    fontWeight: 700,
-    fontFamily: 'Georgia, serif',
+    width: '72px',
+    height: '72px',
+    borderRadius: '18px',
+    objectFit: 'cover' as const,
+    display: 'block',
+    boxShadow: '0 4px 16px rgba(101,47,141,.25)',
   },
   title: {
     fontSize: '22px',
