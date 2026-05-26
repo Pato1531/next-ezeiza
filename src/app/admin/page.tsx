@@ -1,7 +1,10 @@
 'use client'
 import { useState } from 'react'
 
-const CLAVE_MAESTRA = process.env.NEXT_PUBLIC_ADMIN_KEY || 'nextezeiza2025admin'
+// ─── SEGURIDAD: La clave ya NO se verifica en el cliente.
+// El botón "Entrar" llama a /api/admin-verificar-clave que compara
+// contra process.env.ADMIN_KEY (server-side, nunca expuesta al browser).
+// Si la clave es correcta, el servidor responde { ok: true } y se avanza.
 
 type Step = 'login' | 'form' | 'success'
 type Estado = 'idle' | 'loading' | 'done' | 'error'
@@ -72,7 +75,7 @@ export default function AdminPage() {
     try {
       const res = await fetch('/api/admin-crear-sede', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': clave },
         body: JSON.stringify({
           instituto_nombre: instNombre.trim(),
           director_nombre: `${dirNombre.trim()} ${dirApellido.trim()}`,
@@ -102,8 +105,26 @@ export default function AdminPage() {
     }
   }
 
-  const reset = () => {
-    setInstNombre(''); setInstSlug(''); setSlugManual(false)
+  const handleLogin = async () => {
+    setErrorClave('')
+    try {
+      const res = await fetch('/api/admin-verificar-clave', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clave }),
+      })
+      const json = await res.json()
+      if (res.ok && json.ok) {
+        setStep('form')
+      } else {
+        setErrorClave('Clave incorrecta')
+      }
+    } catch {
+      setErrorClave('Error de conexión')
+    }
+  }
+
+  const reset = () => {    setInstNombre(''); setInstSlug(''); setSlugManual(false)
     setInstPlan('standard'); setInstCiudad('')
     setDirNombre(''); setDirApellido(''); setDirEmail('')
     setDirPass(genPass()); setError(''); setEstado('idle')
@@ -127,14 +148,16 @@ export default function AdminPage() {
             style={IS}
             value={clave}
             onChange={e => setClave(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter') { if (clave === CLAVE_MAESTRA) setStep('form'); else setErrorClave('Clave incorrecta') } }}
+            onKeyDown={e => {
+              if (e.key === 'Enter') handleLogin()
+            }}
             placeholder="••••••••••••"
             autoFocus
           />
           {errorClave && <div style={{ fontSize: '12px', color: '#c0392b', marginTop: '5px' }}>{errorClave}</div>}
         </div>
         <button
-          onClick={() => { if (clave === CLAVE_MAESTRA) { setStep('form'); setErrorClave('') } else setErrorClave('Clave incorrecta') }}
+          onClick={() => handleLogin()}
           style={{ width: '100%', padding: '12px', background: '#652f8d', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '14px', fontWeight: 700, cursor: 'pointer' }}
         >
           Entrar
