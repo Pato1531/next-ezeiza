@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { useProfesoras, useHorasHistorial, useLiquidaciones } from '@/lib/hooks'
+import { useProfesoras, useHorasHistorial, useLiquidaciones, apiHeaders } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 
@@ -628,7 +628,7 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
   const cerrarLiq = async (id: string) => {
     const res = await fetch('/api/liquidaciones', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, accion: 'cerrar' })
     })
     const json = await res.json()
@@ -639,7 +639,7 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
   const reabrirLiq = async (id: string) => {
     const res = await fetch('/api/liquidaciones', {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify({ id, accion: 'reabrir' })
     })
     const json = await res.json()
