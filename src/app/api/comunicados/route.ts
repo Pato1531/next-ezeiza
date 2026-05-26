@@ -26,10 +26,13 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: 'instituto_id requerido', data: [] }, { status: 400 })
     }
 
+    // ?archivados=true devuelve los inactivos (historial para el director)
+    const archivados = new URL(req.url).searchParams.get('archivados') === 'true'
+
     const { data, error } = await sb()
       .from('comunicados')
       .select('*')
-      .eq('activo', true)
+      .eq('activo', archivados ? false : true)
       .eq('instituto_id', institutoId)
       .order('created_at', { ascending: false })
 
