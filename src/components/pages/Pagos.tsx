@@ -1090,6 +1090,25 @@ export default function Pagos() {
             </div>
           </div>
 
+          {/* ── BARRA DE BÚSQUEDA RÁPIDA ─────────────────────────────────── */}
+          <div style={{ position:'relative', marginBottom:'10px' }}>
+            <input
+              type="text"
+              value={busqueda}
+              onChange={e => setBusqueda(e.target.value)}
+              placeholder="🔍 Buscar alumno por nombre o apellido..."
+              style={{ ...IS, width:'100%', paddingLeft:'16px', fontSize:'14px', borderRadius:'12px', boxSizing:'border-box' }}
+              autoComplete="off"
+            />
+            {busqueda && (
+              <button
+                onClick={() => setBusqueda('')}
+                style={{ position:'absolute', right:'12px', top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', fontSize:'16px', color:'var(--text3)', lineHeight:1, padding:'0 4px' }}>
+                ×
+              </button>
+            )}
+          </div>
+
           {/* Selección alumnos */}
           <div style={{ background:'var(--white)', border:'1.5px solid var(--border)', borderRadius:'16px', overflow:'hidden', marginBottom:'14px' }}>
             <div style={{ padding:'12px 16px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', gap:'12px', background:'var(--bg)' }}>
@@ -1099,16 +1118,10 @@ export default function Pagos() {
                 onChange={toggleTodos}
                 style={{ width:'16px', height:'16px', cursor:'pointer', accentColor:'var(--v)' }}
               />
-              <div style={{ flex:1, fontSize:'13px', fontWeight:600 }}>Seleccionar todos ({filtrados.length})</div>
-              <div style={{ position:'relative' }}>
-                <input
-                  type="text"
-                  value={busqueda}
-                  onChange={e => setBusqueda(e.target.value)}
-                  placeholder="Buscar..."
-                  style={{ ...IS, width:'150px', padding:'6px 10px 6px 30px', fontSize:'12px' }}
-                />
-                <svg style={{ position:'absolute', left:'9px', top:'50%', transform:'translateY(-50%)', width:'13px', height:'13px' }} viewBox="0 0 20 20" fill="none" stroke="var(--text3)" strokeWidth="2"><circle cx="9" cy="9" r="6"/><path d="M15 15l3 3"/></svg>
+              <div style={{ flex:1, fontSize:'13px', fontWeight:600 }}>
+                {busqueda
+                  ? `${filtrados.length} resultado${filtrados.length !== 1 ? 's' : ''} para "${busqueda}"`
+                  : `Seleccionar todos (${filtrados.length})`}
               </div>
             </div>
             <div style={{ maxHeight:'360px', overflowY:'auto' }}>
