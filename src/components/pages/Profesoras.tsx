@@ -352,7 +352,7 @@ export default function Profesoras() {
           ))}
         </Card>}
 
-        {tab === 'liquidacion' && <LiquidacionTab prof={sel} licencias={licencias} />}
+        {tab === 'liquidacion' && <LiquidacionTab prof={sel} licencias={licencias} puedeEditar={puedeEditar} />}
 
         {modalEditLic && licEditando && <ModalSheet title="Editar licencia" onClose={() => setModalEditLic(false)}>
           <Field2 label="Tipo">
@@ -445,7 +445,7 @@ export default function Profesoras() {
   return null
 }
 
-function LiquidacionTab({ prof, licencias }: any) {
+function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
   const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
   const mesActual = MESES[new Date().getMonth()]
   const anioActual = new Date().getFullYear()
