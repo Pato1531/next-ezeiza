@@ -625,6 +625,28 @@ function LiquidacionTab({ prof, licencias }: any) {
     setConfirmDelLiq(null)
   }
 
+  const cerrarLiq = async (id: string) => {
+    const res = await fetch('/api/liquidaciones', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, accion: 'cerrar' })
+    })
+    const json = await res.json()
+    if (!json.error) await recargarLiqs()
+    else alert(json.error)
+  }
+
+  const reabrirLiq = async (id: string) => {
+    const res = await fetch('/api/liquidaciones', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, accion: 'reabrir' })
+    })
+    const json = await res.json()
+    if (!json.error) await recargarLiqs()
+    else alert(json.error)
+  }
+
   // ── Generar PDF ───────────────────────────────────────────────────────
   const descargarPDF = (liqGuardadaData?: any) => {
     // Si se pasa una liquidación guardada, usar sus datos; sino usar el estado actual
@@ -929,9 +951,10 @@ function LiquidacionTab({ prof, licencias }: any) {
             const liqAnio = liquidaciones.filter((l:any) => l.anio === anioActual)
             const totalAnio = liqAnio.reduce((s:number, l:any) => s + (l.total || 0), 0)
             const pagadas = liquidaciones.filter((l:any) => l.estado === 'pagada').length
-            const pendientes = liquidaciones.filter((l:any) => l.estado !== 'pagada').length
+            const cerradas = liquidaciones.filter((l:any) => l.estado === 'cerrada').length
+            const pendientes = liquidaciones.filter((l:any) => l.estado !== 'pagada' && l.estado !== 'cerrada').length
             return (
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',marginBottom:'14px'}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:'8px',marginBottom:'14px'}}>
                 <div style={{background:'var(--vl)',border:'1.5px solid #d4a8e8',borderRadius:'12px',padding:'10px',textAlign:'center'}}>
                   <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${totalAnio.toLocaleString('es-AR')}</div>
                   <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>Total {anioActual}</div>
@@ -939,6 +962,10 @@ function LiquidacionTab({ prof, licencias }: any) {
                 <div style={{background:'var(--greenl)',border:'1.5px solid #a3e0bc',borderRadius:'12px',padding:'10px',textAlign:'center'}}>
                   <div style={{fontSize:'15px',fontWeight:700,color:'var(--green)'}}>{pagadas}</div>
                   <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>pagadas</div>
+                </div>
+                <div style={{background:'#e8e4f5',border:'1.5px solid #c4b8e8',borderRadius:'12px',padding:'10px',textAlign:'center'}}>
+                  <div style={{fontSize:'15px',fontWeight:700,color:'#5a4d8a'}}>{cerradas}</div>
+                  <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>cerradas</div>
                 </div>
                 <div style={{background: pendientes > 0 ? 'var(--amberl)' : 'var(--bg)',border:`1.5px solid ${pendientes > 0 ? '#e8d080' : 'var(--border)'}`,borderRadius:'12px',padding:'10px',textAlign:'center'}}>
                   <div style={{fontSize:'15px',fontWeight:700,color: pendientes > 0 ? 'var(--amber)' : 'var(--text3)'}}>{pendientes}</div>
@@ -948,38 +975,83 @@ function LiquidacionTab({ prof, licencias }: any) {
             )
           })()}
 
-          {liquidaciones.map((l:any) => (
-            <div key={l.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
-              <div>
-                <div style={{fontSize:'13.5px',fontWeight:600}}>{l.mes} {l.anio}</div>
-                <div style={{fontSize:'11.5px',color:'var(--text3)',marginTop:'1px'}}>
-                  {l.horas_semana > 0 ? `${l.horas_semana}hs/sem · $${l.tarifa_hora?.toLocaleString('es-AR')}/h` : 'Sueldo fijo'}
+          {liquidaciones.map((l:any) => {
+            const esCerrada = l.estado === 'cerrada'
+            return (
+              <div key={l.id} style={{
+                display:'flex',alignItems:'center',justifyContent:'space-between',
+                padding:'10px 12px',borderRadius:'10px',marginBottom:'6px',
+                background: esCerrada ? '#f0edf8' : 'transparent',
+                border: esCerrada ? '1.5px solid #c4b8e8' : '1px solid transparent',
+                borderBottom: esCerrada ? undefined : '1px solid var(--border)'
+              }}>
+                <div>
+                  <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                    <span style={{fontSize:'13.5px',fontWeight:600}}>{l.mes} {l.anio}</span>
+                    {esCerrada && (
+                      <span style={{fontSize:'10px',fontWeight:700,padding:'1px 7px',borderRadius:'8px',background:'#5a4d8a',color:'#fff'}}>
+                        🔒 Cerrada
+                      </span>
+                    )}
+                  </div>
+                  <div style={{fontSize:'11.5px',color:'var(--text3)',marginTop:'1px'}}>
+                    {l.horas_semana > 0 ? `${l.horas_semana}hs/sem · $${l.tarifa_hora?.toLocaleString('es-AR')}/h` : 'Sueldo fijo'}
+                    {esCerrada && l.cerrada_at && (
+                      <span style={{marginLeft:'6px',color:'#9b8eaa'}}>
+                        · Cerrada el {new Date(l.cerrada_at).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'})}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                  <div style={{textAlign:'right'}}>
+                    <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${l.total?.toLocaleString('es-AR')}</div>
+                    {!esCerrada && (
+                      <span style={{fontSize:'10px',fontWeight:600,padding:'1px 7px',borderRadius:'8px',
+                        background:l.estado==='pagada'?'var(--greenl)':l.estado==='confirmada'?'var(--vl)':'var(--amberl)',
+                        color:l.estado==='pagada'?'var(--green)':l.estado==='confirmada'?'var(--v)':'var(--amber)'}}>
+                        {l.estado}
+                      </span>
+                    )}
+                  </div>
+                  {/* Botón PDF — siempre disponible */}
+                  <button onClick={() => descargarPDF(l)}
+                    style={{padding:'5px 9px',background:'var(--bg)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                    PDF
+                  </button>
+                  {esCerrada ? (
+                    /* Liquidación cerrada: solo reabrir (director) */
+                    puedeEditar && (
+                      <button onClick={() => { if(confirm(`¿Reabrir la liquidación de ${l.mes} ${l.anio}? Esto la dejará editable nuevamente.`)) reabrirLiq(l.id) }}
+                        style={{padding:'5px 9px',background:'transparent',color:'var(--text3)',border:'1px solid var(--border)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                        🔓 Reabrir
+                      </button>
+                    )
+                  ) : (
+                    /* Liquidación abierta: editar + cerrar + eliminar */
+                    <>
+                      <button onClick={() => setLiqEditando({...l})}
+                        style={{padding:'5px 9px',background:'var(--vl)',color:'var(--v)',border:'1px solid #d4a8e8',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                        Editar
+                      </button>
+                      {puedeEditar && (
+                        <button onClick={() => { if(confirm(`¿Cerrar la liquidación de ${l.mes} ${l.anio}? No podrá editarse ni eliminarse hasta que la reabras.`)) cerrarLiq(l.id) }}
+                          style={{padding:'5px 9px',background:'#e8e4f5',color:'#5a4d8a',border:'1px solid #c4b8e8',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                          🔒 Cerrar
+                        </button>
+                      )}
+                      {puedeEditar && (
+                        <button onClick={() => setConfirmDelLiq(l)}
+                          style={{padding:'5px 9px',background:'var(--redl)',color:'var(--red)',border:'none',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                          ✕
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
-              <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
-                <div style={{textAlign:'right'}}>
-                  <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${l.total?.toLocaleString('es-AR')}</div>
-                  <span style={{fontSize:'10px',fontWeight:600,padding:'1px 7px',borderRadius:'8px',
-                    background:l.estado==='pagada'?'var(--greenl)':l.estado==='confirmada'?'var(--vl)':'var(--amberl)',
-                    color:l.estado==='pagada'?'var(--green)':l.estado==='confirmada'?'var(--v)':'var(--amber)'}}>
-                    {l.estado}
-                  </span>
-                </div>
-                <button onClick={() => descargarPDF(l)}
-                  style={{padding:'5px 9px',background:'var(--bg)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
-                  PDF
-                </button>
-                <button onClick={() => setLiqEditando({...l})}
-                  style={{padding:'5px 9px',background:'var(--vl)',color:'var(--v)',border:'1px solid #d4a8e8',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
-                  Editar
-                </button>
-                <button onClick={() => setConfirmDelLiq(l)}
-                  style={{padding:'5px 9px',background:'var(--redl)',color:'var(--red)',border:'none',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
-                  ✕
-                </button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
