@@ -144,7 +144,9 @@ export default function Comunicados() {
   const { usuario } = useAuth()
   const { comunicados, recargar, eliminar } = useComunicados()
   const { success: toastSuccess, error: toastError } = useToast()
-  const [tab, setTab]           = useState<'lista'|'nuevo'>('lista')
+  const [tab, setTab]           = useState<'lista'|'nuevo'|'historial'>('lista')
+  const [historial, setHistorial] = useState<any[]>([])
+  const [loadingHistorial, setLoadingHistorial] = useState(false)
   const [plantillaOpen, setPlantillaOpen] = useState(false)
   const [guardando, setGuardando]         = useState(false)
   const [mostrarOnboarding, setMostrarOnboarding] = useState(false)
@@ -244,8 +246,17 @@ export default function Comunicados() {
     }))
   }
 
-  const archivar = async (id: string, titulo: string) => {
-    if (!confirm(`¿Archivar "${titulo}"? Ya no aparecerá en la lista.`)) return
+  const cargarHistorial = async () => {
+    setLoadingHistorial(true)
+    try {
+      const res = await fetch('/api/comunicados?archivados=true', { headers: apiHeaders() })
+      const json = await res.json()
+      setHistorial(json.data || [])
+    } catch { setHistorial([]) }
+    finally { setLoadingHistorial(false) }
+  }
+
+  const archivar = async (id: string, titulo: string) => {    if (!confirm(`¿Archivar "${titulo}"? Ya no aparecerá en la lista.`)) return
     await eliminar(id)
     toastSuccess('Comunicado archivado')
   }
@@ -389,6 +400,24 @@ export default function Comunicados() {
           </div>
         )}
       </div>
+
+      {/* TABS lista / historial */}
+      {puedeCrear && tab !== 'nuevo' && (
+        <div style={{display:'flex',gap:'6px',marginBottom:'16px'}}>
+          {(['lista','historial'] as const).map(t => (
+            <button key={t} onClick={() => {
+              setTab(t)
+              if (t === 'historial' && historial.length === 0) cargarHistorial()
+            }}
+              style={{padding:'8px 16px',borderRadius:'20px',border:'1.5px solid',fontSize:'12px',fontWeight:700,cursor:'pointer',
+                background: tab===t ? 'var(--v)' : 'transparent',
+                color:      tab===t ? '#fff'     : 'var(--text2)',
+                borderColor:tab===t ? 'var(--v)' : 'var(--border)'}}>
+              {t === 'lista' ? '📢 Activos' : `🗂 Historial${historial.length > 0 ? ` (${historial.length})` : ''}`}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* FORMULARIO NUEVO COMUNICADO */}
       {tab === 'nuevo' && puedeCrear && (
@@ -650,6 +679,54 @@ export default function Comunicados() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* ── HISTORIAL DE COMUNICADOS ARCHIVADOS ─────────────────────── */}
+      {tab === 'historial' && puedeCrear && (
+        <div>
+          {loadingHistorial ? (
+            <div style={{textAlign:'center',padding:'40px',color:'var(--text3)'}}>Cargando historial...</div>
+          ) : historial.length === 0 ? (
+            <div style={{textAlign:'center',padding:'48px 20px',background:'var(--white)',borderRadius:'16px',border:'1.5px solid var(--border)'}}>
+              <div style={{fontSize:'32px',marginBottom:'8px'}}>🗂</div>
+              <div style={{fontWeight:600,color:'var(--text)'}}>Sin comunicados archivados</div>
+              <div style={{fontSize:'13px',color:'var(--text3)',marginTop:'4px'}}>Los comunicados que archivés aparecerán acá.</div>
+            </div>
+          ) : (
+            <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+              {historial.map(c => {
+                const rolLabel = ROLES_DESTINO.find(r => r.id === c.rol_destino)?.label || c.rol_destino
+                const esIndividual = c.rol_destino === 'individual'
+                return (
+                  <div key={c.id} style={{
+                    background:'var(--white)',border:'1.5px solid var(--border)',
+                    borderRadius:'14px',padding:'16px',opacity:0.75
+                  }}>
+                    <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:'10px',marginBottom:'6px'}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:'flex',alignItems:'center',gap:'6px',flexWrap:'wrap',marginBottom:'4px'}}>
+                          <span style={{fontSize:'14px',fontWeight:700,color:'var(--text)'}}>{c.titulo}</span>
+                          <span style={{fontSize:'10px',fontWeight:600,padding:'1px 7px',borderRadius:'10px',background:'var(--bg)',color:'var(--text3)',border:'1px solid var(--border)'}}>
+                            🗂 Archivado
+                          </span>
+                        </div>
+                        <div style={{fontSize:'12px',color:'var(--text3)'}}>
+                          Para: <strong>{esIndividual ? 'usuarios específicos' : rolLabel}</strong>
+                          {' · '}{c.creado_por}
+                          {' · '}{new Date(c.created_at).toLocaleDateString('es-AR',{day:'2-digit',month:'short',year:'numeric'})}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{fontSize:'13px',color:'var(--text2)',lineHeight:1.5,
+                      overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical' as any}}>
+                      {c.contenido}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
       )}
 
