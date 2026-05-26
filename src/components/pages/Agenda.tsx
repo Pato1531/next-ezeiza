@@ -223,12 +223,14 @@ export default function Agenda() {
       </div>
 
       {/* TABS */}
-      <div style={{display:'flex',gap:'6px',marginBottom:'16px'}}>
-        {(['proximos','calendario','nuevo'] as const).filter(v => v !== 'nuevo' || esCoord).map(v => (
-          <button key={v} onClick={() => setVista(v)} style={{padding:'9px 16px',borderRadius:'20px',border:'1.5px solid',fontSize:'12px',fontWeight:700,cursor:'pointer',background:vista===v?'var(--v)':'transparent',color:vista===v?'#fff':'var(--text2)',borderColor:vista===v?'var(--v)':'var(--border)'}}>
-            {v === 'proximos' ? '📋 Próximos' : v === 'calendario' ? '📅 Calendario' : '+ Nuevo evento'}
-          </button>
-        ))}
+      <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch',marginBottom:'16px',marginLeft:'-4px',paddingLeft:'4px'}}>
+        <div style={{display:'flex',gap:'6px',minWidth:'max-content'}}>
+          {(['proximos','calendario','nuevo'] as const).filter(v => v !== 'nuevo' || esCoord).map(v => (
+            <button key={v} onClick={() => setVista(v)} style={{padding:'9px 16px',borderRadius:'20px',border:'1.5px solid',fontSize:'12px',fontWeight:700,cursor:'pointer',background:vista===v?'var(--v)':'transparent',color:vista===v?'#fff':'var(--text2)',borderColor:vista===v?'var(--v)':'var(--border)',whiteSpace:'nowrap',flexShrink:0}}>
+              {v === 'proximos' ? '📋 Próximos' : v === 'calendario' ? '📅 Calendario' : '+ Nuevo evento'}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* ── PRÓXIMOS ── */}
