@@ -31,6 +31,9 @@ export async function GET(
   { params }: { params: { alumnoId: string } }
 ) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const { searchParams } = new URL(req.url)
     const cursoId = searchParams.get('curso_id')
     const periodo = searchParams.get('periodo') || new Date().toLocaleDateString('es-AR', { month: 'long', year: 'numeric' })
