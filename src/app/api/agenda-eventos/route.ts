@@ -1,6 +1,7 @@
 // src/app/api/agenda-eventos/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { verificarAuth } from '@/lib/server-utils'
 
 function sb() {
   return createClient(
@@ -17,6 +18,9 @@ function getInstitutoId(req: NextRequest): string | null {
 // GET — Listar eventos de agenda filtrados por instituto
 export async function GET(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const institutoId = getInstitutoId(req)
     if (!institutoId) {
       return NextResponse.json({ error: 'instituto_id requerido', data: [] }, { status: 400 })
@@ -39,6 +43,9 @@ export async function GET(req: NextRequest) {
 // DELETE — Eliminar evento por id (solo del mismo instituto)
 export async function DELETE(req: NextRequest) {
   try {
+    const authError = await verificarAuth(req)
+    if (authError) return authError
+
     const institutoId = getInstitutoId(req)
     if (!institutoId) {
       return NextResponse.json({ error: 'instituto_id requerido' }, { status: 400 })
