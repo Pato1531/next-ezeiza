@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
   try {
     // Validar ADMIN_KEY — solo el panel de administración puede crear sedes
     const adminKey = req.headers.get('x-admin-key') || ''
-    const expectedKey = process.env.NEXT_PUBLIC_ADMIN_KEY || ''
+    const expectedKey = process.env.ADMIN_KEY || ''
     if (!expectedKey || adminKey !== expectedKey) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
