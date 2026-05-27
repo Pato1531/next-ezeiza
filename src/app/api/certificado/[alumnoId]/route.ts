@@ -48,6 +48,7 @@ export async function GET(
     let institutoSub     = 'Buenos Aires · Argentina'
     let colorPrimario    = '#652f8d'
     let firmaDirectorUrl = ''
+    let firmaBase64 = ''
     if (alumno.instituto_id) {
       const { data: inst } = await sb
         .from('institutos').select('nombre, color_primario, firma_director_url').eq('id', alumno.instituto_id).single()
@@ -56,6 +57,24 @@ export async function GET(
         institutoSub    = 'Buenos Aires · Argentina'
         if (inst.color_primario)     colorPrimario    = inst.color_primario
         if (inst.firma_director_url) firmaDirectorUrl = inst.firma_director_url
+      }
+    }
+
+    // Convertir la firma a base64 en el servidor para que funcione dentro del blob HTML.
+    // Un blob URL no puede cargar imágenes externas (CORS), pero sí data URIs embebidas.
+    if (firmaDirectorUrl) {
+      try {
+        const urlLimpia = firmaDirectorUrl.split('?')[0]
+        const imgRes = await fetch(urlLimpia)
+        if (imgRes.ok) {
+          const contentType = imgRes.headers.get('content-type') || 'image/png'
+          const arrayBuffer = await imgRes.arrayBuffer()
+          const base64 = Buffer.from(arrayBuffer).toString('base64')
+          firmaBase64 = `data:${contentType};base64,${base64}`
+        }
+      } catch {
+        // Si falla la descarga, el certificado se genera sin firma
+        firmaBase64 = ''
       }
     }
 
@@ -353,9 +372,9 @@ export async function GET(
 
         <div class="firmas" style="justify-content:flex-end">
           <div class="firma">
-            ${firmaDirectorUrl
+            ${firmaBase64
               ? `<div style="height:56px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:8px">
-                  <img src="${firmaDirectorUrl}" style="max-height:52px;max-width:160px;object-fit:contain" />
+                  <img src="${firmaBase64}" style="max-height:52px;max-width:160px;object-fit:contain" />
                  </div>`
               : '<div class="firma-linea"></div>'
             }
