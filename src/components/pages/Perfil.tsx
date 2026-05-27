@@ -231,7 +231,17 @@ function FirmaDigital({ institutoId }: { institutoId: string }) {
   useEffect(() => {
     if (!institutoId) return
     sb.from('institutos').select('firma_director_url').eq('id', institutoId).single()
-      .then(({ data }) => { if (data?.firma_director_url) setFirmaUrl(data.firma_director_url) })
+      .then(({ data }) => {
+        if (data?.firma_director_url) {
+          // Limpiar el ?t= que pudo haberse guardado por error en versiones anteriores
+          const urlLimpia = data.firma_director_url.split('?')[0]
+          setFirmaUrl(urlLimpia + '?t=' + Date.now())
+          // Si la URL en DB tiene cache-bust, limpiarla silenciosamente
+          if (data.firma_director_url.includes('?')) {
+            sb.from('institutos').update({ firma_director_url: urlLimpia }).eq('id', institutoId).then(() => {})
+          }
+        }
+      })
   }, [institutoId])
 
   const subirFirma = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -253,14 +263,16 @@ function FirmaDigital({ institutoId }: { institutoId: string }) {
         upsert: true, contentType: file.type
       })
       if (upErr) throw new Error(upErr.message)
-      // Obtener URL pública
+      // Obtener URL pública — guardar URL limpia en DB (sin cache-bust)
+      // El cache-bust se aplica solo al preview para forzar recarga en pantalla
       const { data: urlData } = sb.storage.from('Firma').getPublicUrl(path)
-      const url = urlData.publicUrl + '?t=' + Date.now() // cache-bust
-      // Guardar en institutos
+      const urlLimpia = urlData.publicUrl
+      // Guardar en institutos la URL limpia (sin timestamp)
       const { error: dbErr } = await sb.from('institutos')
-        .update({ firma_director_url: url }).eq('id', institutoId)
+        .update({ firma_director_url: urlLimpia }).eq('id', institutoId)
       if (dbErr) throw new Error(dbErr.message)
-      setFirmaUrl(url)
+      // Preview con cache-bust para que la imagen se recargue inmediatamente
+      setFirmaUrl(urlLimpia + '?t=' + Date.now())
       setMsg({ tipo:'ok', texto:'✓ Firma actualizada correctamente' })
     } catch (e: any) {
       setMsg({ tipo:'error', texto: e.message || 'Error al subir la firma' })
