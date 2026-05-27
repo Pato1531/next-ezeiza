@@ -106,9 +106,14 @@ export async function GET(
     })
     const anioActual = new Date().getFullYear()
 
+    const DIAS_COMPLETOS: Record<string, string> = {
+      'Lun': 'Lunes', 'Mar': 'Martes', 'Mié': 'Miércoles', 'Mie': 'Miércoles',
+      'Jue': 'Jueves', 'Vie': 'Viernes', 'Sáb': 'Sábado', 'Sab': 'Sábado', 'Dom': 'Domingo',
+    }
+    const expandirDia = (d: string) => DIAS_COMPLETOS[d.trim()] || d.trim()
     const diasStr = Array.isArray(curso.dias)
-      ? (curso.dias as string[]).join(', ')
-      : ((curso.dias as string) || '')
+      ? (curso.dias as string[]).map(expandirDia).join(', ')
+      : ((curso.dias as string) || '').split(',').map(expandirDia).join(', ')
 
     const horarioStr = curso.hora_inicio && curso.hora_fin
       ? `de ${curso.hora_inicio} a ${curso.hora_fin}`
