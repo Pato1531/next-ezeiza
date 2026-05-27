@@ -1,7 +1,7 @@
 'use client'
 import React from 'react'
 import { useState, useEffect, useRef } from 'react'
-import { useAlumnos, useProfesoras, useCursos, useLiquidaciones } from '@/lib/hooks'
+import { useAlumnos, useProfesoras, useCursos, useLiquidaciones, apiHeaders } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 
@@ -924,14 +924,28 @@ function BoletinSection({ alumnos }: any) {
         return
       }
 
-      // Armar la URL de la API y abrir en nueva pestaña
-      // La ruta /api/boletin/[alumnoId] lee instituto, firma y director desde la DB
+      // Fetch con headers de autenticación → abrir HTML en pestaña nueva
       const params = new URLSearchParams({
         curso_id: cursoId,
         periodo:  `${periodo} ${anio}`,
         ...(nivelManual ? { nivel: nivelManual } : {}),
       })
-      window.open(`/api/boletin/${selAlumno}?${params.toString()}`, '_blank')
+      const res = await fetch(`/api/boletin/${selAlumno}?${params.toString()}`, {
+        headers: apiHeaders()
+      })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json.error || `HTTP ${res.status}`)
+      }
+      const html = await res.text()
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+      const url  = URL.createObjectURL(blob)
+      const win  = window.open(url, '_blank')
+      if (!win) {
+        const a = document.createElement('a')
+        a.href = url; a.download = 'boletin.html'; a.click()
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (e) {
       console.error('[Boletin]', e)
       alert('Error al generar el boletín.')
@@ -1010,8 +1024,7 @@ function CertificadoSection({ alumnos }: any) {
         return
       }
 
-      // Armar la URL de la API y abrir en nueva pestaña
-      // La ruta /api/certificado/[alumnoId] lee instituto, color, firma y director desde la DB
+      // Fetch con headers de autenticación → abrir HTML en pestaña nueva
       const params = new URLSearchParams({
         curso_id:    cursoId,
         tipo,
@@ -1021,7 +1034,23 @@ function CertificadoSection({ alumnos }: any) {
         ...(nivelManual  ? { nivel: nivelManual } : {}),
         modalidad,
       })
-      window.open(`/api/certificado/${selAlumno}?${params.toString()}`, '_blank')
+      const res = await fetch(`/api/certificado/${selAlumno}?${params.toString()}`, {
+        headers: apiHeaders()
+      })
+      if (!res.ok) {
+        const json = await res.json().catch(() => ({}))
+        throw new Error(json.error || `HTTP ${res.status}`)
+      }
+      const html = await res.text()
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+      const url  = URL.createObjectURL(blob)
+      const win  = window.open(url, '_blank')
+      if (!win) {
+        const a = document.createElement('a')
+        a.href = url; a.download = 'certificado.html'; a.click()
+      }
+      // Limpiar la URL del blob después de 60s
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
     } catch (e) {
       console.error('[Certificado]', e)
       alert('Error al generar el certificado.')
