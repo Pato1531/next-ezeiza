@@ -305,10 +305,17 @@ export async function GET(
             </div>`
 
           if (tipo === 'Asistencia al curso de inglés') {
+            const horarioDetalle = diasStr && horarioStr
+              ? `, los días <strong>${diasStr}</strong> ${horarioStr}`
+              : diasStr
+                ? `, los días <strong>${diasStr}</strong>`
+                : horarioStr
+                  ? ` en el horario <strong>${horarioStr}</strong>`
+                  : ''
             return `
               <div class="cert-texto">
                 ha asistido al curso de inglés <strong>${(curso as any).nombre}</strong>,
-                durante el año <strong>${anioActual}</strong>,
+                durante el año <strong>${anioActual}</strong>${horarioDetalle},
                 cumpliendo con los requisitos de asistencia establecidos por el instituto.
               </div>
               ${gridNivelAnio}`
