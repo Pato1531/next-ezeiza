@@ -60,6 +60,7 @@ export async function GET(
     let institutoSub       = 'Instituto de Inglés'
     let colorPrimario      = '#652f8d'
     let firmaDirectorUrl   = ''
+    let firmaBase64        = ''
     if (alumno.instituto_id) {
       const { data: inst } = await sb
         .from('institutos').select('nombre, color_primario, firma_director_url').eq('id', alumno.instituto_id).single()
@@ -68,6 +69,22 @@ export async function GET(
         institutoSub         = 'Instituto de Inglés'
         if (inst.color_primario)     colorPrimario     = inst.color_primario
         if (inst.firma_director_url) firmaDirectorUrl  = inst.firma_director_url
+      }
+    }
+
+    // Convertir firma a base64 para que funcione dentro del blob HTML
+    if (firmaDirectorUrl) {
+      try {
+        const urlLimpia = firmaDirectorUrl.split('?')[0]
+        const imgRes = await fetch(urlLimpia)
+        if (imgRes.ok) {
+          const contentType = imgRes.headers.get('content-type') || 'image/png'
+          const arrayBuffer = await imgRes.arrayBuffer()
+          const base64 = Buffer.from(arrayBuffer).toString('base64')
+          firmaBase64 = `data:${contentType};base64,${base64}`
+        }
+      } catch {
+        firmaBase64 = ''
       }
     }
 
@@ -357,9 +374,9 @@ export async function GET(
 
       <div class="firma-wrap" style="display:flex;justify-content:flex-end;margin-top:36px;">
         <div class="firma">
-          ${firmaDirectorUrl
+          ${firmaBase64
             ? `<div style="height:56px;display:flex;align-items:flex-end;justify-content:center;margin-bottom:0">
-                <img src="${firmaDirectorUrl}" style="max-height:52px;max-width:160px;object-fit:contain" />
+                <img src="${firmaBase64}" style="max-height:52px;max-width:160px;object-fit:contain" />
                </div>`
             : '<div class="firma-linea"></div>'
           }
