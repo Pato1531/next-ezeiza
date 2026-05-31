@@ -157,10 +157,10 @@ export default function Cursos() {
   const eliminar = async () => {
     if (!selId) return
     setConfirmDelete(false)
-    // Esperar confirmación de la API antes de navegar
     try {
       const res = await fetch('/api/actualizar-curso', {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH',
+        headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: selId, datos: { activo: false } })
       })
       const json = await res.json().catch(() => ({}))
