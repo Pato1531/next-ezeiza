@@ -33,6 +33,7 @@ export default function DashboardEjecutivo() {
 
   // ── Estado de resultado ───────────────────────────────────────────────────
   const [erData,    setErData]    = useState<any[]>([])
+  const [preCargadoDesde, setPreCargadoDesde] = useState<string|null>(null)
   const [erIngresos, setErIngresos] = useState(0)
   const [erEditing,  setErEditing]  = useState<Record<string,number>>({})
   const [erGuardando, setErGuardando] = useState<Record<string,boolean>>({})
@@ -138,11 +139,16 @@ export default function DashboardEjecutivo() {
         const json = await res.json()
         if (json.data && json.data.length > 0) {
           setErData(json.data)
-          // Limpiar edits locales — los datos del servidor son la verdad
           setErEditing({})
         }
         if (json.ingresos_cuotas !== undefined && json.ingresos_cuotas > 0) {
           setErIngresos(json.ingresos_cuotas)
+        }
+        // Mostrar aviso si los datos fueron pre-cargados desde el mes anterior
+        if (json.pre_cargado_desde) {
+          setPreCargadoDesde(json.pre_cargado_desde)
+        } else {
+          setPreCargadoDesde(null)
         }
       } catch (e) { console.warn('[DashEjecutivo] estado-resultado error:', e) }
     }
@@ -527,7 +533,14 @@ export default function DashboardEjecutivo() {
 
             {/* Egresos */}
             <div style={{padding:'10px 16px 4px',borderBottom:'1px solid var(--border)'}}>
-              <div style={{fontSize:'10px',fontWeight:700,color:'var(--red)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'8px'}}>Egresos</div>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'8px'}}>
+                <div style={{fontSize:'10px',fontWeight:700,color:'var(--red)',textTransform:'uppercase',letterSpacing:'.07em'}}>Egresos</div>
+                {preCargadoDesde && (
+                  <div style={{fontSize:'10px',color:'var(--amber)',fontWeight:600,background:'var(--amberl)',padding:'2px 8px',borderRadius:'8px',display:'flex',alignItems:'center',gap:'4px'}}>
+                    ↩ Pre-cargado desde {preCargadoDesde} · Revisá y ajustá
+                  </div>
+                )}
+              </div>
               {CONCEPTOS_EGRESO.map(concepto => {
                 const val = getImporte(concepto)
                 const editVal = erEditing[concepto]
