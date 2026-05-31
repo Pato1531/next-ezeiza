@@ -612,6 +612,41 @@ export default function DashboardEjecutivo() {
               </div>
               <div style={{fontSize:'28px',fontWeight:800,color:totalMes >= 0 ? 'var(--green)' : 'var(--red)'}}>{fmt$(totalMes)}</div>
             </div>
+
+            {/* MARGEN BRUTO */}
+            {(() => {
+              const totalIngresos = erIngresos + totalIngresosExtra
+              const margenPct = totalIngresos > 0
+                ? Math.round((totalMes / totalIngresos) * 100)
+                : 0
+              const esPositivo = margenPct >= 0
+              const color = margenPct >= 30 ? 'var(--green)' : margenPct >= 10 ? 'var(--amber)' : 'var(--red)'
+              const bg    = margenPct >= 30 ? '#f0faf4'      : margenPct >= 10 ? 'var(--amberl)' : 'var(--redl)'
+              return (
+                <div style={{
+                  padding:'12px 16px',
+                  background: bg,
+                  borderTop:'1.5px solid var(--border)',
+                  display:'flex',justifyContent:'space-between',alignItems:'center',
+                  borderRadius:'0 0 12px 12px'
+                }}>
+                  <div>
+                    <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em'}}>
+                      Margen Bruto
+                    </div>
+                    <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}}>
+                      {fmt$(totalMes)} / {fmt$(totalIngresos)} de ingresos
+                    </div>
+                  </div>
+                  <div style={{
+                    fontSize:'24px',fontWeight:800,color,
+                    display:'flex',alignItems:'baseline',gap:'4px'
+                  }}>
+                    {esPositivo ? '+' : ''}{margenPct}%
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         </div>
       ) : erTab === 'proyecciones' ? (
