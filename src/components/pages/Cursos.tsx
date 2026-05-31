@@ -17,7 +17,7 @@ const NIVEL_COL: Record<string,{bg:string,text:string}> = {
 }
 const DIAS_OPCIONES = ['Lun','Mar','Mié','Jue','Vie','Sáb']
 
-type Vista = 'lista' | 'detalle' | 'form' | 'asistencia_rapida'
+type Vista = 'lista' | 'detalle' | 'form' | 'asistencia_rapida' | 'historial'
 
 export default function Cursos() {
   const { cursos: todosCursos, loading, actualizar, agregar, recargar } = useCursos()
@@ -37,6 +37,64 @@ export default function Cursos() {
   const [form, setForm] = useState<any>(null)
   const [guardando, setGuardando] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+
+  // ── Historial de cursos inactivos ──────────────────────────────────────
+  const [cursosInactivos, setCursosInactivos] = useState<any[]>([])
+  const [loadingHistorial, setLoadingHistorial] = useState(false)
+  const [confirmBorrarDef, setConfirmBorrarDef] = useState<any>(null)
+
+  const cargarHistorial = async () => {
+    if (!usuario?.instituto_id) return
+    setLoadingHistorial(true)
+    try {
+      const sb = createClient()
+      const { data } = await sb.from('cursos')
+        .select('*')
+        .eq('activo', false)
+        .eq('instituto_id', usuario.instituto_id)
+        .order('nombre')
+      setCursosInactivos(data || [])
+    } catch { setCursosInactivos([]) }
+    finally { setLoadingHistorial(false) }
+  }
+
+  const reanudarCurso = async (id: string) => {
+    try {
+      const res = await fetch('/api/cursos', {
+        method: 'PATCH',
+        headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, datos: { activo: true } })
+      })
+      if (res.ok) {
+        await recargar()
+        await cargarHistorial()
+        showToast('Curso reanudado correctamente', 'success')
+      }
+    } catch { showToast('Error al reanudar el curso', 'error') }
+  }
+
+  const borrarDefinitivamente = async (id: string) => {
+    try {
+      const sb = createClient()
+      // Borrar en cascada: asistencia → clases → alumnos del curso → exámenes → curso
+      const { data: clases } = await sb.from('clases').select('id').eq('curso_id', id)
+      if (clases?.length) {
+        const claseIds = clases.map((c: any) => c.id)
+        await sb.from('asistencia_clases').delete().in('clase_id', claseIds)
+        await sb.from('clases').delete().in('id', claseIds)
+      }
+      const { data: exams } = await sb.from('examenes').select('id').eq('curso_id', id)
+      if (exams?.length) {
+        await sb.from('notas_examenes').delete().in('examen_id', exams.map((e:any) => e.id))
+        await sb.from('examenes').delete().eq('curso_id', id)
+      }
+      await sb.from('cursos_alumnos').delete().eq('curso_id', id)
+      await sb.from('cursos').delete().eq('id', id)
+      await cargarHistorial()
+      showToast('Curso eliminado definitivamente', 'success')
+    } catch { showToast('Error al eliminar el curso', 'error') }
+    setConfirmBorrarDef(null)
+  }
 
   const puedeEditar = ['director','coordinadora'].includes(usuario?.rol||'')
   const selLive = cursos.find(c => c.id === selId)
@@ -130,6 +188,12 @@ export default function Cursos() {
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}}>
         <SL>{cursos.length} cursos</SL>
         <div style={{display:'flex',gap:'8px'}}>
+          {puedeEditar && (
+            <button onClick={() => { setVista('historial'); cargarHistorial() }}
+              style={{padding:'9px 14px',background:'var(--white)',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
+              🗂 Historial
+            </button>
+          )}
           <button onClick={() => {
             const prof = (id: string) => profesoras.find((p:any) => p.id === id)
             const filas = [...cursos]
@@ -204,6 +268,84 @@ export default function Cursos() {
     </div>
   )
   }
+
+  // ── HISTORIAL DE CURSOS INACTIVOS ──
+  if (vista === 'historial') return (
+    <div className="fade-in">
+      <button onClick={() => setVista('lista')} style={{marginBottom:'20px',padding:'8px 14px',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',color:'var(--text2)'}}>
+        ← Volver
+      </button>
+      <div style={{fontSize:'20px',fontWeight:700,marginBottom:'4px'}}>Historial de cursos</div>
+      <div style={{fontSize:'13px',color:'var(--text3)',marginBottom:'20px'}}>
+        Cursos archivados — podés reanudarlos o eliminarlos definitivamente
+      </div>
+
+      {loadingHistorial ? (
+        <div style={{textAlign:'center',padding:'40px',color:'var(--text3)'}}>Cargando historial...</div>
+      ) : cursosInactivos.length === 0 ? (
+        <div style={{textAlign:'center',padding:'48px 20px',background:'var(--white)',borderRadius:'16px',border:'1.5px solid var(--border)'}}>
+          <div style={{fontSize:'32px',marginBottom:'8px'}}>🗂</div>
+          <div style={{fontWeight:600,color:'var(--text)'}}>Sin cursos archivados</div>
+          <div style={{fontSize:'13px',color:'var(--text3)',marginTop:'4px'}}>Los cursos que elimines aparecerán acá.</div>
+        </div>
+      ) : (
+        <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+          {cursosInactivos.map((c: any) => {
+            const prof = profesoras.find((p:any) => p.id === c.profesora_id)
+            const col = NIVEL_COL[c.nivel] ?? NIVEL_COL['Básico']
+            return (
+              <div key={c.id} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'14px 16px',display:'flex',alignItems:'center',gap:'12px',opacity:0.8}}>
+                <div style={{width:44,height:44,borderRadius:14,background:col.bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                  <span style={{fontSize:'11px',fontWeight:700,color:col.text}}>{(c.nivel||'?').slice(0,3).toUpperCase()}</span>
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'15px',fontWeight:600,color:'var(--text)'}}>{c.nombre}</div>
+                  <div style={{fontSize:'12px',color:'var(--text3)',marginTop:'2px'}}>
+                    {prof ? `${prof.nombre} ${prof.apellido}` : 'Sin docente'} · {c.dias||'Sin días'} · {c.hora_inicio?.slice(0,5)||'—'}
+                  </div>
+                </div>
+                <div style={{display:'flex',gap:'6px',flexShrink:0}}>
+                  <button onClick={() => reanudarCurso(c.id)}
+                    style={{padding:'7px 12px',background:'var(--vl)',color:'var(--v)',border:'1.5px solid #d4a8e8',borderRadius:'8px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
+                    ▶ Reanudar
+                  </button>
+                  <button onClick={() => setConfirmBorrarDef(c)}
+                    style={{padding:'7px 12px',background:'var(--redl)',color:'var(--red)',border:'none',borderRadius:'8px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
+                    🗑 Borrar
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {/* Modal confirmar borrado definitivo */}
+      {confirmBorrarDef && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'20px'}}>
+          <div style={{background:'var(--white)',borderRadius:'18px',padding:'28px',maxWidth:'380px',width:'100%'}}>
+            <div style={{fontSize:'18px',fontWeight:700,marginBottom:'12px',color:'var(--red)'}}>⚠️ Borrar definitivamente</div>
+            <p style={{fontSize:'14px',color:'var(--text2)',marginBottom:'8px',lineHeight:1.5}}>
+              Estás por eliminar <strong>{confirmBorrarDef.nombre}</strong> de forma permanente.
+            </p>
+            <p style={{fontSize:'13px',color:'var(--text3)',marginBottom:'24px',lineHeight:1.5}}>
+              Se borrarán todas las clases, asistencias, exámenes y notas asociadas. Esta acción no se puede deshacer.
+            </p>
+            <div style={{display:'flex',gap:'10px'}}>
+              <button onClick={() => setConfirmBorrarDef(null)}
+                style={{flex:1,padding:'12px',background:'var(--bg)',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>
+                Cancelar
+              </button>
+              <button onClick={() => borrarDefinitivamente(confirmBorrarDef.id)}
+                style={{flex:2,padding:'12px',background:'var(--red)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>
+                Sí, borrar definitivamente
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
 
   // ── FORMULARIO ──
   if (vista === 'form') return (
