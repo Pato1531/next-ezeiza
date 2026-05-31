@@ -463,7 +463,8 @@ function LiquidacionTab({ prof, licencias }: any) {
   const _mIdxCalc = _mesesArr.indexOf(mesLiq)
   const semanasCalc = _mIdxCalc >= 0 && new Date(anioLiq, _mIdxCalc + 1, 0).getDate() >= 29 ? 5 : 4
 
-  // ── Clases reales dictadas por la profesora en el mes ─────────────────
+  // ── Horas reales del mes desde clases registradas ─────────────────────
+  const [horasDelMes, setHorasDelMes] = useState<number | null>(null)
   const [clasesDelMes, setClasesDelMes] = useState<number | null>(null)
   const [loadingClases, setLoadingClases] = useState(false)
 
@@ -474,22 +475,43 @@ function LiquidacionTab({ prof, licencias }: any) {
     const mesNum = String(_mIdxCalc + 1).padStart(2, '0')
     const desdeStr = `${anioLiq}-${mesNum}-01`
     const diasEnMes = new Date(anioLiq, _mIdxCalc + 1, 0).getDate()
-    const hastaStr = `${anioLiq}-${mesNum}-${String(diasEnMes).padStart(2, '0')}`
-    // Buscar cursos de la profesora → contar clases en el rango del mes
+    const hastaStr  = `${anioLiq}-${mesNum}-${String(diasEnMes).padStart(2, '0')}`
+
     sb.from('cursos').select('id').eq('profesora_id', prof.id)
       .then(({ data: cursos }) => {
-        if (!cursos?.length) { setClasesDelMes(0); setLoadingClases(false); return }
+        if (!cursos?.length) {
+          setHorasDelMes(0); setClasesDelMes(0); setLoadingClases(false); return
+        }
         const cursoIds = cursos.map((c: any) => c.id)
-        return sb.from('clases').select('id', { count: 'exact', head: true })
+        return sb.from('clases')
+          .select('id, cursos(hora_inicio, hora_fin)')
           .in('curso_id', cursoIds)
           .gte('fecha', desdeStr)
           .lte('fecha', hastaStr)
       })
       .then((res: any) => {
-        if (res !== undefined) setClasesDelMes(res?.count ?? 0)
+        if (!res) return
+        const clases = res.data || []
+        setClasesDelMes(clases.length)
+        // Sumar horas reales de cada clase según hora_inicio y hora_fin del curso
+        let totalHs = 0
+        for (const c of clases) {
+          const hi = c.cursos?.hora_inicio
+          const hf = c.cursos?.hora_fin
+          if (hi && hf) {
+            const [h1, m1] = hi.split(':').map(Number)
+            const [h2, m2] = hf.split(':').map(Number)
+            const mins = (h2 * 60 + m2) - (h1 * 60 + m1)
+            if (mins > 0) totalHs += mins / 60
+          } else {
+            // Sin horario configurado: usar horas_semana como horas por clase
+            totalHs += prof.horas_semana || 0
+          }
+        }
+        setHorasDelMes(Math.round(totalHs * 100) / 100)
         setLoadingClases(false)
       })
-      .catch(() => { setClasesDelMes(null); setLoadingClases(false) })
+      .catch(() => { setHorasDelMes(null); setClasesDelMes(null); setLoadingClases(false) })
   }, [prof.id, mesLiq, anioLiq, tipoContrato])
   // Pre-cargar sueldo fijo del perfil
   const [sueldoFijo, setSueldoFijo] = useState<number>(prof.sueldo_fijo || 0)
@@ -557,13 +579,14 @@ function LiquidacionTab({ prof, licencias }: any) {
   }, [mesLiq, anioLiq, liquidaciones.length])
 
   // ── Cálculos ─────────────────────────────────────────────────────────
-  // horasPorClase = horas_semana del perfil (el director configura cuánto dura cada clase)
-  const horasPorClase = prof.horas_semana || 0
+  // base = total horas del mes × tarifa/hora
+  // Fallback si no hay clases registradas: horas_semana × semanas del calendario
+  const horasFallback = (prof.horas_semana || 0) * semanasCalc
 
   const base = tipoContrato === 'hora'
-    ? clasesDelMes !== null && clasesDelMes > 0
-      ? clasesDelMes * horasPorClase * (prof.tarifa_hora || 0)   // clases reales × horas × tarifa
-      : horasPorClase * semanasCalc * (prof.tarifa_hora || 0)    // fallback: semanas si no hay clases
+    ? horasDelMes !== null && horasDelMes > 0
+      ? horasDelMes * (prof.tarifa_hora || 0)
+      : horasFallback * (prof.tarifa_hora || 0)
     : (sueldoFijo || prof.sueldo_fijo || 0)
 
   // Filtrar reemplazos solo del mes seleccionado
@@ -771,25 +794,24 @@ function LiquidacionTab({ prof, licencias }: any) {
         {tipoContrato === 'hora' ? (
           <>
             {[
-              ['Horas por clase', `${horasPorClase % 1 === 0 ? horasPorClase : horasPorClase.toFixed(1)}hs · desde perfil del docente`],
               ['Tarifa por hora', `$${prof.tarifa_hora?.toLocaleString('es-AR')}`],
               [
-                'Clases dictadas en ' + mesLiq,
+                'Total horas en ' + mesLiq,
                 loadingClases
-                  ? 'Cargando...'
-                  : clasesDelMes !== null
-                    ? `${clasesDelMes} clase${clasesDelMes !== 1 ? 's' : ''} registradas`
-                    : `${semanasCalc} semanas (sin clases registradas)`
+                  ? 'Calculando...'
+                  : horasDelMes !== null && horasDelMes > 0
+                    ? `${horasDelMes % 1 === 0 ? horasDelMes : horasDelMes.toFixed(1)}hs (${clasesDelMes} clase${clasesDelMes !== 1 ? 's' : ''})`
+                    : `${horasFallback}hs (estimado por semanas — sin clases registradas)`
               ],
             ].map(([k,v]) => (
               <div key={k as string} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
                 <span style={{fontSize:'13px',color:'var(--text2)'}}>{k}</span>
-                <span style={{fontSize:'13px',fontWeight:500,color: k === 'Clases dictadas en ' + mesLiq && clasesDelMes === 0 ? 'var(--amber)' : 'var(--text)'}}>{v}</span>
+                <span style={{fontSize:'13px',fontWeight:500,color: k === 'Total horas en ' + mesLiq && horasDelMes === 0 ? 'var(--amber)' : 'var(--text)'}}>{v}</span>
               </div>
             ))}
-            {clasesDelMes === 0 && (
+            {horasDelMes === 0 && !loadingClases && (
               <div style={{fontSize:'11px',color:'var(--amber)',marginTop:'6px',padding:'6px 10px',background:'var(--amberl)',borderRadius:'8px'}}>
-                ⚠️ No hay clases registradas para {mesLiq} {anioLiq}. Se usó cálculo por semanas como respaldo.
+                ⚠️ No hay clases registradas en {mesLiq} {anioLiq}. Se usó estimación por semanas.
               </div>
             )}
           </>
@@ -1133,4 +1155,3 @@ const ModalSheet = ({title,children,onClose}:any) => (
     </div>
   </div>
 )
-
