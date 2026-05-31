@@ -123,6 +123,213 @@ export default function Cursos() {
 
   const irADetalle = (id: string) => { setSelId(id); setTab('info'); setVista('detalle') }
   const irALista = () => { setSelId(null); setVista('lista') }
+
+  // ── Export consolidado: planificación de todos los cursos ──────────────
+  const exportarPlanificacionGlobal = async () => {
+    const sb = createClient()
+    const fecha = new Date().toLocaleDateString('es-AR', { day:'numeric', month:'long', year:'numeric' })
+    const ECFG:   Record<string,string> = { pendiente:'Atrasada', en_curso:'Al día', dictada:'Dictada' }
+    const ECOLOR: Record<string,string> = {
+      pendiente: 'background:#fdeaea;color:#c0392b',
+      en_curso:  'background:#f4eefb;color:#652f8d',
+      dictada:   'background:#e6f4ec;color:#2d7a4f',
+    }
+    const fmtF = (f: string) => f ? new Date(f+'T12:00:00').toLocaleDateString('es-AR') : '—'
+
+    // Traer todas las unidades de todos los cursos activos en una sola query
+    const { data: unidades } = await sb
+      .from('planificacion_cursos')
+      .select('*, cursos(id, nombre, nivel, profesora_id)')
+      .in('curso_id', cursos.map((c:any) => c.id))
+      .order('orden', { ascending: true })
+
+    const secciones = cursos
+      .sort((a:any, b:any) => (a.nombre||'').localeCompare(b.nombre||''))
+      .map((c: any) => {
+        const prof = profesoras.find((p:any) => p.id === c.profesora_id)
+        const profNombre = prof ? `${prof.nombre} ${prof.apellido}` : 'Sin asignar'
+        const uds = (unidades || []).filter((u:any) => u.curso_id === c.id)
+        const filas = uds.length > 0
+          ? uds.map((u:any, i:number) =>
+              `<tr>
+                <td style="font-weight:700;color:#652f8d;text-align:center">${i+1}</td>
+                <td style="font-weight:600">${u.titulo||'—'}</td>
+                <td style="color:#555;font-size:12px">${u.descripcion||'—'}</td>
+                <td style="color:#888;font-size:12px">${fmtF(u.fecha_inicio)}</td>
+                <td style="color:#888;font-size:12px">${fmtF(u.fecha_cierre)}</td>
+                <td><span style="padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;${ECOLOR[u.estado]||''}">${ECFG[u.estado]||u.estado||'—'}</span></td>
+              </tr>`).join('')
+          : `<tr><td colspan="6" style="text-align:center;color:#aaa;font-style:italic;padding:16px">Sin unidades cargadas</td></tr>`
+        return `
+          <div class="curso-block">
+            <div class="curso-header">
+              <div>
+                <div class="curso-nombre">${c.nombre}</div>
+                <div class="curso-meta">${c.nivel||''} · ${profNombre} · ${c.dias||''} ${c.hora_inicio?.slice(0,5)||''}</div>
+              </div>
+              <div class="curso-badge">${uds.length} unidad${uds.length!==1?'es':''}</div>
+            </div>
+            <table>
+              <tr><th>#</th><th>Unidad</th><th>Descripción</th><th>Inicio</th><th>Cierre</th><th>Estado</th></tr>
+              ${filas}
+            </table>
+          </div>`
+      }).join('')
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Planificación General — Todos los Cursos</title>
+    <style>
+      body{font-family:'Arial',sans-serif;padding:28px;font-size:13px;color:#1a1020}
+      .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #652f8d;padding-bottom:14px;margin-bottom:24px}
+      .logo{font-size:20px;font-weight:700}.logo span{color:#652f8d}
+      h1{color:#652f8d;font-size:17px;margin:0 0 4px}
+      .subtitulo{color:#9b8eaa;font-size:12px;margin-bottom:24px}
+      .curso-block{margin-bottom:32px;page-break-inside:avoid}
+      .curso-header{display:flex;justify-content:space-between;align-items:flex-start;background:#f5f0fa;border-left:4px solid #652f8d;padding:12px 16px;border-radius:0 10px 10px 0;margin-bottom:8px}
+      .curso-nombre{font-size:15px;font-weight:700;color:#1a1020}
+      .curso-meta{font-size:11px;color:#9b8eaa;margin-top:3px}
+      .curso-badge{font-size:11px;font-weight:600;background:#fff;color:#652f8d;padding:3px 10px;border-radius:10px;border:1px solid #d4a8e8;white-space:nowrap;margin-left:12px}
+      table{width:100%;border-collapse:collapse;margin-bottom:4px}
+      th{background:#652f8d;color:#fff;padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+      td{padding:8px 10px;border-bottom:1px solid #f0edf5;vertical-align:top}
+      @media print{body{padding:16px}.curso-block{page-break-inside:avoid}}
+    </style></head><body>
+    <div class="hd">
+      <div class="logo"><span>Next</span> Ezeiza</div>
+      <span style="color:#9b8eaa;font-size:12px">${fecha}</span>
+    </div>
+    <h1>Planificación General</h1>
+    <div class="subtitulo">${cursos.length} cursos activos</div>
+    ${secciones}
+    <script>window.onload=function(){window.print()}<\/script></body></html>`
+
+    const blob = new Blob([html], { type:'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const win = window.open(url, '_blank')
+    if (!win) { const a = document.createElement('a'); a.href=url; a.download='planificacion-global.html'; a.click() }
+    setTimeout(() => URL.revokeObjectURL(url), 15000)
+  }
+
+  // ── Export consolidado: exámenes y notas de todos los cursos ───────────
+  const exportarExamenesGlobal = async () => {
+    const sb = createClient()
+    const fecha = new Date().toLocaleDateString('es-AR', { day:'numeric', month:'long', year:'numeric' })
+
+    // Traer todos los exámenes de los cursos activos con notas
+    const { data: examenes } = await sb
+      .from('examenes')
+      .select('id, nombre, fecha, tipo, curso_id')
+      .in('curso_id', cursos.map((c:any) => c.id))
+      .order('fecha', { ascending: true })
+
+    const examenIds = (examenes||[]).map((e:any) => e.id)
+    const { data: notas } = examenIds.length > 0
+      ? await sb.from('notas_examenes')
+          .select('examen_id, nota, ausente, alumnos(nombre, apellido)')
+          .in('examen_id', examenIds)
+      : { data: [] }
+
+    const NOTA_COLOR = (nota: any, ausente: boolean) => {
+      if (ausente || nota === null || nota === undefined || nota === '') return '#9b8eaa'
+      const n = String(nota).trim().toUpperCase()
+      const num = Number(nota)
+      if (n==='A'||n==='A+'||n==='A-'||(!isNaN(num)&&num>=9)) return '#2d7a4f'
+      if (n==='B'||n==='B+'||n==='B-'||(!isNaN(num)&&num>=7&&num<9)) return '#1a6b8a'
+      if (n==='C'||n==='C+'||n==='C-'||(!isNaN(num)&&num>=5&&num<7)) return '#b45309'
+      if (n==='D'||n==='F'||(!isNaN(num)&&num<5)) return '#c0392b'
+      return '#652f8d'
+    }
+    const fmtF = (f: string) => f ? new Date(f+'T12:00:00').toLocaleDateString('es-AR') : '—'
+
+    const secciones = cursos
+      .sort((a:any, b:any) => (a.nombre||'').localeCompare(b.nombre||''))
+      .map((c: any) => {
+        const prof = profesoras.find((p:any) => p.id === c.profesora_id)
+        const profNombre = prof ? `${prof.nombre} ${prof.apellido}` : 'Sin asignar'
+        const exsCurso = (examenes||[]).filter((e:any) => e.curso_id === c.id)
+
+        if (exsCurso.length === 0) return `
+          <div class="curso-block">
+            <div class="curso-header">
+              <div class="curso-nombre">${c.nombre}</div>
+              <div class="curso-meta">${c.nivel||''} · ${profNombre}</div>
+            </div>
+            <p style="color:#aaa;font-style:italic;font-size:12px;padding:8px 0">Sin exámenes cargados</p>
+          </div>`
+
+        const tablas = exsCurso.map((ex: any) => {
+          const notasEx = (notas||[]).filter((n:any) => n.examen_id === ex.id)
+          const filas = notasEx.length > 0
+            ? notasEx.map((n:any) => {
+                const color = NOTA_COLOR(n.nota, n.ausente)
+                const notaLabel = n.ausente ? 'Ausente' : (n.nota ?? '—')
+                return `<tr>
+                  <td>${n.alumnos?.nombre||''} ${n.alumnos?.apellido||''}</td>
+                  <td style="text-align:center;font-weight:700;color:${color}">${notaLabel}</td>
+                </tr>`
+              }).join('')
+            : `<tr><td colspan="2" style="text-align:center;color:#aaa;font-style:italic">Sin notas cargadas</td></tr>`
+
+          const tipoBadge = ex.tipo ? `<span style="font-size:10px;background:#f0edf5;color:#9b8eaa;padding:2px 7px;border-radius:8px;margin-left:8px">${ex.tipo}</span>` : ''
+          return `
+            <div style="margin-bottom:16px">
+              <div style="font-size:13px;font-weight:600;color:#1a1020;margin-bottom:6px">
+                ${ex.nombre}${tipoBadge}
+                <span style="font-size:11px;color:#9b8eaa;font-weight:400;margin-left:8px">${fmtF(ex.fecha)}</span>
+              </div>
+              <table>
+                <tr><th>Alumno</th><th style="text-align:center">Nota</th></tr>
+                ${filas}
+              </table>
+            </div>`
+        }).join('')
+
+        return `
+          <div class="curso-block">
+            <div class="curso-header">
+              <div>
+                <div class="curso-nombre">${c.nombre}</div>
+                <div class="curso-meta">${c.nivel||''} · ${profNombre} · ${c.dias||''} ${c.hora_inicio?.slice(0,5)||''}</div>
+              </div>
+              <div class="curso-badge">${exsCurso.length} examen${exsCurso.length!==1?'es':''}</div>
+            </div>
+            ${tablas}
+          </div>`
+      }).join('')
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Exámenes y Notas — Todos los Cursos</title>
+    <style>
+      body{font-family:'Arial',sans-serif;padding:28px;font-size:13px;color:#1a1020}
+      .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #652f8d;padding-bottom:14px;margin-bottom:24px}
+      .logo{font-size:20px;font-weight:700}.logo span{color:#652f8d}
+      h1{color:#652f8d;font-size:17px;margin:0 0 4px}
+      .subtitulo{color:#9b8eaa;font-size:12px;margin-bottom:24px}
+      .curso-block{margin-bottom:36px;page-break-inside:avoid}
+      .curso-header{background:#f5f0fa;border-left:4px solid #652f8d;padding:12px 16px;border-radius:0 10px 10px 0;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center}
+      .curso-nombre{font-size:15px;font-weight:700;color:#1a1020}
+      .curso-meta{font-size:11px;color:#9b8eaa;margin-top:3px}
+      .curso-badge{font-size:11px;font-weight:600;background:#fff;color:#652f8d;padding:3px 10px;border-radius:10px;border:1px solid #d4a8e8;white-space:nowrap;margin-left:12px}
+      table{width:100%;border-collapse:collapse;margin-bottom:4px}
+      th{background:#652f8d;color:#fff;padding:8px 10px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+      td{padding:7px 10px;border-bottom:1px solid #f0edf5;vertical-align:top}
+      @media print{body{padding:16px}.curso-block{page-break-inside:avoid}}
+    </style></head><body>
+    <div class="hd">
+      <div class="logo"><span>Next</span> Ezeiza</div>
+      <span style="color:#9b8eaa;font-size:12px">${fecha}</span>
+    </div>
+    <h1>Exámenes y Notas — General</h1>
+    <div class="subtitulo">${cursos.length} cursos activos · ${(examenes||[]).length} exámenes en total</div>
+    ${secciones}
+    <script>window.onload=function(){window.print()}<\/script></body></html>`
+
+    const blob = new Blob([html], { type:'text/html;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const win = window.open(url, '_blank')
+    if (!win) { const a = document.createElement('a'); a.href=url; a.download='examenes-global.html'; a.click() }
+    setTimeout(() => URL.revokeObjectURL(url), 15000)
+  }
   const irAFormNuevo = () => {
     setForm({ nombre:'', nivel:'', profesora_id: profesoras[0]?.id||'', dias:'', hora_inicio:'08:00', hora_fin:'09:30', bibliografia:'' })
     setVista('form')
@@ -194,6 +401,18 @@ export default function Cursos() {
             <button onClick={() => { setVista('historial'); cargarHistorial() }}
               style={{padding:'9px 14px',background:'var(--white)',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
               🗂 Historial
+            </button>
+          )}
+          {puedeEditar && (
+            <button onClick={exportarExamenesGlobal}
+              style={{padding:'9px 14px',background:'var(--white)',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
+              📝 Exámenes
+            </button>
+          )}
+          {puedeEditar && (
+            <button onClick={exportarPlanificacionGlobal}
+              style={{padding:'9px 14px',background:'var(--white)',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
+              📋 Planificación
             </button>
           )}
           <button onClick={() => {
