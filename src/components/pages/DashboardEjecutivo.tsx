@@ -116,12 +116,14 @@ export default function DashboardEjecutivo() {
       // Alumnos en riesgo: traer últimas clases por alumno para detectar ausencias consecutivas
       const { data: riesgoData } = await sb
         .from('asistencia_clases')
-        .select('alumno_id, estado, clase_id, clases(id, fecha, cursos(nombre)), alumnos!inner(nombre, apellido, nivel, cuota_mensual, activo, instituto_id)')
+        .select('alumno_id, estado, clase_id, clases(id, fecha, cursos(nombre, activo)), alumnos!inner(nombre, apellido, nivel, cuota_mensual, activo, instituto_id)')
         .eq('alumnos.activo', true)
         .eq('alumnos.instituto_id', usuario?.instituto_id || '')
+        .eq('clases.cursos.activo', true)
         .order('clase_id', { ascending: false })
         .limit(2000)
-      setAsistenciaRiesgo(riesgoData || [])
+      // Filtrar client-side también como segunda capa por si el join no propaga el filtro
+      setAsistenciaRiesgo((riesgoData || []).filter((r: any) => r.clases?.cursos?.activo !== false))
 
       setLoading(false)
     }
