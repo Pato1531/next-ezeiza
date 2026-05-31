@@ -97,6 +97,8 @@ export default function Cursos() {
   }
 
   const puedeEditar = ['director','coordinadora'].includes(usuario?.rol||'')
+  // Planificación: la profesora también puede editar full
+  const puedeEditarPlanif = ['director','coordinadora','profesora'].includes(usuario?.rol||'')
   const selLive = cursos.find(c => c.id === selId)
   const selRef = useRef<any>(null)
   if (selLive) selRef.current = selLive
@@ -403,6 +405,7 @@ export default function Cursos() {
         profesoras={profesoras}
         alumnos={alumnos}
         puedeEditar={puedeEditar}
+        puedeEditarPlanif={puedeEditarPlanif}
         tab={tab}
         setTab={setTab}
         onVolver={irALista}
@@ -432,7 +435,7 @@ export default function Cursos() {
   return null
 }
 
-function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, onVolver, onEditar, onEliminar, confirmDelete, onCancelDelete, onConfirmDelete, onAsistenciaRapida, onNuevoCurso }: any) {
+function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, puedeEditarPlanif, tab, setTab, onVolver, onEditar, onEliminar, confirmDelete, onCancelDelete, onConfirmDelete, onAsistenciaRapida, onNuevoCurso }: any) {
   const { alumnosCurso, agregar: agregarAlumno, quitar: quitarAlumno, recargar: recargarAlumnos } = useCursoAlumnos(c.id)
 
   // Escuchar cuando se asigna un alumno desde otro módulo
@@ -1120,7 +1123,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, tab, setTab, 
 
       {tab === 'examenes' && <ExamenesTab cursoId={c.id} alumnosCurso={alumnosCurso} puedeEditar={puedeEditar} puedeCrearExamen={true} />}
 
-      {tab === 'planificacion' && <PlanificacionTab cursoId={c.id} puedeEditar={puedeEditar} clasesDictadas={clasesLocal.length} />}
+      {tab === 'planificacion' && <PlanificacionTab cursoId={c.id} puedeEditar={puedeEditarPlanif ?? puedeEditar} clasesDictadas={clasesLocal.length} />}
 
       {tab === 'progreso' && <ProgresoTab cursoId={c.id} clasesDictadas={clasesLocal.length} />}
 
