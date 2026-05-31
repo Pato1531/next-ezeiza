@@ -76,17 +76,43 @@ export async function GET(req: NextRequest) {
     if (institutoId) regQuery = (regQuery as any).eq('instituto_id', institutoId)
     const { data: registros } = await regQuery
 
-    // 3. Si no existen registros, inicializar con los defaults
+    // 3. Si no existen registros, intentar pre-cargar desde el mes anterior
     if (!registros || registros.length === 0) {
+
+      // Calcular mes/año anterior
+      const MESES_ES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+      const mesIdx = MESES_ES.indexOf(mes)
+      const mesAntIdx = mesIdx > 0 ? mesIdx - 1 : 11
+      const anioAnt = mesIdx > 0 ? parseInt(anio) : parseInt(anio) - 1
+      const mesAnt = MESES_ES[mesAntIdx]
+
+      // Buscar registros del mes anterior
+      let mesAntQuery = supabase
+        .from('estado_resultado_mensual')
+        .select('concepto, importe, tipo')
+        .eq('mes', mesAnt)
+        .eq('anio', anioAnt)
+      if (institutoId) mesAntQuery = (mesAntQuery as any).eq('instituto_id', institutoId)
+      const { data: registrosMesAnt } = await mesAntQuery
+
+      // Armar mapa concepto → importe del mes anterior
+      const importesMesAnt: Record<string, number> = {}
+      if (registrosMesAnt?.length) {
+        registrosMesAnt.forEach((r: any) => {
+          importesMesAnt[r.concepto] = r.importe || 0
+        })
+      }
+
       const rows = CONCEPTOS_DEFAULT.map(c => ({
         mes,
         anio: parseInt(anio),
         instituto_id: institutoId,
         concepto: c.concepto,
         tipo: c.tipo,
-        importe: 0,
+        importe: importesMesAnt[c.concepto] ?? 0,
         es_automatico: false,
       }))
+
       const { data: nuevos, error } = await supabase
         .from('estado_resultado_mensual')
         .insert(rows)
@@ -97,6 +123,7 @@ export async function GET(req: NextRequest) {
         data: nuevos || rows,
         ingresos_cuotas: ingresosCuotas,
         ingresos_matriculas_auto: ingresosMatriculas,
+        pre_cargado_desde: registrosMesAnt?.length ? `${mesAnt} ${anioAnt}` : null,
       })
     }
 
