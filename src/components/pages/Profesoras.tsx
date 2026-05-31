@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { useProfesoras, useHorasHistorial, useLiquidaciones, apiHeaders } from '@/lib/hooks'
+import { useProfesoras, useHorasHistorial, useLiquidaciones } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 
@@ -352,7 +352,7 @@ export default function Profesoras() {
           ))}
         </Card>}
 
-        {tab === 'liquidacion' && <LiquidacionTab prof={sel} licencias={licencias} puedeEditar={puedeEditar} />}
+        {tab === 'liquidacion' && <LiquidacionTab prof={sel} licencias={licencias} />}
 
         {modalEditLic && licEditando && <ModalSheet title="Editar licencia" onClose={() => setModalEditLic(false)}>
           <Field2 label="Tipo">
@@ -445,7 +445,7 @@ export default function Profesoras() {
   return null
 }
 
-function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
+function LiquidacionTab({ prof, licencias }: any) {
   const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
   const mesActual = MESES[new Date().getMonth()]
   const anioActual = new Date().getFullYear()
@@ -454,14 +454,43 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
   const [anioLiq, setAnioLiq] = useState(anioActual)
 
   // ── Tipo de contrato ─────────────────────────────────────────────────
-  // 'hora' = horas/semana × semanas × tarifa | 'fijo' = monto fijo mensual
+  // 'hora' = clases dictadas × horas por clase × tarifa | 'fijo' = monto fijo mensual
   const [tipoContrato, setTipoContrato] = useState<'hora'|'fijo'>(
     prof.tipo_contrato === 'fijo' ? 'fijo' : (prof.horas_semana && prof.horas_semana > 0) ? 'hora' : 'fijo'
   )
-  // Semanas calculadas del calendario
+  // Semanas del calendario (fallback si no hay clases registradas)
   const _mesesArr = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
   const _mIdxCalc = _mesesArr.indexOf(mesLiq)
   const semanasCalc = _mIdxCalc >= 0 && new Date(anioLiq, _mIdxCalc + 1, 0).getDate() >= 29 ? 5 : 4
+
+  // ── Clases reales dictadas por la profesora en el mes ─────────────────
+  const [clasesDelMes, setClasesDelMes] = useState<number | null>(null)
+  const [loadingClases, setLoadingClases] = useState(false)
+
+  useEffect(() => {
+    if (tipoContrato !== 'hora' || !prof.id || _mIdxCalc < 0) return
+    setLoadingClases(true)
+    const sb = createClient()
+    const mesNum = String(_mIdxCalc + 1).padStart(2, '0')
+    const desdeStr = `${anioLiq}-${mesNum}-01`
+    const diasEnMes = new Date(anioLiq, _mIdxCalc + 1, 0).getDate()
+    const hastaStr = `${anioLiq}-${mesNum}-${String(diasEnMes).padStart(2, '0')}`
+    // Buscar cursos de la profesora → contar clases en el rango del mes
+    sb.from('cursos').select('id').eq('profesora_id', prof.id)
+      .then(({ data: cursos }) => {
+        if (!cursos?.length) { setClasesDelMes(0); setLoadingClases(false); return }
+        const cursoIds = cursos.map((c: any) => c.id)
+        return sb.from('clases').select('id', { count: 'exact', head: true })
+          .in('curso_id', cursoIds)
+          .gte('fecha', desdeStr)
+          .lte('fecha', hastaStr)
+      })
+      .then((res: any) => {
+        if (res !== undefined) setClasesDelMes(res?.count ?? 0)
+        setLoadingClases(false)
+      })
+      .catch(() => { setClasesDelMes(null); setLoadingClases(false) })
+  }, [prof.id, mesLiq, anioLiq, tipoContrato])
   // Pre-cargar sueldo fijo del perfil
   const [sueldoFijo, setSueldoFijo] = useState<number>(prof.sueldo_fijo || 0)
 
@@ -528,8 +557,13 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
   }, [mesLiq, anioLiq, liquidaciones.length])
 
   // ── Cálculos ─────────────────────────────────────────────────────────
+  // horasPorClase = horas_semana del perfil (el director configura cuánto dura cada clase)
+  const horasPorClase = prof.horas_semana || 0
+
   const base = tipoContrato === 'hora'
-    ? (prof.horas_semana || 0) * semanasCalc * (prof.tarifa_hora || 0)
+    ? clasesDelMes !== null && clasesDelMes > 0
+      ? clasesDelMes * horasPorClase * (prof.tarifa_hora || 0)   // clases reales × horas × tarifa
+      : horasPorClase * semanasCalc * (prof.tarifa_hora || 0)    // fallback: semanas si no hay clases
     : (sueldoFijo || prof.sueldo_fijo || 0)
 
   // Filtrar reemplazos solo del mes seleccionado
@@ -623,28 +657,6 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
     })
     await recargarLiqs()
     setConfirmDelLiq(null)
-  }
-
-  const cerrarLiq = async (id: string) => {
-    const res = await fetch('/api/liquidaciones', {
-      method: 'PATCH',
-      headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, accion: 'cerrar' })
-    })
-    const json = await res.json()
-    if (!json.error) await recargarLiqs()
-    else alert(json.error)
-  }
-
-  const reabrirLiq = async (id: string) => {
-    const res = await fetch('/api/liquidaciones', {
-      method: 'PATCH',
-      headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id, accion: 'reabrir' })
-    })
-    const json = await res.json()
-    if (!json.error) await recargarLiqs()
-    else alert(json.error)
   }
 
   // ── Generar PDF ───────────────────────────────────────────────────────
@@ -759,15 +771,27 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
         {tipoContrato === 'hora' ? (
           <>
             {[
-              ['Horas semanales', `${prof.horas_semana}hs · desde perfil del docente`],
+              ['Horas por clase', `${horasPorClase % 1 === 0 ? horasPorClase : horasPorClase.toFixed(1)}hs · desde perfil del docente`],
               ['Tarifa por hora', `$${prof.tarifa_hora?.toLocaleString('es-AR')}`],
-              ['Semanas en el mes', `${semanasCalc} (calculado automáticamente)`],
+              [
+                'Clases dictadas en ' + mesLiq,
+                loadingClases
+                  ? 'Cargando...'
+                  : clasesDelMes !== null
+                    ? `${clasesDelMes} clase${clasesDelMes !== 1 ? 's' : ''} registradas`
+                    : `${semanasCalc} semanas (sin clases registradas)`
+              ],
             ].map(([k,v]) => (
               <div key={k as string} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
                 <span style={{fontSize:'13px',color:'var(--text2)'}}>{k}</span>
-                <span style={{fontSize:'13px',fontWeight:500,color:'var(--text)'}}>{v}</span>
+                <span style={{fontSize:'13px',fontWeight:500,color: k === 'Clases dictadas en ' + mesLiq && clasesDelMes === 0 ? 'var(--amber)' : 'var(--text)'}}>{v}</span>
               </div>
             ))}
+            {clasesDelMes === 0 && (
+              <div style={{fontSize:'11px',color:'var(--amber)',marginTop:'6px',padding:'6px 10px',background:'var(--amberl)',borderRadius:'8px'}}>
+                ⚠️ No hay clases registradas para {mesLiq} {anioLiq}. Se usó cálculo por semanas como respaldo.
+              </div>
+            )}
           </>
         ) : (
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
@@ -951,10 +975,9 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
             const liqAnio = liquidaciones.filter((l:any) => l.anio === anioActual)
             const totalAnio = liqAnio.reduce((s:number, l:any) => s + (l.total || 0), 0)
             const pagadas = liquidaciones.filter((l:any) => l.estado === 'pagada').length
-            const cerradas = liquidaciones.filter((l:any) => l.estado === 'cerrada').length
-            const pendientes = liquidaciones.filter((l:any) => l.estado !== 'pagada' && l.estado !== 'cerrada').length
+            const pendientes = liquidaciones.filter((l:any) => l.estado !== 'pagada').length
             return (
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:'8px',marginBottom:'14px'}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',marginBottom:'14px'}}>
                 <div style={{background:'var(--vl)',border:'1.5px solid #d4a8e8',borderRadius:'12px',padding:'10px',textAlign:'center'}}>
                   <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${totalAnio.toLocaleString('es-AR')}</div>
                   <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>Total {anioActual}</div>
@@ -962,10 +985,6 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
                 <div style={{background:'var(--greenl)',border:'1.5px solid #a3e0bc',borderRadius:'12px',padding:'10px',textAlign:'center'}}>
                   <div style={{fontSize:'15px',fontWeight:700,color:'var(--green)'}}>{pagadas}</div>
                   <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>pagadas</div>
-                </div>
-                <div style={{background:'#e8e4f5',border:'1.5px solid #c4b8e8',borderRadius:'12px',padding:'10px',textAlign:'center'}}>
-                  <div style={{fontSize:'15px',fontWeight:700,color:'#5a4d8a'}}>{cerradas}</div>
-                  <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>cerradas</div>
                 </div>
                 <div style={{background: pendientes > 0 ? 'var(--amberl)' : 'var(--bg)',border:`1.5px solid ${pendientes > 0 ? '#e8d080' : 'var(--border)'}`,borderRadius:'12px',padding:'10px',textAlign:'center'}}>
                   <div style={{fontSize:'15px',fontWeight:700,color: pendientes > 0 ? 'var(--amber)' : 'var(--text3)'}}>{pendientes}</div>
@@ -975,83 +994,38 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
             )
           })()}
 
-          {liquidaciones.map((l:any) => {
-            const esCerrada = l.estado === 'cerrada'
-            return (
-              <div key={l.id} style={{
-                display:'flex',alignItems:'center',justifyContent:'space-between',
-                padding:'10px 12px',borderRadius:'10px',marginBottom:'6px',
-                background: esCerrada ? '#f0edf8' : 'transparent',
-                border: esCerrada ? '1.5px solid #c4b8e8' : '1px solid transparent',
-                borderBottom: esCerrada ? undefined : '1px solid var(--border)'
-              }}>
-                <div>
-                  <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
-                    <span style={{fontSize:'13.5px',fontWeight:600}}>{l.mes} {l.anio}</span>
-                    {esCerrada && (
-                      <span style={{fontSize:'10px',fontWeight:700,padding:'1px 7px',borderRadius:'8px',background:'#5a4d8a',color:'#fff'}}>
-                        🔒 Cerrada
-                      </span>
-                    )}
-                  </div>
-                  <div style={{fontSize:'11.5px',color:'var(--text3)',marginTop:'1px'}}>
-                    {l.horas_semana > 0 ? `${l.horas_semana}hs/sem · $${l.tarifa_hora?.toLocaleString('es-AR')}/h` : 'Sueldo fijo'}
-                    {esCerrada && l.cerrada_at && (
-                      <span style={{marginLeft:'6px',color:'#9b8eaa'}}>
-                        · Cerrada el {new Date(l.cerrada_at).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'})}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
-                  <div style={{textAlign:'right'}}>
-                    <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${l.total?.toLocaleString('es-AR')}</div>
-                    {!esCerrada && (
-                      <span style={{fontSize:'10px',fontWeight:600,padding:'1px 7px',borderRadius:'8px',
-                        background:l.estado==='pagada'?'var(--greenl)':l.estado==='confirmada'?'var(--vl)':'var(--amberl)',
-                        color:l.estado==='pagada'?'var(--green)':l.estado==='confirmada'?'var(--v)':'var(--amber)'}}>
-                        {l.estado}
-                      </span>
-                    )}
-                  </div>
-                  {/* Botón PDF — siempre disponible */}
-                  <button onClick={() => descargarPDF(l)}
-                    style={{padding:'5px 9px',background:'var(--bg)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
-                    PDF
-                  </button>
-                  {esCerrada ? (
-                    /* Liquidación cerrada: solo reabrir (director) */
-                    puedeEditar && (
-                      <button onClick={() => { if(confirm(`¿Reabrir la liquidación de ${l.mes} ${l.anio}? Esto la dejará editable nuevamente.`)) reabrirLiq(l.id) }}
-                        style={{padding:'5px 9px',background:'transparent',color:'var(--text3)',border:'1px solid var(--border)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
-                        🔓 Reabrir
-                      </button>
-                    )
-                  ) : (
-                    /* Liquidación abierta: editar + cerrar + eliminar */
-                    <>
-                      <button onClick={() => setLiqEditando({...l})}
-                        style={{padding:'5px 9px',background:'var(--vl)',color:'var(--v)',border:'1px solid #d4a8e8',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
-                        Editar
-                      </button>
-                      {puedeEditar && (
-                        <button onClick={() => { if(confirm(`¿Cerrar la liquidación de ${l.mes} ${l.anio}? No podrá editarse ni eliminarse hasta que la reabras.`)) cerrarLiq(l.id) }}
-                          style={{padding:'5px 9px',background:'#e8e4f5',color:'#5a4d8a',border:'1px solid #c4b8e8',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
-                          🔒 Cerrar
-                        </button>
-                      )}
-                      {puedeEditar && (
-                        <button onClick={() => setConfirmDelLiq(l)}
-                          style={{padding:'5px 9px',background:'var(--redl)',color:'var(--red)',border:'none',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
-                          ✕
-                        </button>
-                      )}
-                    </>
-                  )}
+          {liquidaciones.map((l:any) => (
+            <div key={l.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
+              <div>
+                <div style={{fontSize:'13.5px',fontWeight:600}}>{l.mes} {l.anio}</div>
+                <div style={{fontSize:'11.5px',color:'var(--text3)',marginTop:'1px'}}>
+                  {l.horas_semana > 0 ? `${l.horas_semana}hs/sem · $${l.tarifa_hora?.toLocaleString('es-AR')}/h` : 'Sueldo fijo'}
                 </div>
               </div>
-            )
-          })}
+              <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                <div style={{textAlign:'right'}}>
+                  <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${l.total?.toLocaleString('es-AR')}</div>
+                  <span style={{fontSize:'10px',fontWeight:600,padding:'1px 7px',borderRadius:'8px',
+                    background:l.estado==='pagada'?'var(--greenl)':l.estado==='confirmada'?'var(--vl)':'var(--amberl)',
+                    color:l.estado==='pagada'?'var(--green)':l.estado==='confirmada'?'var(--v)':'var(--amber)'}}>
+                    {l.estado}
+                  </span>
+                </div>
+                <button onClick={() => descargarPDF(l)}
+                  style={{padding:'5px 9px',background:'var(--bg)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                  PDF
+                </button>
+                <button onClick={() => setLiqEditando({...l})}
+                  style={{padding:'5px 9px',background:'var(--vl)',color:'var(--v)',border:'1px solid #d4a8e8',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                  Editar
+                </button>
+                <button onClick={() => setConfirmDelLiq(l)}
+                  style={{padding:'5px 9px',background:'var(--redl)',color:'var(--red)',border:'none',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                  ✕
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
@@ -1159,3 +1133,4 @@ const ModalSheet = ({title,children,onClose}:any) => (
     </div>
   </div>
 )
+
