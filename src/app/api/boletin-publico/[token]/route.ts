@@ -60,8 +60,6 @@ export async function GET(
     const cursoId  = tokenData.curso_id
     const periodo  = tokenData.periodo
 
-    const sb = getSupabase()
-
     // 1. Alumno
     const { data: alumno, error: errAl } = await sb
       .from('alumnos')
