@@ -1576,7 +1576,9 @@ function NotasInternaTab({ alumnoId, autor, rol }: { alumnoId: string; autor: st
     const sb = createClient()
     if (editando) {
       const { error } = await sb.from('notas_alumnos').update({ texto: texto.trim() }).eq('id', editando.id)
-      if (!error) {
+      if (error) {
+        alert('No se pudo guardar la nota: ' + error.message)
+      } else {
         setNotas(prev => prev.map(n => n.id === editando.id ? { ...n, texto: texto.trim() } : n))
         setEditando(null)
         setTexto('')
@@ -1585,7 +1587,9 @@ function NotasInternaTab({ alumnoId, autor, rol }: { alumnoId: string; autor: st
       const { data, error } = await sb.from('notas_alumnos')
         .insert({ alumno_id: alumnoId, texto: texto.trim(), autor })
         .select().single()
-      if (!error && data) {
+      if (error) {
+        alert('No se pudo guardar la nota: ' + error.message)
+      } else if (data) {
         setNotas(prev => [data, ...prev])
         setTexto('')
       }
