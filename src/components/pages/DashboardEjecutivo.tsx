@@ -27,7 +27,7 @@ export default function DashboardEjecutivo() {
   const [bajasMes,      setBajasMes]      = useState<any[]>([])
   const [loading,          setLoading]          = useState(true)
   const [alumnosMesAnt,    setAlumnosMesAnt]    = useState<Set<string>>(new Set())
-  const [rentabilidadData, setRentabilidadData] = useState<{cursos:any[], feriados:Set<string>}>({cursos:[], feriados:new Set()})
+  const [rentabilidadData, setRentabilidadData] = useState<{cursos:any[], feriados:Set<string>, clasesReales:any[]}>({cursos:[], feriados:new Set(), clasesReales:[]})
   const [historico,        setHistorico]        = useState<any[]>([])
   const [asistenciaRiesgo, setAsistenciaRiesgo] = useState<any[]>([])
 
@@ -103,7 +103,16 @@ export default function DashboardEjecutivo() {
         .lte('fecha', finMes)
 
       const feriadosDates = new Set((feriadosData || []).map((f: any) => f.fecha))
-      setRentabilidadData({ cursos: rentData || [], feriados: feriadosDates })
+
+      // Clases reales registradas en el mes para calcular costo exacto
+      const { data: clasesReales } = await sb
+        .from('clases')
+        .select('curso_id, fecha')
+        .in('curso_id', (rentData || []).map((c: any) => c.id))
+        .gte('fecha', inicioMes)
+        .lte('fecha', finMes)
+
+      setRentabilidadData({ cursos: rentData || [], feriados: feriadosDates, clasesReales: clasesReales || [] })
 
       // Histórico 12 meses: pagos agrupados por mes/anio
       const { data: histData } = await sb
@@ -248,15 +257,32 @@ export default function DashboardEjecutivo() {
     const inscriptos: any[] = c.cursos_alumnos || []
     const cantAlumnos = inscriptos.length
     const ingresosCurso = inscriptos.reduce((s: number, r: any) => s + (r.alumnos?.cuota_mensual || 0), 0)
-    // Costo real: tarifa × horas reales de clase en el mes (contando días y feriados)
-    const horasReales = calcularHorasCursoMes(c, rentabilidadData.feriados)
+
+    // Preferir clases reales registradas; fallback al cálculo por calendario
+    const clasesDelCurso = rentabilidadData.clasesReales.filter((cl: any) => cl.curso_id === c.id)
+    let horasReales: number
+    let fuenteCalculo: string
+
+    if (clasesDelCurso.length > 0 && c.hora_inicio && c.hora_fin) {
+      // Clases reales × duración real de la clase
+      const [h1, m1] = c.hora_inicio.split(':').map(Number)
+      const [h2, m2] = c.hora_fin.split(':').map(Number)
+      const duracion = ((h2 * 60 + m2) - (h1 * 60 + m1)) / 60
+      horasReales = Math.round(clasesDelCurso.length * duracion * 10) / 10
+      fuenteCalculo = `${clasesDelCurso.length} clases · ${duracion}hs c/u`
+    } else {
+      // Fallback: estimación por calendario
+      horasReales = calcularHorasCursoMes(c, rentabilidadData.feriados)
+      fuenteCalculo = 'estimado por calendario'
+    }
+
     const costoPorMes = prof ? (prof.tarifa_hora || 0) * horasReales : 0
     const margen = ingresosCurso - costoPorMes
     const pctMargen = ingresosCurso > 0 ? Math.round((margen / ingresosCurso) * 100) : 0
     return { id: c.id, nombre: c.nombre, nivel: c.nivel,
       profesora: prof ? prof.nombre : '—', cantAlumnos,
       ingresos: ingresosCurso, costo: costoPorMes, margen, pctMargen,
-      horasReales, detalle: `${horasReales}hs · $${prof?.tarifa_hora?.toLocaleString('es-AR') || 0}/h` }
+      horasReales, detalle: `${horasReales}hs · $${prof?.tarifa_hora?.toLocaleString('es-AR') || 0}/h · ${fuenteCalculo}` }
   }).filter((c: any) => c.cantAlumnos > 0).sort((a: any, b: any) => b.margen - a.margen)
 
   // ── Días con más pagos ────────────────────────────────────────────────────
@@ -1119,7 +1145,7 @@ export default function DashboardEjecutivo() {
             <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
                 <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em'}}>Costo docente vs. ingresos por curso</div>
-                <div style={{fontSize:'10px',color:'var(--text3)'}}>tarifa × hs/sem × 4 sem</div>
+                <div style={{fontSize:'10px',color:'var(--text3)'}}>tarifa × horas reales del mes</div>
               </div>
               <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
                 {rentabilidadCursos.map((c: any) => {
