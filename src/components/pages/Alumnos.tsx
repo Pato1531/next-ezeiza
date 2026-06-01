@@ -93,7 +93,6 @@ export default function Alumnos() {
   const [mesFiltro, setMesFiltro] = useState(new Date().getMonth())
   const [alumnosSinCurso, setAlumnosSinCurso] = useState<Set<string>>(new Set())
   const [alumnosConPagoMes, setAlumnosConPagoMes] = useState<Set<string>>(new Set())
-  const [cursosDeAlumnos, setCursosDeAlumnos] = useState<Record<string, string>>({}) // alumno_id → nombre del curso
 
   const MESES_LISTA = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
   const mesActual = MESES_LISTA[new Date().getMonth()]
@@ -106,17 +105,11 @@ export default function Alumnos() {
     const anio = new Date().getFullYear()
     Promise.all([
       sb.from('pagos_alumnos').select('alumno_id').eq('mes', mesFiltroNombre).eq('anio', anio),
-      sb.from('cursos_alumnos').select('alumno_id, cursos(nombre)')
+      sb.from('cursos_alumnos').select('alumno_id')
     ]).then(([pagosRes, cursosRes]) => {
       setAlumnosConPagoMes(new Set((pagosRes.data || []).map((r: any) => r.alumno_id)))
       const conCurso = new Set((cursosRes.data || []).map((r: any) => r.alumno_id))
       setAlumnosSinCurso(new Set(alumnos.map(a => a.id).filter(id => !conCurso.has(id))))
-      // Mapa alumno_id → nombre del curso para usar en el export
-      const mapa: Record<string, string> = {}
-      ;(cursosRes.data || []).forEach((r: any) => {
-        if (r.alumno_id && r.cursos?.nombre) mapa[r.alumno_id] = r.cursos.nombre
-      })
-      setCursosDeAlumnos(mapa)
     }).catch(() => {})
   }
 
@@ -203,14 +196,12 @@ export default function Alumnos() {
 
   const exportarExcel = () => {
     const headers = ocultarMontos
-      ? ['Apellido', 'Nombre', 'Curso', mesFiltroNombre, 'DNI', 'Email', 'Fecha nacimiento']
-      : ['Apellido', 'Nombre', 'Curso', 'Cuota mensual', mesFiltroNombre, 'DNI', 'Email', 'Fecha nacimiento']
-    const rows = filtrados.map((a:any) => {
-      const curso = cursosDeAlumnos[a.id] || a.nivel || ''
-      return ocultarMontos
-        ? [a.apellido, a.nombre, curso, alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe', (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '', a.email || '', a.fecha_nacimiento || '']
-        : [a.apellido, a.nombre, curso, a.cuota_mensual || 0, alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe', (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '', a.email || '', a.fecha_nacimiento || '']
-    })
+      ? ['Apellido', 'Nombre', 'Nivel', mesFiltroNombre, 'DNI', 'Email', 'Fecha nacimiento']
+      : ['Apellido', 'Nombre', 'Nivel', 'Cuota mensual', mesFiltroNombre, 'DNI', 'Email', 'Fecha nacimiento']
+    const rows = filtrados.map((a:any) => ocultarMontos
+      ? [a.apellido, a.nombre, a.nivel || '', alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe', (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '', a.email || '', a.fecha_nacimiento || '']
+      : [a.apellido, a.nombre, a.nivel || '', a.cuota_mensual || 0, alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe', (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '', a.email || '', a.fecha_nacimiento || '']
+    )
     const bom = '\uFEFF'
     const csv = bom + [headers, ...rows]
       .map((row:any[]) => row.map((v:any) => `"${String(v).replace(/"/g, '""')}"`).join(','))
@@ -1341,7 +1332,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
         )}
       </Card>}
 
-      {tab === 'notas' && <NotasInternaTab alumnoId={a.id} autor={usuario?.nombre || 'Sistema'} />}
+      {tab === 'notas' && <NotasInternaTab alumnoId={a.id} autor={usuario?.nombre || 'Sistema'} rol={usuario?.rol || ''} />}
 
       {tab === 'pagos' && puedeVerPagos && <Card>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px'}}>
@@ -1560,7 +1551,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
 }
 
 // ── NOTAS INTERNAS DEL ALUMNO ────────────────────────────────────────────────
-function NotasInternaTab({ alumnoId, autor }: { alumnoId: string; autor: string }) {
+function NotasInternaTab({ alumnoId, autor, rol }: { alumnoId: string; autor: string; rol: string }) {
   const [notas, setNotas] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [texto, setTexto] = useState('')
@@ -1664,14 +1655,18 @@ function NotasInternaTab({ alumnoId, autor }: { alumnoId: string; autor: string 
                   </div>
                 </div>
                 <div style={{display:'flex',gap:'6px'}}>
-                  <button onClick={() => { setEditando(n); setTexto(n.texto) }}
-                    style={{padding:'5px 10px',background:'var(--vl)',color:'var(--v)',border:'1px solid var(--v)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer'}}>
-                    Editar
-                  </button>
-                  <button onClick={() => setConfirmDel(n.id)}
-                    style={{padding:'5px 10px',background:'var(--redl)',color:'var(--red)',border:'1px solid #f5c5c5',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer'}}>
-                    ✕
-                  </button>
+                  {(rol !== 'profesora' || n.autor === autor) && (
+                    <button onClick={() => { setEditando(n); setTexto(n.texto) }}
+                      style={{padding:'5px 10px',background:'var(--vl)',color:'var(--v)',border:'1px solid var(--v)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer'}}>
+                      Editar
+                    </button>
+                  )}
+                  {(rol !== 'profesora' || n.autor === autor) && (
+                    <button onClick={() => setConfirmDel(n.id)}
+                      style={{padding:'5px 10px',background:'var(--redl)',color:'var(--red)',border:'1px solid #f5c5c5',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer'}}>
+                      ✕
+                    </button>
+                  )}
                 </div>
               </div>
               <div style={{fontSize:'13.5px',color:'var(--text)',lineHeight:1.5,whiteSpace:'pre-wrap'}}>{n.texto}</div>
