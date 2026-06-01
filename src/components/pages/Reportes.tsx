@@ -905,6 +905,8 @@ function BoletinSection({ alumnos }: any) {
   // Estado del boletín generado — guarda los parámetros para el botón de WhatsApp
   const [boletinGenerado, setBoletinGenerado] = useState<{
     alumnoNombre: string
+    nombreContacto: string
+    telefonoContacto: string
     cursoId: string
     periodo: string
     institutoId: string
@@ -950,8 +952,17 @@ function BoletinSection({ alumnos }: any) {
 
       // Guardar datos para el botón de WhatsApp
       const alumno = alumnos.find((a: any) => a.id === selAlumno)
+      // Para menores: contactar al padre/tutor; para mayores: al propio alumno
+      const esMenor    = alumno?.es_menor
+      const nombreContacto = esMenor
+        ? (alumno?.padre_nombre || `familia de ${alumno?.nombre} ${alumno?.apellido}`)
+        : `${alumno?.nombre} ${alumno?.apellido}`
+      const telefonoContacto = esMenor ? alumno?.padre_telefono : alumno?.telefono
+
       setBoletinGenerado({
-        alumnoNombre: alumno ? `${alumno.nombre} ${alumno.apellido}` : 'el alumno',
+        alumnoNombre: `${alumno?.nombre || ''} ${alumno?.apellido || ''}`.trim(),
+        nombreContacto,
+        telefonoContacto: telefonoContacto || '',
         cursoId,
         periodo: `${periodo} ${anio}`,
         institutoId: usuario?.instituto_id || '',
@@ -986,16 +997,27 @@ function BoletinSection({ alumnos }: any) {
       const link = `${baseUrl}/api/boletin-publico/${json.token}`
 
       const texto = encodeURIComponent(
-        `Hola! 👋\n\n` +
-        `Te enviamos el boletín de calificaciones de *${boletinGenerado.alumnoNombre}* ` +
-        `correspondiente al período *${boletinGenerado.periodo}*.\n\n` +
+        `Hola ${boletinGenerado.nombreContacto}! 👋\n\n` +
+        `Te enviamos el boletín de calificaciones de ${boletinGenerado.alumnoNombre} ` +
+        `correspondiente al período ${boletinGenerado.periodo}.\n\n` +
         `Podés verlo aquí 👇\n${link}\n\n` +
         `⏳ El link vence en 48 horas.\n\n` +
         `Cualquier duda o inquietud, estamos a disposición.\n\n` +
-        `_La Administración — Next Ezeiza_`
+        `La Administración — Next Ezeiza`
       )
 
-      window.open(`https://wa.me/?text=${texto}`, '_blank')
+      // Si hay teléfono, abrir chat directo; si no, abrir selector de contactos
+      const tel = boletinGenerado.telefonoContacto
+        ? boletinGenerado.telefonoContacto.replace(/\D/g, '') // solo números
+        : ''
+      // Agregar código de país Argentina si el número tiene 10 dígitos sin código
+      const telFull = tel && tel.length === 10 ? `54${tel}` : tel
+
+      const waUrl = telFull
+        ? `https://wa.me/${telFull}?text=${texto}`
+        : `https://wa.me/?text=${texto}`
+
+      window.open(waUrl, '_blank')
     } catch (e: any) {
       alert('No se pudo generar el link: ' + e.message)
     } finally {
