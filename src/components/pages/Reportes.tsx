@@ -900,16 +900,24 @@ function BoletinSection({ alumnos }: any) {
   const [periodo, setPeriodo] = useState('2° Trimestre')
   const [anio, setAnio] = useState(new Date().getFullYear())
   const [nivelManual, setNivelManual] = useState('')
-  const [modalidad, setModalidad] = useState('Presencial')
   const [generando, setGenerando] = useState(false)
+  const [enviandoWA, setEnviandoWA] = useState(false)
+  // Estado del boletín generado — guarda los parámetros para el botón de WhatsApp
+  const [boletinGenerado, setBoletinGenerado] = useState<{
+    alumnoNombre: string
+    cursoId: string
+    periodo: string
+    institutoId: string
+  } | null>(null)
+  const { usuario } = useAuth()
   const IS = { padding:'9px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)', width:'100%' } as const
 
   const generar = async () => {
     if (!selAlumno) return alert('Seleccioná un alumno')
     setGenerando(true)
+    setBoletinGenerado(null)
     try {
       const sb = createClient()
-      // Obtener el curso del alumno para pasarlo como parámetro
       const cuRes = await sb
         .from('cursos_alumnos')
         .select('cursos(id,nombre,nivel)')
@@ -924,7 +932,6 @@ function BoletinSection({ alumnos }: any) {
         return
       }
 
-      // Fetch con headers de autenticación → abrir HTML en pestaña nueva
       const params = new URLSearchParams({
         curso_id: cursoId,
         periodo:  `${periodo} ${anio}`,
@@ -933,19 +940,22 @@ function BoletinSection({ alumnos }: any) {
       const res = await fetch(`/api/boletin/${selAlumno}?${params.toString()}`, {
         headers: apiHeaders()
       })
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json.error || `HTTP ${res.status}`)
-      }
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const html = await res.text()
       const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
       const url  = URL.createObjectURL(blob)
       const win  = window.open(url, '_blank')
-      if (!win) {
-        const a = document.createElement('a')
-        a.href = url; a.download = 'boletin.html'; a.click()
-      }
+      if (!win) { const a = document.createElement('a'); a.href=url; a.download='boletin.html'; a.click() }
       setTimeout(() => URL.revokeObjectURL(url), 60000)
+
+      // Guardar datos para el botón de WhatsApp
+      const alumno = alumnos.find((a: any) => a.id === selAlumno)
+      setBoletinGenerado({
+        alumnoNombre: alumno ? `${alumno.nombre} ${alumno.apellido}` : 'el alumno',
+        cursoId,
+        periodo: `${periodo} ${anio}`,
+        institutoId: usuario?.instituto_id || '',
+      })
     } catch (e) {
       console.error('[Boletin]', e)
       alert('Error al generar el boletín.')
@@ -954,11 +964,50 @@ function BoletinSection({ alumnos }: any) {
     }
   }
 
+  const compartirWhatsApp = async () => {
+    if (!boletinGenerado || !selAlumno) return
+    setEnviandoWA(true)
+    try {
+      // Generar token temporal (48hs)
+      const res = await fetch('/api/boletin-token', {
+        method: 'POST',
+        headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          alumno_id:   selAlumno,
+          curso_id:    boletinGenerado.cursoId,
+          periodo:     boletinGenerado.periodo,
+          instituto_id: boletinGenerado.institutoId,
+        })
+      })
+      const json = await res.json()
+      if (!res.ok || json.error) throw new Error(json.error || 'Error al generar link')
+
+      const baseUrl = window.location.origin
+      const link = `${baseUrl}/api/boletin-publico/${json.token}`
+
+      const texto = encodeURIComponent(
+        `Hola! 👋\n\n` +
+        `Te enviamos el boletín de calificaciones de *${boletinGenerado.alumnoNombre}* ` +
+        `correspondiente al período *${boletinGenerado.periodo}*.\n\n` +
+        `Podés verlo aquí 👇\n${link}\n\n` +
+        `⏳ El link vence en 48 horas.\n\n` +
+        `Cualquier duda o inquietud, estamos a disposición.\n\n` +
+        `_La Administración — Next Ezeiza_`
+      )
+
+      window.open(`https://wa.me/?text=${texto}`, '_blank')
+    } catch (e: any) {
+      alert('No se pudo generar el link: ' + e.message)
+    } finally {
+      setEnviandoWA(false)
+    }
+  }
+
   return (
     <ReportSection titulo="Boletín digital" subtitulo="PDF listo para compartir por WhatsApp" onCSV={undefined} onPDF={undefined}>
       <div style={{marginBottom:'10px'}}>
         <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Alumno</div>
-        <select style={IS} value={selAlumno} onChange={e => setSelAlumno(e.target.value)}>
+        <select style={IS} value={selAlumno} onChange={e => { setSelAlumno(e.target.value); setBoletinGenerado(null) }}>
           <option value="">— Seleccioná un alumno —</option>
           {[...alumnos].sort((a:any,b:any) => a.apellido.localeCompare(b.apellido)).map((a:any) => <option key={a.id} value={a.id}>{a.apellido}, {a.nombre}</option>)}
         </select>
@@ -966,13 +1015,13 @@ function BoletinSection({ alumnos }: any) {
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'14px'}}>
         <div>
           <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Período</div>
-          <select style={IS} value={periodo} onChange={e => setPeriodo(e.target.value)}>
+          <select style={IS} value={periodo} onChange={e => { setPeriodo(e.target.value); setBoletinGenerado(null) }}>
             {['1° Trimestre','2° Trimestre','3° Trimestre','Anual'].map(p => <option key={p}>{p}</option>)}
           </select>
         </div>
         <div>
           <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Año</div>
-          <select style={IS} value={anio} onChange={e => setAnio(+e.target.value)}>
+          <select style={IS} value={anio} onChange={e => { setAnio(+e.target.value); setBoletinGenerado(null) }}>
             {[2024,2025,2026].map(y => <option key={y}>{y}</option>)}
           </select>
         </div>
@@ -981,9 +1030,23 @@ function BoletinSection({ alumnos }: any) {
         <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Nivel (opcional, reemplaza el automático)</div>
         <input style={IS} type="text" value={nivelManual} onChange={e => setNivelManual(e.target.value)} placeholder="Ej: A2, B1, Intermedio..." />
       </div>
-      <button onClick={generar} disabled={generando} style={{width:'100%',padding:'13px',background:generando?'#aaa':'var(--v)',color:'white',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:700,cursor:'pointer'}}>
+
+      {/* Botón generar */}
+      <button onClick={generar} disabled={generando} style={{width:'100%',padding:'13px',background:generando?'#aaa':'var(--v)',color:'white',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:700,cursor:'pointer',marginBottom: boletinGenerado ? '10px' : '0'}}>
         {generando ? 'Generando...' : '📄 Generar boletín PDF'}
       </button>
+
+      {/* Botón WhatsApp — aparece solo después de generar */}
+      {boletinGenerado && (
+        <button onClick={compartirWhatsApp} disabled={enviandoWA} style={{width:'100%',padding:'13px',background:enviandoWA?'#aaa':'#25D366',color:'white',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px'}}>
+          {enviandoWA ? 'Generando link...' : (
+            <>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/></svg>
+              Enviar por WhatsApp
+            </>
+          )}
+        </button>
+      )}
     </ReportSection>
   )
 }
@@ -1024,7 +1087,8 @@ function CertificadoSection({ alumnos }: any) {
         return
       }
 
-      // Fetch con headers de autenticación → abrir HTML en pestaña nueva
+      // Armar la URL de la API y abrir en nueva pestaña
+      // La ruta /api/certificado/[alumnoId] lee instituto, color, firma y director desde la DB
       const params = new URLSearchParams({
         curso_id:    cursoId,
         tipo,
@@ -1034,23 +1098,7 @@ function CertificadoSection({ alumnos }: any) {
         ...(nivelManual  ? { nivel: nivelManual } : {}),
         modalidad,
       })
-      const res = await fetch(`/api/certificado/${selAlumno}?${params.toString()}`, {
-        headers: apiHeaders()
-      })
-      if (!res.ok) {
-        const json = await res.json().catch(() => ({}))
-        throw new Error(json.error || `HTTP ${res.status}`)
-      }
-      const html = await res.text()
-      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-      const url  = URL.createObjectURL(blob)
-      const win  = window.open(url, '_blank')
-      if (!win) {
-        const a = document.createElement('a')
-        a.href = url; a.download = 'certificado.html'; a.click()
-      }
-      // Limpiar la URL del blob después de 60s
-      setTimeout(() => URL.revokeObjectURL(url), 60000)
+      window.open(`/api/certificado/${selAlumno}?${params.toString()}`, '_blank')
     } catch (e) {
       console.error('[Certificado]', e)
       alert('Error al generar el certificado.')
