@@ -108,6 +108,17 @@ export async function GET(
       .eq('rol', 'director').eq('instituto_id', alumno.instituto_id).single()
     const directorNombre = director?.nombre || 'Director'
 
+    // Notas internas del alumno — la más reciente como observación general en el boletín
+    const { data: notasInternas } = await sb
+      .from('notas_alumnos')
+      .select('texto, autor, created_at')
+      .eq('alumno_id', params.alumnoId)
+      .order('created_at', { ascending: false })
+      .limit(3)
+    const notaGeneralTexto = notasInternas && notasInternas.length > 0
+      ? notasInternas[0].texto
+      : ''
+
     // 4. Exámenes del curso con notas del alumno
     const { data: examenes } = await sb
       .from('examenes')
@@ -156,23 +167,26 @@ export async function GET(
     const initials = institutoNombre.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
 
     const filas = examenesConNota.length > 0
-      ? examenesConNota.map(ex => `
+      ? examenesConNota.map(ex => {
+          // Mostrar nota numérica como "84/100"
+          const num = Number(ex.notaLabel)
+          const notaDisplay = !isNaN(num) && ex.notaLabel !== '—'
+            ? `${ex.notaLabel}<span style="font-size:10px;font-weight:400;opacity:.6">/100</span>`
+            : ex.notaLabel
+          return `
         <tr>
-          <td>
-            ${ex.nombre}
-            ${ex.tipo ? `<span class="tipo-badge">${ex.tipo}</span>` : ''}
-          </td>
+          <td>${ex.nombre}</td>
           <td class="td-fecha">${ex.fecha}</td>
           <td class="td-nota">
             <span class="nota-badge" style="background:${ex.notaBg};color:${ex.notaColor}">
-              ${ex.notaLabel}
+              ${notaDisplay}
             </span>
           </td>
-        </tr>`).join('')
+        </tr>`}).join('')
       : `<tr><td colspan="3" class="td-vacio">Sin evaluaciones registradas para este período.</td></tr>`
 
-    const observacionesDocente = examenesConNota
-      .map(e => e.observacion).filter(Boolean).join(' ')
+    // Observaciones: usar la nota interna más reciente del alumno
+    const observacionesDocente = notaGeneralTexto
 
     const html = `<!DOCTYPE html>
 <html lang="es">
@@ -365,12 +379,13 @@ export async function GET(
         </tbody>
       </table>
 
+      ${observacionesDocente ? `
       <div class="obs-block">
         <div class="obs-label">Observaciones del docente</div>
         <div class="obs-text">
-          ${observacionesDocente || 'Sin observaciones registradas para este período.'}
+          ${observacionesDocente}
         </div>
-      </div>
+      </div>` : ''}
 
       <div class="firma-wrap" style="display:flex;justify-content:flex-end;margin-top:36px;">
         <div class="firma">
