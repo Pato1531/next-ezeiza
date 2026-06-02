@@ -68,6 +68,11 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
   const claseIds = (clases || []).map((c: any) => c.id)
   const clasesSinTema = (clases || []).filter((c: any) => !c.tema || c.tema.trim() === '').length
 
+  // Feriados del mes — misma fuente que el Dashboard
+  const { data: feriadosData } = await db.from('agenda_eventos')
+    .select('fecha').eq('tipo', 'Feriado').gte('fecha', desde).lte('fecha', hasta)
+  const feriados = new Set((feriadosData || []).map((f: any) => f.fecha))
+
   // Horas dictadas
   let horasTotales = 0
   for (const cl of (clases || [])) {
@@ -174,11 +179,12 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
   const DIAS_MAP: Record<string, number> = { Lun:1, Mar:2, Mié:3, Mie:3, Jue:4, Vie:5, Sáb:6, Sab:6, Dom:0 }
   const clasesEsperadasPorCurso = (cursos || []).map((c: any) => {
     const diasCurso: number[] = (Array.isArray(c.dias) ? c.dias : (c.dias||'').split(',')).map((d: string) => DIAS_MAP[d.trim()]).filter((d: any) => d !== undefined)
-    // Contar ocurrencias de esos días en el mes
+    // Contar ocurrencias de esos días en el mes, excluyendo feriados
     let esperadas = 0
     const d = new Date(desde)
     while (d <= new Date(hasta)) {
-      if (diasCurso.includes(d.getDay())) esperadas++
+      const fechaStr = d.toISOString().split('T')[0]
+      if (diasCurso.includes(d.getDay()) && !feriados.has(fechaStr)) esperadas++
       d.setDate(d.getDate() + 1)
     }
     const registradas = (clases || []).filter((cl: any) => cl.curso_id === c.id).length
