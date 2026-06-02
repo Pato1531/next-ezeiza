@@ -81,14 +81,15 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
   }
   horasTotales = Math.round(horasTotales * 10) / 10
 
-  // 5. Asistencia del mes
+  // 5. Asistencia del mes — por curso
   const { data: asistData } = claseIds.length ? await db.from('asistencia_clases')
     .select('alumno_id, estado, clase_id, alumnos(nombre, apellido)')
     .in('clase_id', claseIds) : { data: [] }
 
-  // Promedio asistencia
-  const totalRegistros = (asistData || []).length
-  const totalPresentes = (asistData || []).filter((r: any) => r.estado === 'presente').length
+  // Promedio asistencia: contar presentes sobre total de registros con estado definido
+  const asistConEstado = (asistData || []).filter((r: any) => r.estado === 'presente' || r.estado === 'ausente')
+  const totalRegistros = asistConEstado.length
+  const totalPresentes = asistConEstado.filter((r: any) => r.estado === 'presente').length
   const pctAsistencia  = totalRegistros > 0 ? Math.round((totalPresentes / totalRegistros) * 100) : null
 
   // Ausencias reiteradas (2+ faltas consecutivas por alumno)
@@ -115,30 +116,44 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
     return { ...ex, promedio, bajos, totalNotas: notasEx.length }
   })
 
-  // 7. Planificación — avance del año
-  const { data: unidades } = cursoIds.length ? await db.from('planificacion_cursos').select('id, estado, curso_id').in('curso_id', cursoIds) : { data: [] }
+  // 7. Planificación — por curso
+  const { data: unidades } = cursoIds.length ? await db.from('planificacion_cursos').select('id, estado, curso_id, titulo').in('curso_id', cursoIds) : { data: [] }
+
+  // Estadísticas globales (para KPI)
   const totalUnidades    = (unidades || []).length
   const unidadesDictadas = (unidades || []).filter((u: any) => u.estado === 'dictada').length
   const pctAvance        = totalUnidades > 0 ? Math.round((unidadesDictadas / totalUnidades) * 100) : null
 
+  // Por curso
+  const planifPorCurso = (cursos || []).map((c: any) => {
+    const uds = (unidades || []).filter((u: any) => u.curso_id === c.id)
+    const dictadas = uds.filter((u: any) => u.estado === 'dictada').length
+    const total    = uds.length
+    const pct      = total > 0 ? Math.round((dictadas / total) * 100) : null
+    return { cursoNombre: c.nombre, dictadas, total, pct }
+  }).filter((c: any) => c.total > 0)
+
   // Semáforo de ritmo: ¿va a terminar a tiempo?
   const mesTranscurrido = (mesIdx + 1) / 12
-  const ritmoEsperado   = pctAvance !== null ? Math.round(mesTranscurrido * 100) : null
-  const brecha          = pctAvance !== null && ritmoEsperado !== null ? pctAvance - ritmoEsperado : null
+  const ritmoEsperado   = Math.round(mesTranscurrido * 100)
+  const brecha          = pctAvance !== null ? pctAvance - ritmoEsperado : null
   const semaforoRitmo   = brecha === null ? '⚫' : brecha >= 0 ? '🟢' : brecha >= -10 ? '🟡' : '🔴'
   const textoRitmo      = brecha === null ? 'Sin datos de planificación'
     : brecha >= 0 ? `Adelantado ${brecha}% respecto al ritmo esperado`
     : brecha >= -10 ? `${Math.abs(brecha)}% por debajo del ritmo — en riesgo leve`
     : `${Math.abs(brecha)}% por debajo del ritmo — requiere atención`
 
-  // 8. Alumnos en cursos (mes actual vs mes anterior)
+  // 8. Alumnos en cursos de esta profesora
   const { data: cursosAlActual } = cursoIds.length ? await db.from('cursos_alumnos').select('alumno_id').in('curso_id', cursoIds) : { data: [] }
   const cantActual = (cursosAlActual || []).length
+  const alumnoIdsProf = new Set((cursosAlActual || []).map((r: any) => r.alumno_id))
 
-  // 9. Bajas del mes en cursos de esta profesora
-  const { data: bajas } = await db.from('bajas_alumnos').select('alumno_nombre, alumno_apellido, motivo, fecha_baja').gte('fecha_baja', desde).lte('fecha_baja', hasta)
-  // Filtrar bajas de alumnos que estaban en cursos de esta profesora (aproximación por fecha)
-  const cantBajas = (bajas || []).length
+  // 9. Bajas del mes — solo alumnos que estaban en cursos de esta profesora
+  const { data: todasBajas } = await db.from('bajas_alumnos')
+    .select('alumno_id, alumno_nombre, alumno_apellido, motivo, fecha_baja')
+    .gte('fecha_baja', desde).lte('fecha_baja', hasta)
+  const bajasDeProfesora = (todasBajas || []).filter((b: any) => alumnoIdsProf.has(b.alumno_id))
+  const cantBajas = bajasDeProfesora.length
 
   // Fecha de emisión
   const fechaEmision = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -319,19 +334,18 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
     <!-- Planificación -->
     <div class="section">
       <div class="section-title">Planificación y ritmo anual</div>
-      ${pctAvance !== null ? `
-      <div class="row">
-        <span class="row-label">Unidades dictadas / total</span>
-        <span class="row-val">${unidadesDictadas} / ${totalUnidades}</span>
-      </div>
-      <div class="row">
-        <span class="row-label">Avance del programa</span>
-        <span class="row-val" style="color:${color(pctAvance, [Math.max(0, (ritmoEsperado||0) - 10), ritmoEsperado||0])}">${pctAvance}%</span>
-      </div>
+      ${planifPorCurso.length === 0 ? '<div style="font-size:13px;color:#9b8eaa;font-style:italic">Sin planificación cargada</div>' :
+        planifPorCurso.map((c: any) => `
+        <div class="row">
+          <span class="row-label">${c.cursoNombre}</span>
+          <span class="row-val" style="color:${c.pct !== null ? color(c.pct, [Math.max(0, ritmoEsperado - 10), ritmoEsperado]) : '#9b8eaa'}">
+            ${c.dictadas}/${c.total} unid. · ${c.pct !== null ? c.pct + '%' : '—'}
+          </span>
+        </div>`).join('')}
       <div class="row">
         <span class="row-label">Ritmo esperado a esta altura del año</span>
         <span class="row-val">${ritmoEsperado}%</span>
-      </div>` : '<div style="font-size:13px;color:#9b8eaa;font-style:italic">Sin planificación cargada</div>'}
+      </div>
       <div class="semaforo-row" style="margin-top:10px">
         <div class="semaforo-icon">${semaforoRitmo}</div>
         <div>
