@@ -208,14 +208,16 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
     ? await db.from('cursos_alumnos').select('alumno_id, cursos(id, nombre, profesora_id)').in('alumno_id', bajaIdsAlumnos)
     : { data: [] }
 
+  const profId = params.profesoraId.trim().toLowerCase()
+
   const bajasDeProfesora = (todasBajas || []).map((b: any) => {
-    // 1. profesora_id directo en la baja (bajas nuevas)
-    if (b.profesora_id === params.profesoraId) {
-      return { ...b, cursoNombre: b.curso_nombre || '—' }
+    // 1. profesora_id directo en la baja — comparación normalizada
+    if (b.profesora_id && b.profesora_id.trim().toLowerCase() === profId) {
+      return { ...b, cursoNombre: b.curso_nombre && b.curso_nombre !== '—' ? b.curso_nombre : '—' }
     }
     // 2. Cruzar con cursos_alumnos (alumno aún activo)
     const rel = (cursosAlumnosBaja || []).find((r: any) =>
-      r.alumno_id === b.alumno_id && r.cursos?.profesora_id === params.profesoraId
+      r.alumno_id === b.alumno_id && r.cursos?.profesora_id?.trim().toLowerCase() === profId
     )
     if (rel) return { ...b, cursoNombre: rel.cursos?.nombre || b.curso_nombre || '—' }
     // 3. Nombre del curso guardado en la baja coincide con curso de la profesora
