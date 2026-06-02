@@ -105,10 +105,10 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
     cursoNombre: c.cursoNombre,
     pct: Math.round((c.presentes / c.total) * 100),
   }))
-  // Promedio global para el KPI
-  const totalReg = Object.values(asistPorCurso).reduce((s: number, c: any) => s + c.total, 0)
-  const totalPres = Object.values(asistPorCurso).reduce((s: number, c: any) => s + c.presentes, 0)
-  const pctAsistencia = totalReg > 0 ? Math.round((totalPres / totalReg) * 100) : null
+  // KPI: promedio de los promedios por curso (no suma global de registros)
+  const pctAsistencia = asistCursosList.length > 0
+    ? Math.round(asistCursosList.reduce((s: number, c: any) => s + c.pct, 0) / asistCursosList.length)
+    : null
 
   // Ausencias reiteradas (2+ en el mes, global)
   const ausenciasPorAlumno: Record<string, { nombre: string; consecutivas: number }> = {}
@@ -125,11 +125,12 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
   const { data: notas } = examenIds.length ? await db.from('notas_examenes').select('examen_id, nota, alumno_id, alumnos(nombre, apellido)').in('examen_id', examenIds) : { data: [] }
 
   const examenesConStats = (examenes || []).map((ex: any) => {
-    const notasEx = (notas || []).filter((n: any) => n.examen_id === ex.id && n.nota !== null && n.nota !== '')
-    const nums    = notasEx.map((n: any) => Number(n.nota)).filter((n: number) => !isNaN(n))
+    const notasEx  = (notas || []).filter((n: any) => n.examen_id === ex.id && n.nota !== null && n.nota !== '')
+    const nums     = notasEx.map((n: any) => Number(n.nota)).filter((n: number) => !isNaN(n))
     const promedio = nums.length > 0 ? Math.round(nums.reduce((s: number, n: number) => s + n, 0) / nums.length) : null
-    const bajos   = notasEx.filter((n: any) => !isNaN(Number(n.nota)) && Number(n.nota) < 60).map((n: any) => ({ nombre: `${n.alumnos?.nombre || ''} ${n.alumnos?.apellido || ''}`, nota: n.nota }))
-    return { ...ex, promedio, bajos, totalNotas: notasEx.length }
+    const bajos    = notasEx.filter((n: any) => !isNaN(Number(n.nota)) && Number(n.nota) < 60).map((n: any) => ({ nombre: `${n.alumnos?.nombre || ''} ${n.alumnos?.apellido || ''}`, nota: n.nota }))
+    const cursoNombre = (cursos || []).find((c: any) => c.id === ex.curso_id)?.nombre || ''
+    return { ...ex, promedio, bajos, totalNotas: notasEx.length, cursoNombre }
   })
 
   // 7. Planificación — por curso con estados correctos del sistema
@@ -167,17 +168,43 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
     : brecha >= -10 ? `${Math.abs(brecha)}% por debajo del ritmo — en riesgo leve`
     : `${Math.abs(brecha)}% por debajo del ritmo — requiere atención`
 
-  // 8. Alumnos en cursos de esta profesora
-  const { data: cursosAlActual } = cursoIds.length ? await db.from('cursos_alumnos').select('alumno_id').in('curso_id', cursoIds) : { data: [] }
-  const cantActual = (cursosAlActual || []).length
-  const alumnoIdsProf = new Set((cursosAlActual || []).map((r: any) => r.alumno_id))
+  // Clases esperadas por calendario vs registradas — por curso
+  const DIAS_MAP: Record<string, number> = { Lun:1, Mar:2, Mié:3, Mie:3, Jue:4, Vie:5, Sáb:6, Sab:6, Dom:0 }
+  const clasesEsperadasPorCurso = (cursos || []).map((c: any) => {
+    const diasCurso: number[] = (Array.isArray(c.dias) ? c.dias : (c.dias||'').split(',')).map((d: string) => DIAS_MAP[d.trim()]).filter((d: any) => d !== undefined)
+    // Contar ocurrencias de esos días en el mes
+    let esperadas = 0
+    const d = new Date(desde)
+    while (d <= new Date(hasta)) {
+      if (diasCurso.includes(d.getDay())) esperadas++
+      d.setDate(d.getDate() + 1)
+    }
+    const registradas = (clases || []).filter((cl: any) => cl.curso_id === c.id).length
+    const faltantes = Math.max(0, esperadas - registradas)
+    return { cursoNombre: c.nombre, esperadas, registradas, faltantes }
+  }).filter((c: any) => c.esperadas > 0)
+  const totalFaltantes = clasesEsperadasPorCurso.reduce((s: number, c: any) => s + c.faltantes, 0)
 
-  // 9. Bajas del mes — solo alumnos que estaban en cursos de esta profesora
+  // Bajas del mes con curso identificado — cruzar alumno_id con cursos_alumnos
   const { data: todasBajas } = await db.from('bajas_alumnos')
     .select('alumno_id, alumno_nombre, alumno_apellido, motivo, fecha_baja')
     .gte('fecha_baja', desde).lte('fecha_baja', hasta)
-  const bajasDeProfesora = (todasBajas || []).filter((b: any) => alumnoIdsProf.has(b.alumno_id))
+  // Para cada baja, buscar si el alumno estaba en algún curso de esta profesora
+  const bajaIdsAlumnos = [...new Set((todasBajas || []).map((b: any) => b.alumno_id).filter(Boolean))]
+  const { data: cursosAlumnosBaja } = bajaIdsAlumnos.length
+    ? await db.from('cursos_alumnos').select('alumno_id, cursos(id, nombre, profesora_id)').in('alumno_id', bajaIdsAlumnos)
+    : { data: [] }
+  const bajasDeProfesora = (todasBajas || []).map((b: any) => {
+    const rel = (cursosAlumnosBaja || []).find((r: any) =>
+      r.alumno_id === b.alumno_id && r.cursos?.profesora_id === params.profesoraId
+    )
+    return rel ? { ...b, cursoNombre: rel.cursos?.nombre || '—' } : null
+  }).filter(Boolean)
   const cantBajas = bajasDeProfesora.length
+
+  // Alumnos actuales en cursos de la profesora
+  const { data: cursosAlActual } = cursoIds.length ? await db.from('cursos_alumnos').select('alumno_id').in('curso_id', cursoIds) : { data: [] }
+  const cantActual = (cursosAlActual || []).length
 
   // Fecha de emisión
   const fechaEmision = new Date().toLocaleDateString('es-AR', { day: '2-digit', month: 'long', year: 'numeric' })
@@ -343,7 +370,7 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
         examenesConStats.map((ex: any) => `
         <div class="examen-block">
           <div class="examen-nombre">
-            <span>${ex.nombre}${ex.tipo ? ` <span style="font-size:10px;background:#f5f0fa;color:#9b8eaa;padding:1px 6px;border-radius:6px">${ex.tipo}</span>` : ''}</span>
+            <span>${ex.nombre} ${ex.cursoNombre ? `<span style="font-size:10px;background:#f0edf5;color:#652f8d;padding:1px 7px;border-radius:8px;font-weight:600">${ex.cursoNombre}</span>` : ''}</span>
             <span style="font-size:11px;color:#9b8eaa">${fmtF(ex.fecha)} · ${ex.totalNotas} notas</span>
           </div>
           ${ex.promedio !== null ? `
@@ -387,18 +414,40 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
         <span class="row-label">Total de horas dictadas en ${mes}</span>
         <span class="row-val" style="color:${colorPrimario}">${horasTotales}hs</span>
       </div>
-      <div class="row">
-        <span class="row-label">Clases sin tema registrado</span>
-        <span class="row-val" style="color:${clasesSinTema > 0 ? '#b45309' : '#2d7a4f'}">${clasesSinTema === 0 ? '✓ Todas registradas' : clasesSinTema + ' sin tema'}</span>
+
+      <!-- Clases registradas vs esperadas por calendario -->
+      <div class="row" style="align-items:flex-start;padding-top:10px">
+        <span class="row-label">Clases registradas en ${mes}</span>
+        <span class="row-val" style="color:${totalFaltantes === 0 ? '#2d7a4f' : '#b45309'}">
+          ${totalFaltantes === 0 ? '✓ Al día' : totalFaltantes + ' sin registrar'}
+        </span>
       </div>
-      <div class="row">
+      ${clasesEsperadasPorCurso.map((c: any) => `
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#5a4d6a;padding:4px 0 4px 12px;border-bottom:1px solid #f9f5fd">
+        <span>${c.cursoNombre}</span>
+        <span style="color:${c.faltantes > 0 ? '#b45309' : '#2d7a4f'};font-weight:600">
+          ${c.registradas}/${c.esperadas} ${c.faltantes > 0 ? '(faltan ' + c.faltantes + ')' : '✓'}
+        </span>
+      </div>`).join('')}
+
+      <div class="row" style="margin-top:6px">
         <span class="row-label">Alumnos actuales en sus cursos</span>
         <span class="row-val">${cantActual}</span>
       </div>
-      <div class="row">
+
+      <!-- Bajas con curso -->
+      <div class="row" style="align-items:flex-start">
         <span class="row-label">Bajas registradas en ${mes}</span>
-        <span class="row-val" style="color:${cantBajas > 0 ? '#b45309' : '#2d7a4f'}">${cantBajas === 0 ? '✓ Sin bajas' : cantBajas + ' baja' + (cantBajas !== 1 ? 's' : '')}</span>
+        <span class="row-val" style="color:${cantBajas > 0 ? '#b45309' : '#2d7a4f'}">
+          ${cantBajas === 0 ? '✓ Sin bajas' : cantBajas + ' baja' + (cantBajas !== 1 ? 's' : '')}
+        </span>
       </div>
+      ${(bajasDeProfesora as any[]).map((b: any) => `
+      <div style="display:flex;justify-content:space-between;font-size:12px;color:#5a4d6a;padding:4px 0 4px 12px;border-bottom:1px solid #f9f5fd">
+        <span>${b.alumno_nombre || ''} ${b.alumno_apellido || ''}</span>
+        <span style="color:#9b8eaa">${b.cursoNombre}</span>
+      </div>`).join('')}
+
     </div>
 
   </div><!-- /body -->
