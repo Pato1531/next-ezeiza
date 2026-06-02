@@ -90,7 +90,9 @@ export default function Alumnos() {
   const [soloSinDni, setSoloSinDni] = useState(false)
   const [soloSinFecha, setSoloSinFecha] = useState(false)
   const [soloSinNota, setSoloSinNota] = useState(false)
+  const [soloConNota, setSoloConNota] = useState(false)
   const [alumnosSinNota, setAlumnosSinNota] = useState<Set<string>>(new Set())
+  const [alumnosConNota, setAlumnosConNota] = useState<Set<string>>(new Set())
   const [filtroPago, setFiltroPago] = useState<'todos'|'pagaron'|'no_pagaron'>('todos')
   const [mesFiltro, setMesFiltro] = useState(new Date().getMonth())
   const [alumnosSinCurso, setAlumnosSinCurso] = useState<Set<string>>(new Set())
@@ -115,6 +117,7 @@ export default function Alumnos() {
       setAlumnosSinCurso(new Set(alumnos.map(a => a.id).filter(id => !conCurso.has(id))))
       const conNota = new Set((notasRes.data || []).map((r: any) => r.alumno_id))
       setAlumnosSinNota(new Set(alumnos.map(a => a.id).filter(id => !conNota.has(id))))
+      setAlumnosConNota(conNota)
     }).catch(() => {})
   }
 
@@ -351,10 +354,11 @@ export default function Alumnos() {
       : filtroPago === 'pagaron' ? alumnosConPagoMes.has(a.id)
       : !alumnosConPagoMes.has(a.id)
     const matchSinNota  = !soloSinNota  || alumnosSinNota.has(a.id)
+    const matchConNota  = !soloConNota  || alumnosConNota.has(a.id)
     // No mostrar alumnos cuya fecha_alta sea posterior al mes visualizado
     const primerDiaMesFiltro = new Date(new Date().getFullYear(), mesFiltro, 1)
     const matchFechaAlta = !a.fecha_alta || new Date(a.fecha_alta + 'T12:00:00') <= new Date(primerDiaMesFiltro.getFullYear(), primerDiaMesFiltro.getMonth() + 1, 0)
-    return matchBusq && matchSinCurso && matchSinCuota && matchSinTel && matchSinDni && matchSinFecha && matchSinNota && matchPago && matchFechaAlta
+    return matchBusq && matchSinCurso && matchSinCuota && matchSinTel && matchSinDni && matchSinFecha && matchSinNota && matchConNota && matchPago && matchFechaAlta
   })
 
   // No bloquear con loading — mostrar contenido aunque esté cargando
@@ -477,6 +481,15 @@ export default function Alumnos() {
           {alumnosSinNota.size > 0 && (
             <span style={{background:soloSinNota?'var(--amber)':'var(--border)',color:soloSinNota?'#fff':'var(--text2)',borderRadius:'20px',padding:'1px 7px',fontSize:'11px',fontWeight:700}}>
               {alumnosSinNota.size}
+            </span>
+          )}
+        </button>
+        <button onClick={() => setSoloConNota(!soloConNota)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'7px 14px',borderRadius:'20px',fontSize:'12.5px',fontWeight:600,cursor:'pointer',border:'1.5px solid',borderColor:soloConNota?'#2d7a4f':'var(--border)',background:soloConNota?'var(--greenl)':'var(--white)',color:soloConNota?'var(--green)':'var(--text2)',transition:'all .15s'}}>
+          <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h12v10a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/><path d="M8 9h4M8 12h2"/><path d="M8 4V2M12 4V2"/><path d="M13 7l-4 4-2-2" stroke="currentColor" strokeWidth="2.5"/></svg>
+          Con nota interna
+          {alumnosConNota.size > 0 && (
+            <span style={{background:soloConNota?'var(--green)':'var(--border)',color:soloConNota?'#fff':'var(--text2)',borderRadius:'20px',padding:'1px 7px',fontSize:'11px',fontWeight:700}}>
+              {alumnosConNota.size}
             </span>
           )}
         </button>
