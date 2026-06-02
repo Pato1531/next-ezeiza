@@ -284,6 +284,7 @@ export default function Profesoras() {
           {puedeEditar && <>
             <TabBtn active={tab==='licencias'} onClick={() => setTab('licencias')}>Licencias</TabBtn>
             <TabBtn active={tab==='liquidacion'} onClick={() => setTab('liquidacion')}>Liquidación</TabBtn>
+            <TabBtn active={tab==='ausencias'} onClick={() => setTab('ausencias')}>🗓 Ausencias</TabBtn>
             <TabBtn active={tab==='informe'} onClick={() => setTab('informe')}>📊 Informe</TabBtn>
           </>}
           {!puedeEditar && puedeCargarLicencias && (
@@ -355,6 +356,7 @@ export default function Profesoras() {
 
         {tab === 'liquidacion' && <LiquidacionTab prof={sel} licencias={licencias} puedeEditar={puedeEditar} />}
 
+        {tab === 'ausencias' && <AusenciasTab prof={sel} usuario={usuario} />}
         {tab === 'informe' && <InformeTab profId={sel.id} />}
 
         {modalEditLic && licEditando && <ModalSheet title="Editar licencia" onClose={() => setModalEditLic(false)}>
@@ -1230,6 +1232,172 @@ function InformeTab({ profId }: { profId: string }) {
         El informe incluye: asistencia · exámenes y notas · planificación · semáforo de ritmo · gestión administrativa · observación del director.
         Se abre listo para imprimir o guardar como PDF.
       </div>
+    </Card>
+  )
+}
+
+// ── Tab Ausencias Docente ─────────────────────────────────────────────────────
+function AusenciasTab({ prof, usuario }: { prof: any; usuario: any }) {
+  const esDirector = usuario?.rol === 'director'
+  const [ausencias, setAusencias] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [fecha, setFecha] = useState('')
+  const [tipo, setTipo] = useState<'justificada'|'injustificada'>('injustificada')
+  const [horas, setHoras] = useState<number>(0)
+  const [nota, setNota] = useState('')
+  const [guardando, setGuardando] = useState(false)
+  const [confirmDel, setConfirmDel] = useState<string|null>(null)
+  const IS = { padding:'9px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)', width:'100%' } as const
+
+  const cargar = async () => {
+    setLoading(true)
+    try {
+      const res = await fetch(`/api/ausencias-docentes?profesora_id=${prof.id}`, { headers: apiHeaders() })
+      const json = await res.json()
+      setAusencias(json.data || [])
+    } catch { setAusencias([]) }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { cargar() }, [prof.id])
+
+  const guardar = async () => {
+    if (!fecha) return alert('Seleccioná una fecha')
+    if (!horas || horas <= 0) return alert('Ingresá las horas perdidas')
+    setGuardando(true)
+    try {
+      const res = await fetch('/api/ausencias-docentes', {
+        method: 'POST',
+        headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profesora_id: prof.id, fecha, tipo, horas_perdidas: horas, nota: nota || null, creado_por: usuario?.nombre })
+      })
+      const json = await res.json()
+      if (json.error) { alert(json.error); return }
+      setFecha(''); setNota(''); setHoras(0); setTipo('injustificada')
+      await cargar()
+    } catch(e: any) { alert(e.message) }
+    finally { setGuardando(false) }
+  }
+
+  const eliminar = async (id: string) => {
+    try {
+      await fetch('/api/ausencias-docentes', {
+        method: 'DELETE',
+        headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id })
+      })
+      setConfirmDel(null)
+      await cargar()
+    } catch(e: any) { alert(e.message) }
+  }
+
+  // Totales
+  const totalAusencias = ausencias.length
+  const horasTotales   = ausencias.reduce((s, a) => s + (a.horas_perdidas || 0), 0)
+  const justificadas   = ausencias.filter(a => a.tipo === 'justificada').length
+  const injustificadas = ausencias.filter(a => a.tipo === 'injustificada').length
+
+  const fmtF = (f: string) => f ? new Date(f + 'T12:00:00').toLocaleDateString('es-AR', { day:'2-digit', month:'2-digit', year:'2-digit' }) : '—'
+
+  return (
+    <Card>
+      <SL style={{ marginBottom:'16px' }}>Ausencias registradas</SL>
+
+      {/* KPIs */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:'8px', marginBottom:'20px' }}>
+        {[
+          { val: totalAusencias, label: 'Total' },
+          { val: `${horasTotales}hs`, label: 'Horas perdidas' },
+          { val: justificadas, label: 'Justificadas' },
+          { val: injustificadas, label: 'Injustificadas', color: injustificadas > 0 ? 'var(--amber)' : 'var(--text)' },
+        ].map((k, i) => (
+          <div key={i} style={{ background:'var(--vl)', borderRadius:'12px', padding:'10px', textAlign:'center' }}>
+            <div style={{ fontSize:'18px', fontWeight:700, color: (k as any).color || 'var(--v)' }}>{k.val}</div>
+            <div style={{ fontSize:'10px', color:'var(--text3)', marginTop:'2px', textTransform:'uppercase', letterSpacing:'.04em' }}>{k.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Formulario — solo director */}
+      {esDirector && (
+        <div style={{ background:'var(--bg)', border:'1.5px solid var(--border)', borderRadius:'14px', padding:'14px', marginBottom:'20px' }}>
+          <div style={{ fontSize:'12px', fontWeight:600, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.04em', marginBottom:'12px' }}>
+            Registrar ausencia
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px', marginBottom:'10px' }}>
+            <div>
+              <div style={{ fontSize:'10.5px', fontWeight:600, color:'var(--text3)', marginBottom:'4px' }}>Fecha</div>
+              <input type="date" style={IS} value={fecha} onChange={e => setFecha(e.target.value)} />
+            </div>
+            <div>
+              <div style={{ fontSize:'10.5px', fontWeight:600, color:'var(--text3)', marginBottom:'4px' }}>Tipo</div>
+              <select style={IS} value={tipo} onChange={e => setTipo(e.target.value as any)}>
+                <option value="injustificada">Injustificada</option>
+                <option value="justificada">Justificada</option>
+              </select>
+            </div>
+          </div>
+          <div style={{ marginBottom:'10px' }}>
+            <div style={{ fontSize:'10.5px', fontWeight:600, color:'var(--text3)', marginBottom:'4px' }}>Horas perdidas</div>
+            <input type="number" step="0.5" min="0.5" style={IS} value={horas || ''} onChange={e => setHoras(parseFloat(e.target.value)||0)} placeholder="Ej: 1.5" />
+          </div>
+          <div style={{ marginBottom:'12px' }}>
+            <div style={{ fontSize:'10.5px', fontWeight:600, color:'var(--text3)', marginBottom:'4px' }}>Nota (opcional)</div>
+            <input type="text" style={IS} value={nota} onChange={e => setNota(e.target.value)} placeholder="Ej: Presentó certificado médico" />
+          </div>
+          <BtnP onClick={guardar} disabled={guardando} style={{ width:'100%' }}>
+            {guardando ? 'Guardando...' : '+ Registrar ausencia'}
+          </BtnP>
+        </div>
+      )}
+
+      {/* Historial */}
+      {loading ? (
+        <div style={{ textAlign:'center', padding:'32px', color:'var(--text3)' }}>Cargando...</div>
+      ) : ausencias.length === 0 ? (
+        <div style={{ textAlign:'center', padding:'32px', background:'var(--bg)', borderRadius:'12px' }}>
+          <div style={{ fontSize:'24px', marginBottom:'8px' }}>✓</div>
+          <div style={{ fontWeight:600, color:'var(--text)' }}>Sin ausencias registradas</div>
+        </div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:'6px' }}>
+          {ausencias.map(a => (
+            <div key={a.id} style={{ display:'flex', alignItems:'center', gap:'12px', padding:'10px 12px', background:'var(--white)', border:'1.5px solid var(--border)', borderRadius:'10px' }}>
+              <div style={{ width:42, height:42, borderRadius:10, background: a.tipo === 'injustificada' ? 'var(--redl)' : 'var(--amberl)', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <div style={{ fontSize:'13px', fontWeight:700, color: a.tipo === 'injustificada' ? 'var(--red)' : 'var(--amber)', lineHeight:1 }}>{new Date(a.fecha+'T12:00:00').getDate()}</div>
+                <div style={{ fontSize:'9px', color: a.tipo === 'injustificada' ? 'var(--red)' : 'var(--amber)', textTransform:'uppercase' }}>{new Date(a.fecha+'T12:00:00').toLocaleDateString('es-AR',{month:'short'})}</div>
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:'13px', fontWeight:600, color:'var(--text)', display:'flex', alignItems:'center', gap:'6px' }}>
+                  {fmtF(a.fecha)}
+                  <span style={{ fontSize:'10px', padding:'1px 7px', borderRadius:'8px', fontWeight:700, background: a.tipo === 'injustificada' ? 'var(--redl)' : 'var(--amberl)', color: a.tipo === 'injustificada' ? 'var(--red)' : 'var(--amber)' }}>
+                    {a.tipo}
+                  </span>
+                  <span style={{ fontSize:'11px', color:'var(--v)', fontWeight:600 }}>{a.horas_perdidas}hs</span>
+                </div>
+                {a.nota && <div style={{ fontSize:'11.5px', color:'var(--text3)', marginTop:'2px' }}>{a.nota}</div>}
+              </div>
+              {esDirector && (
+                <button onClick={() => setConfirmDel(a.id)} style={{ padding:'5px 9px', background:'var(--redl)', color:'var(--red)', border:'none', borderRadius:'7px', fontSize:'11px', fontWeight:600, cursor:'pointer', flexShrink:0 }}>✕</button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Confirm eliminar */}
+      {confirmDel && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,.4)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:'20px' }}>
+          <div style={{ background:'var(--white)', borderRadius:'18px', padding:'28px', maxWidth:'340px', width:'100%' }}>
+            <div style={{ fontSize:'17px', fontWeight:700, marginBottom:'12px' }}>¿Eliminar ausencia?</div>
+            <p style={{ fontSize:'13px', color:'var(--text2)', marginBottom:'24px' }}>Esta acción no se puede deshacer.</p>
+            <div style={{ display:'flex', gap:'10px' }}>
+              <button onClick={() => setConfirmDel(null)} style={{ flex:1, padding:'11px', background:'var(--bg)', color:'var(--text2)', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontWeight:600, cursor:'pointer' }}>Cancelar</button>
+              <button onClick={() => eliminar(confirmDel)} style={{ flex:2, padding:'11px', background:'var(--red)', color:'#fff', border:'none', borderRadius:'10px', fontSize:'13px', fontWeight:600, cursor:'pointer' }}>Eliminar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </Card>
   )
 }
