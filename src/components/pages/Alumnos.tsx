@@ -312,7 +312,7 @@ export default function Alumnos() {
           alumno_id: sel.id,
           alumno_nombre: sel.nombre,
           alumno_apellido: sel.apellido,
-          curso_nombre: '—',
+          curso_nombre: cursosDeAlumnos[sel.id] || '—',
           nivel: sel.nivel,
           cuota_mensual: sel.cuota_mensual,
           motivo: motivoBaja === 'Otro' ? motivoLibre : motivoBaja,
