@@ -160,7 +160,45 @@ export default function Alumnos() {
   const irALista = () => { setSelId(null); setVista('lista') }
 
   // ── Exportar lista de alumnos ────────────────────────────────────────────
-  const exportarPDF = () => {
+  const exportarNotas = async () => {
+    const sb = createClient()
+    // Traer todas las notas de los alumnos filtrados
+    const ids = filtrados.map((a: any) => a.id)
+    if (!ids.length) return
+    const { data: notas } = await sb.from('notas_alumnos')
+      .select('alumno_id, texto, autor, created_at')
+      .in('alumno_id', ids)
+      .order('created_at', { ascending: false })
+
+    // Agrupar: una fila por alumno con su última nota
+    const rows = filtrados.map((a: any) => {
+      const notasAlumno = (notas || []).filter((n: any) => n.alumno_id === a.id)
+      const ultimaNota  = notasAlumno[0]
+      const curso = cursosDeAlumnos[a.id] || '—'
+      // Buscar profesora del curso
+      const prof = '—' // se muestra en el campo autor de la nota
+      return [
+        `${a.apellido}, ${a.nombre}`,
+        curso,
+        ultimaNota?.autor || '—',
+        ultimaNota?.texto || '',
+        notasAlumno.length > 0 ? notasAlumno.length.toString() : '0',
+      ]
+    })
+
+    const headers = ['Alumno', 'Curso', 'Autor última nota', 'Última nota', 'Total notas']
+    const bom = '\uFEFF'
+    const csv = bom + [headers, ...rows]
+      .map((row: any[]) => row.map((v: any) => `"${String(v||'').replace(/"/g, '""')}"`).join(','))
+      .join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `notas-internas-${new Date().toLocaleDateString('es-AR').replace(/\//g,'-')}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
     const fecha = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' })
     const filas = filtrados.map((a:any) => {
       const pagado = alumnosConPagoMes.has(a.id)
@@ -508,6 +546,11 @@ export default function Alumnos() {
               style={{display:'flex',alignItems:'center',gap:'5px',padding:'7px 12px',background:'var(--white)',color:'var(--green)',border:'1.5px solid var(--green)',borderRadius:'8px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
               <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 16v1a1 1 0 001 1h10a1 1 0 001-1v-1M7 10l3 3 3-3M10 3v10"/></svg>
               Excel
+            </button>
+            <button onClick={exportarNotas}
+              style={{display:'flex',alignItems:'center',gap:'5px',padding:'7px 12px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'8px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
+              <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 4h12v10a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/><path d="M8 9h4M8 12h2"/></svg>
+              Notas
             </button>
             <button onClick={exportarPDF}
               style={{display:'flex',alignItems:'center',gap:'5px',padding:'7px 12px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'8px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
