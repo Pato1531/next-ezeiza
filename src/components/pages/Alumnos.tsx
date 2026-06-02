@@ -1168,22 +1168,12 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
     const fecha = p.fecha_pago ? new Date(p.fecha_pago+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'}) : new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})
     const monto = (p.monto||0).toLocaleString('es-AR')
 
-    // Si el pago tiene id de DB → fetch con auth headers + Blob URL
+    // Si el pago tiene id de DB → abrir URL pública y ofrecer WS
     if (p.id) {
       const urlRecibo = `${window.location.origin}/api/recibo/${p.id}`
-      try {
-        const res = await fetch(urlRecibo, { headers: apiHeaders() })
-        if (res.ok) {
-          const html = await res.text()
-          const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
-          const blobUrl = URL.createObjectURL(blob)
-          const win = window.open(blobUrl, '_blank')
-          if (!win) { const anc = document.createElement('a'); anc.href=blobUrl; anc.download='recibo.html'; anc.click() }
-          setTimeout(() => URL.revokeObjectURL(blobUrl), 60000)
-        }
-      } catch(e) { console.error('[recibo]', e) }
+      window.open(urlRecibo, '_blank')
       if (tel) {
-        const msgWS = `✅ Recibo de pago — Next Ezeiza\n\nHola ${contacto}! Confirmamos el pago de la cuota de ${p.mes} ${p.anio} de ${a.nombre} ${a.apellido}.\n\n💰 Monto: $${monto}\n📅 Fecha: ${fecha}\n💳 Método: ${p.metodo||'Efectivo'}\n\n¡Gracias! 🙌`
+        const msgWS = `✅ *Recibo de pago — Next Ezeiza*\n\nHola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${a.nombre} ${a.apellido}*.\n\n💰 Monto: *$${monto}*\n📅 Fecha: ${fecha}\n💳 Método: ${p.metodo||'Efectivo'}\n\n📄 Tu recibo: ${urlRecibo}\n\n¡Gracias! 🙌`
         setUltimoPago({ tel, msg: msgWS, urlRecibo })
         setModalRecibo(true)
       }
