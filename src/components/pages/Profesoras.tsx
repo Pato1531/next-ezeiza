@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { useProfesoras, useHorasHistorial, useLiquidaciones } from '@/lib/hooks'
+import { useProfesoras, useHorasHistorial, useLiquidaciones, apiHeaders } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 
@@ -284,6 +284,7 @@ export default function Profesoras() {
           {puedeEditar && <>
             <TabBtn active={tab==='licencias'} onClick={() => setTab('licencias')}>Licencias</TabBtn>
             <TabBtn active={tab==='liquidacion'} onClick={() => setTab('liquidacion')}>Liquidación</TabBtn>
+            <TabBtn active={tab==='informe'} onClick={() => setTab('informe')}>📊 Informe</TabBtn>
           </>}
           {!puedeEditar && puedeCargarLicencias && (
             <TabBtn active={tab==='licencias'} onClick={() => setTab('licencias')}>Licencias</TabBtn>
@@ -352,7 +353,9 @@ export default function Profesoras() {
           ))}
         </Card>}
 
-        {tab === 'liquidacion' && <LiquidacionTab prof={sel} licencias={licencias} />}
+        {tab === 'liquidacion' && <LiquidacionTab prof={sel} licencias={licencias} puedeEditar={puedeEditar} />}
+
+        {tab === 'informe' && <InformeTab profId={sel.id} />}
 
         {modalEditLic && licEditando && <ModalSheet title="Editar licencia" onClose={() => setModalEditLic(false)}>
           <Field2 label="Tipo">
@@ -445,7 +448,7 @@ export default function Profesoras() {
   return null
 }
 
-function LiquidacionTab({ prof, licencias }: any) {
+function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
   const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
   const mesActual = MESES[new Date().getMonth()]
   const anioActual = new Date().getFullYear()
@@ -454,65 +457,14 @@ function LiquidacionTab({ prof, licencias }: any) {
   const [anioLiq, setAnioLiq] = useState(anioActual)
 
   // ── Tipo de contrato ─────────────────────────────────────────────────
-  // 'hora' = clases dictadas × horas por clase × tarifa | 'fijo' = monto fijo mensual
+  // 'hora' = horas/semana × semanas × tarifa | 'fijo' = monto fijo mensual
   const [tipoContrato, setTipoContrato] = useState<'hora'|'fijo'>(
     prof.tipo_contrato === 'fijo' ? 'fijo' : (prof.horas_semana && prof.horas_semana > 0) ? 'hora' : 'fijo'
   )
-  // Semanas del calendario (fallback si no hay clases registradas)
+  // Semanas calculadas del calendario
   const _mesesArr = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
   const _mIdxCalc = _mesesArr.indexOf(mesLiq)
   const semanasCalc = _mIdxCalc >= 0 && new Date(anioLiq, _mIdxCalc + 1, 0).getDate() >= 29 ? 5 : 4
-
-  // ── Horas reales del mes desde clases registradas ─────────────────────
-  const [horasDelMes, setHorasDelMes] = useState<number | null>(null)
-  const [clasesDelMes, setClasesDelMes] = useState<number | null>(null)
-  const [loadingClases, setLoadingClases] = useState(false)
-
-  useEffect(() => {
-    if (tipoContrato !== 'hora' || !prof.id || _mIdxCalc < 0) return
-    setLoadingClases(true)
-    const sb = createClient()
-    const mesNum = String(_mIdxCalc + 1).padStart(2, '0')
-    const desdeStr = `${anioLiq}-${mesNum}-01`
-    const diasEnMes = new Date(anioLiq, _mIdxCalc + 1, 0).getDate()
-    const hastaStr  = `${anioLiq}-${mesNum}-${String(diasEnMes).padStart(2, '0')}`
-
-    sb.from('cursos').select('id').eq('profesora_id', prof.id)
-      .then(({ data: cursos }) => {
-        if (!cursos?.length) {
-          setHorasDelMes(0); setClasesDelMes(0); setLoadingClases(false); return
-        }
-        const cursoIds = cursos.map((c: any) => c.id)
-        return sb.from('clases')
-          .select('id, cursos(hora_inicio, hora_fin)')
-          .in('curso_id', cursoIds)
-          .gte('fecha', desdeStr)
-          .lte('fecha', hastaStr)
-      })
-      .then((res: any) => {
-        if (!res) return
-        const clases = res.data || []
-        setClasesDelMes(clases.length)
-        // Sumar horas reales de cada clase según hora_inicio y hora_fin del curso
-        let totalHs = 0
-        for (const c of clases) {
-          const hi = c.cursos?.hora_inicio
-          const hf = c.cursos?.hora_fin
-          if (hi && hf) {
-            const [h1, m1] = hi.split(':').map(Number)
-            const [h2, m2] = hf.split(':').map(Number)
-            const mins = (h2 * 60 + m2) - (h1 * 60 + m1)
-            if (mins > 0) totalHs += mins / 60
-          } else {
-            // Sin horario configurado: usar horas_semana como horas por clase
-            totalHs += prof.horas_semana || 0
-          }
-        }
-        setHorasDelMes(Math.round(totalHs * 100) / 100)
-        setLoadingClases(false)
-      })
-      .catch(() => { setHorasDelMes(null); setClasesDelMes(null); setLoadingClases(false) })
-  }, [prof.id, mesLiq, anioLiq, tipoContrato])
   // Pre-cargar sueldo fijo del perfil
   const [sueldoFijo, setSueldoFijo] = useState<number>(prof.sueldo_fijo || 0)
 
@@ -579,14 +531,8 @@ function LiquidacionTab({ prof, licencias }: any) {
   }, [mesLiq, anioLiq, liquidaciones.length])
 
   // ── Cálculos ─────────────────────────────────────────────────────────
-  // base = total horas del mes × tarifa/hora
-  // Fallback si no hay clases registradas: horas_semana × semanas del calendario
-  const horasFallback = (prof.horas_semana || 0) * semanasCalc
-
   const base = tipoContrato === 'hora'
-    ? horasDelMes !== null && horasDelMes > 0
-      ? horasDelMes * (prof.tarifa_hora || 0)
-      : horasFallback * (prof.tarifa_hora || 0)
+    ? (prof.horas_semana || 0) * semanasCalc * (prof.tarifa_hora || 0)
     : (sueldoFijo || prof.sueldo_fijo || 0)
 
   // Filtrar reemplazos solo del mes seleccionado
@@ -680,6 +626,28 @@ function LiquidacionTab({ prof, licencias }: any) {
     })
     await recargarLiqs()
     setConfirmDelLiq(null)
+  }
+
+  const cerrarLiq = async (id: string) => {
+    const res = await fetch('/api/liquidaciones', {
+      method: 'PATCH',
+      headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, accion: 'cerrar' })
+    })
+    const json = await res.json()
+    if (!json.error) await recargarLiqs()
+    else alert(json.error)
+  }
+
+  const reabrirLiq = async (id: string) => {
+    const res = await fetch('/api/liquidaciones', {
+      method: 'PATCH',
+      headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, accion: 'reabrir' })
+    })
+    const json = await res.json()
+    if (!json.error) await recargarLiqs()
+    else alert(json.error)
   }
 
   // ── Generar PDF ───────────────────────────────────────────────────────
@@ -794,26 +762,15 @@ function LiquidacionTab({ prof, licencias }: any) {
         {tipoContrato === 'hora' ? (
           <>
             {[
+              ['Horas semanales', `${prof.horas_semana}hs · desde perfil del docente`],
               ['Tarifa por hora', `$${prof.tarifa_hora?.toLocaleString('es-AR')}`],
-              [
-                'Total horas en ' + mesLiq,
-                loadingClases
-                  ? 'Calculando...'
-                  : horasDelMes !== null && horasDelMes > 0
-                    ? `${horasDelMes % 1 === 0 ? horasDelMes : horasDelMes.toFixed(1)}hs (${clasesDelMes} clase${clasesDelMes !== 1 ? 's' : ''})`
-                    : `${horasFallback}hs (estimado por semanas — sin clases registradas)`
-              ],
+              ['Semanas en el mes', `${semanasCalc} (calculado automáticamente)`],
             ].map(([k,v]) => (
               <div key={k as string} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
                 <span style={{fontSize:'13px',color:'var(--text2)'}}>{k}</span>
-                <span style={{fontSize:'13px',fontWeight:500,color: k === 'Total horas en ' + mesLiq && horasDelMes === 0 ? 'var(--amber)' : 'var(--text)'}}>{v}</span>
+                <span style={{fontSize:'13px',fontWeight:500,color:'var(--text)'}}>{v}</span>
               </div>
             ))}
-            {horasDelMes === 0 && !loadingClases && (
-              <div style={{fontSize:'11px',color:'var(--amber)',marginTop:'6px',padding:'6px 10px',background:'var(--amberl)',borderRadius:'8px'}}>
-                ⚠️ No hay clases registradas en {mesLiq} {anioLiq}. Se usó estimación por semanas.
-              </div>
-            )}
           </>
         ) : (
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
@@ -997,9 +954,10 @@ function LiquidacionTab({ prof, licencias }: any) {
             const liqAnio = liquidaciones.filter((l:any) => l.anio === anioActual)
             const totalAnio = liqAnio.reduce((s:number, l:any) => s + (l.total || 0), 0)
             const pagadas = liquidaciones.filter((l:any) => l.estado === 'pagada').length
-            const pendientes = liquidaciones.filter((l:any) => l.estado !== 'pagada').length
+            const cerradas = liquidaciones.filter((l:any) => l.estado === 'cerrada').length
+            const pendientes = liquidaciones.filter((l:any) => l.estado !== 'pagada' && l.estado !== 'cerrada').length
             return (
-              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'8px',marginBottom:'14px'}}>
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr 1fr',gap:'8px',marginBottom:'14px'}}>
                 <div style={{background:'var(--vl)',border:'1.5px solid #d4a8e8',borderRadius:'12px',padding:'10px',textAlign:'center'}}>
                   <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${totalAnio.toLocaleString('es-AR')}</div>
                   <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>Total {anioActual}</div>
@@ -1007,6 +965,10 @@ function LiquidacionTab({ prof, licencias }: any) {
                 <div style={{background:'var(--greenl)',border:'1.5px solid #a3e0bc',borderRadius:'12px',padding:'10px',textAlign:'center'}}>
                   <div style={{fontSize:'15px',fontWeight:700,color:'var(--green)'}}>{pagadas}</div>
                   <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>pagadas</div>
+                </div>
+                <div style={{background:'#e8e4f5',border:'1.5px solid #c4b8e8',borderRadius:'12px',padding:'10px',textAlign:'center'}}>
+                  <div style={{fontSize:'15px',fontWeight:700,color:'#5a4d8a'}}>{cerradas}</div>
+                  <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>cerradas</div>
                 </div>
                 <div style={{background: pendientes > 0 ? 'var(--amberl)' : 'var(--bg)',border:`1.5px solid ${pendientes > 0 ? '#e8d080' : 'var(--border)'}`,borderRadius:'12px',padding:'10px',textAlign:'center'}}>
                   <div style={{fontSize:'15px',fontWeight:700,color: pendientes > 0 ? 'var(--amber)' : 'var(--text3)'}}>{pendientes}</div>
@@ -1016,38 +978,83 @@ function LiquidacionTab({ prof, licencias }: any) {
             )
           })()}
 
-          {liquidaciones.map((l:any) => (
-            <div key={l.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
-              <div>
-                <div style={{fontSize:'13.5px',fontWeight:600}}>{l.mes} {l.anio}</div>
-                <div style={{fontSize:'11.5px',color:'var(--text3)',marginTop:'1px'}}>
-                  {l.horas_semana > 0 ? `${l.horas_semana}hs/sem · $${l.tarifa_hora?.toLocaleString('es-AR')}/h` : 'Sueldo fijo'}
+          {liquidaciones.map((l:any) => {
+            const esCerrada = l.estado === 'cerrada'
+            return (
+              <div key={l.id} style={{
+                display:'flex',alignItems:'center',justifyContent:'space-between',
+                padding:'10px 12px',borderRadius:'10px',marginBottom:'6px',
+                background: esCerrada ? '#f0edf8' : 'transparent',
+                border: esCerrada ? '1.5px solid #c4b8e8' : '1px solid transparent',
+                borderBottom: esCerrada ? undefined : '1px solid var(--border)'
+              }}>
+                <div>
+                  <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                    <span style={{fontSize:'13.5px',fontWeight:600}}>{l.mes} {l.anio}</span>
+                    {esCerrada && (
+                      <span style={{fontSize:'10px',fontWeight:700,padding:'1px 7px',borderRadius:'8px',background:'#5a4d8a',color:'#fff'}}>
+                        🔒 Cerrada
+                      </span>
+                    )}
+                  </div>
+                  <div style={{fontSize:'11.5px',color:'var(--text3)',marginTop:'1px'}}>
+                    {l.horas_semana > 0 ? `${l.horas_semana}hs/sem · $${l.tarifa_hora?.toLocaleString('es-AR')}/h` : 'Sueldo fijo'}
+                    {esCerrada && l.cerrada_at && (
+                      <span style={{marginLeft:'6px',color:'#9b8eaa'}}>
+                        · Cerrada el {new Date(l.cerrada_at).toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'2-digit'})}
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                  <div style={{textAlign:'right'}}>
+                    <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${l.total?.toLocaleString('es-AR')}</div>
+                    {!esCerrada && (
+                      <span style={{fontSize:'10px',fontWeight:600,padding:'1px 7px',borderRadius:'8px',
+                        background:l.estado==='pagada'?'var(--greenl)':l.estado==='confirmada'?'var(--vl)':'var(--amberl)',
+                        color:l.estado==='pagada'?'var(--green)':l.estado==='confirmada'?'var(--v)':'var(--amber)'}}>
+                        {l.estado}
+                      </span>
+                    )}
+                  </div>
+                  {/* Botón PDF — siempre disponible */}
+                  <button onClick={() => descargarPDF(l)}
+                    style={{padding:'5px 9px',background:'var(--bg)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                    PDF
+                  </button>
+                  {esCerrada ? (
+                    /* Liquidación cerrada: solo reabrir (director) */
+                    puedeEditar && (
+                      <button onClick={() => { if(confirm(`¿Reabrir la liquidación de ${l.mes} ${l.anio}? Esto la dejará editable nuevamente.`)) reabrirLiq(l.id) }}
+                        style={{padding:'5px 9px',background:'transparent',color:'var(--text3)',border:'1px solid var(--border)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                        🔓 Reabrir
+                      </button>
+                    )
+                  ) : (
+                    /* Liquidación abierta: editar + cerrar + eliminar */
+                    <>
+                      <button onClick={() => setLiqEditando({...l})}
+                        style={{padding:'5px 9px',background:'var(--vl)',color:'var(--v)',border:'1px solid #d4a8e8',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                        Editar
+                      </button>
+                      {puedeEditar && (
+                        <button onClick={() => { if(confirm(`¿Cerrar la liquidación de ${l.mes} ${l.anio}? No podrá editarse ni eliminarse hasta que la reabras.`)) cerrarLiq(l.id) }}
+                          style={{padding:'5px 9px',background:'#e8e4f5',color:'#5a4d8a',border:'1px solid #c4b8e8',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                          🔒 Cerrar
+                        </button>
+                      )}
+                      {puedeEditar && (
+                        <button onClick={() => setConfirmDelLiq(l)}
+                          style={{padding:'5px 9px',background:'var(--redl)',color:'var(--red)',border:'none',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
+                          ✕
+                        </button>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
-              <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
-                <div style={{textAlign:'right'}}>
-                  <div style={{fontSize:'15px',fontWeight:700,color:'var(--v)'}}>${l.total?.toLocaleString('es-AR')}</div>
-                  <span style={{fontSize:'10px',fontWeight:600,padding:'1px 7px',borderRadius:'8px',
-                    background:l.estado==='pagada'?'var(--greenl)':l.estado==='confirmada'?'var(--vl)':'var(--amberl)',
-                    color:l.estado==='pagada'?'var(--green)':l.estado==='confirmada'?'var(--v)':'var(--amber)'}}>
-                    {l.estado}
-                  </span>
-                </div>
-                <button onClick={() => descargarPDF(l)}
-                  style={{padding:'5px 9px',background:'var(--bg)',color:'var(--text2)',border:'1px solid var(--border)',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
-                  PDF
-                </button>
-                <button onClick={() => setLiqEditando({...l})}
-                  style={{padding:'5px 9px',background:'var(--vl)',color:'var(--v)',border:'1px solid #d4a8e8',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
-                  Editar
-                </button>
-                <button onClick={() => setConfirmDelLiq(l)}
-                  style={{padding:'5px 9px',background:'var(--redl)',color:'var(--red)',border:'none',borderRadius:'7px',fontSize:'11px',fontWeight:600,cursor:'pointer',flexShrink:0}}>
-                  ✕
-                </button>
-              </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -1155,3 +1162,74 @@ const ModalSheet = ({title,children,onClose}:any) => (
     </div>
   </div>
 )
+
+// ── Tab Informe Mensual ───────────────────────────────────────────────────────
+function InformeTab({ profId }: { profId: string }) {
+  const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+  const [mes,  setMes]  = useState(MESES[new Date().getMonth()])
+  const [anio, setAnio] = useState(new Date().getFullYear())
+  const [obs,  setObs]  = useState('')
+  const [generando, setGenerando] = useState(false)
+  const IS = { padding:'9px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)', width:'100%' } as const
+
+  const generar = async () => {
+    setGenerando(true)
+    try {
+      const params = new URLSearchParams({ mes, anio: String(anio), ...(obs.trim() ? { observacion: obs.trim() } : {}) })
+      const res = await fetch(`/api/informe-docente/${profId}?${params}`, { headers: apiHeaders() })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const html = await res.text()
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
+      const url  = URL.createObjectURL(blob)
+      const win  = window.open(url, '_blank')
+      if (!win) { const a = document.createElement('a'); a.href = url; a.download = `informe-${mes}-${anio}.html`; a.click() }
+      setTimeout(() => URL.revokeObjectURL(url), 60000)
+    } catch (e: any) {
+      alert('Error al generar el informe: ' + e.message)
+    } finally {
+      setGenerando(false)
+    }
+  }
+
+  return (
+    <Card>
+      <SL style={{ marginBottom: '16px' }}>Informe mensual de desempeño</SL>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+        <div>
+          <div style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '4px' }}>Mes</div>
+          <select style={IS} value={mes} onChange={e => setMes(e.target.value)}>
+            {MESES.map(m => <option key={m}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '4px' }}>Año</div>
+          <select style={IS} value={anio} onChange={e => setAnio(+e.target.value)}>
+            {[2024, 2025, 2026].map(y => <option key={y}>{y}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: '16px' }}>
+        <div style={{ fontSize: '10.5px', fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '4px' }}>
+          Observación del director (opcional)
+        </div>
+        <textarea
+          style={{ ...IS, minHeight: '80px', resize: 'vertical', lineHeight: 1.5 }}
+          value={obs}
+          onChange={e => setObs(e.target.value)}
+          placeholder="Escribí una observación para incluir en el informe..."
+        />
+      </div>
+
+      <BtnP onClick={generar} disabled={generando} style={{ width: '100%' }}>
+        {generando ? 'Generando...' : '📊 Generar informe PDF'}
+      </BtnP>
+
+      <div style={{ marginTop: '12px', fontSize: '11.5px', color: 'var(--text3)', lineHeight: 1.6 }}>
+        El informe incluye: asistencia · exámenes y notas · planificación · semáforo de ritmo · gestión administrativa · observación del director.
+        Se abre listo para imprimir o guardar como PDF.
+      </div>
+    </Card>
+  )
+}
