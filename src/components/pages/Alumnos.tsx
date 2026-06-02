@@ -199,6 +199,8 @@ export default function Alumnos() {
     link.click()
     URL.revokeObjectURL(url)
   }
+
+  const exportarPDF = () => {
     const fecha = new Date().toLocaleDateString('es-AR', { day:'2-digit', month:'long', year:'numeric' })
     const filas = filtrados.map((a:any) => {
       const pagado = alumnosConPagoMes.has(a.id)
