@@ -89,16 +89,18 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
   // Mapa clase → curso
   const claseCursoMap = Object.fromEntries((clases || []).map((c: any) => [c.id, c.curso_id]))
 
-  // Asistencia por curso (solo registros con estado presente/ausente)
+  // Asistencia por curso — incluir también registros sin estado explícito (algunos sistemas los guardan como null = presente)
   const asistPorCurso: Record<string, { presentes: number; total: number; cursoNombre: string }> = {}
   ;(cursos || []).forEach((c: any) => {
     asistPorCurso[c.id] = { presentes: 0, total: 0, cursoNombre: c.nombre }
   })
-  ;(asistData || []).filter((r: any) => r.estado === 'presente' || r.estado === 'ausente').forEach((r: any) => {
+  ;(asistData || []).forEach((r: any) => {
     const cid = claseCursoMap[r.clase_id]
-    if (cid && asistPorCurso[cid]) {
+    if (!cid || !asistPorCurso[cid]) return
+    // Contar si tiene estado definido (presente/ausente)
+    if (r.estado === 'P' || r.estado === 'T' || r.estado === 'A') {
       asistPorCurso[cid].total++
-      if (r.estado === 'presente') asistPorCurso[cid].presentes++
+      if (r.estado === 'P' || r.estado === 'T') asistPorCurso[cid].presentes++
     }
   })
   const asistCursosList = Object.values(asistPorCurso).filter((c: any) => c.total > 0).map((c: any) => ({
@@ -112,7 +114,7 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
 
   // Ausencias reiteradas (2+ en el mes, global)
   const ausenciasPorAlumno: Record<string, { nombre: string; consecutivas: number }> = {}
-  ;(asistData || []).filter((r: any) => r.estado === 'ausente').forEach((r: any) => {
+  ;(asistData || []).filter((r: any) => r.estado === 'A').forEach((r: any) => {
     const k = r.alumno_id
     if (!ausenciasPorAlumno[k]) ausenciasPorAlumno[k] = { nombre: `${r.alumnos?.nombre || ''} ${r.alumnos?.apellido || ''}`, consecutivas: 0 }
     ausenciasPorAlumno[k].consecutivas++
@@ -396,13 +398,9 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
         ? '<div style="font-size:13px;color:#9b8eaa;font-style:italic;margin-top:8px">Sin planificación cargada</div>'
         : planifPorCurso.map((c: any) => `
         <div style="border:1px solid #f0edf5;border-radius:10px;padding:12px 14px;margin-top:8px">
-          <div style="font-size:13px;font-weight:600;color:#1a1020;margin-bottom:8px;display:flex;justify-content:space-between">
+          <div style="font-size:13px;font-weight:600;color:#1a1020;display:flex;justify-content:space-between;align-items:center">
             <span>${c.cursoNombre}</span>
-            <span style="color:${c.pct !== null ? color(c.pct, [Math.max(0, ritmoEsperado - 10), ritmoEsperado]) : '#9b8eaa'}">${c.dictadas}/${c.total} · ${c.pct !== null ? c.pct + '%' : '—'}</span>
-          </div>
-          <div class="semaforo-row" style="padding:8px 12px">
-            <div class="semaforo-icon" style="font-size:20px">${c.sem}</div>
-            <div class="semaforo-text" style="font-size:12px">${c.texto}</div>
+            <span style="color:${c.pct !== null ? color(c.pct, [Math.max(0, ritmoEsperado - 10), ritmoEsperado]) : '#9b8eaa'}">${c.dictadas}/${c.total} unid. · ${c.pct !== null ? c.pct + '%' : '—'}</span>
           </div>
         </div>`).join('')}
     </div>
