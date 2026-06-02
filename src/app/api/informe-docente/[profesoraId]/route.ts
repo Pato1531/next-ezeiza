@@ -92,6 +92,16 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
     .gte('fecha_baja', desde).lte('fecha_baja', hasta)
   const alumnosDadosDeBaja = new Set((todasBajas || []).map((b: any) => b.alumno_id).filter(Boolean))
 
+  // Ausencias de la docente en el mes
+  const { data: ausenciasDocente } = await db.from('ausencias_docentes')
+    .select('fecha, tipo, horas_perdidas, nota')
+    .eq('profesora_id', params.profesoraId)
+    .gte('fecha', desde).lte('fecha', hasta)
+    .order('fecha')
+  const totalHorasAusencia = (ausenciasDocente || []).reduce((s: number, a: any) => s + (a.horas_perdidas || 0), 0)
+  const ausenciasJustificadas   = (ausenciasDocente || []).filter((a: any) => a.tipo === 'justificada').length
+  const ausenciasInjustificadas = (ausenciasDocente || []).filter((a: any) => a.tipo === 'injustificada').length
+
   // 5. Asistencia del mes — agrupada por curso
   const { data: asistData } = claseIds.length ? await db.from('asistencia_clases')
     .select('alumno_id, estado, clase_id, alumnos(nombre, apellido)')
@@ -368,7 +378,32 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
       <div class="obs-text">${observacion}</div>
     </div>` : ''}
 
-    <!-- Asistencia -->
+    <!-- Ausencias de la docente -->
+    ${(ausenciasDocente || []).length > 0 ? `
+    <div class="section">
+      <div class="section-title">Ausencias de la docente en ${mes}</div>
+      <div class="row">
+        <span class="row-label">Total ausencias</span>
+        <span class="row-val" style="color:#c0392b">${(ausenciasDocente||[]).length} ausencia${(ausenciasDocente||[]).length !== 1 ? 's' : ''} · ${totalHorasAusencia}hs perdidas</span>
+      </div>
+      ${ausenciasJustificadas > 0 ? `
+      <div class="row">
+        <span class="row-label">Justificadas</span>
+        <span class="row-val" style="color:#b45309">${ausenciasJustificadas}</span>
+      </div>` : ''}
+      ${ausenciasInjustificadas > 0 ? `
+      <div class="row">
+        <span class="row-label">Injustificadas</span>
+        <span class="row-val" style="color:#c0392b">${ausenciasInjustificadas}</span>
+      </div>` : ''}
+      ${(ausenciasDocente||[]).map((a: any) => `
+      <div class="alert alert-${a.tipo === 'injustificada' ? 'red' : 'amber'}">
+        <div class="alert-name">${fmtF(a.fecha)} · ${a.horas_perdidas}hs · <span style="text-transform:capitalize">${a.tipo}</span></div>
+        ${a.nota ? `<div style="font-size:11px;margin-top:2px">${a.nota}</div>` : ''}
+      </div>`).join('')}
+    </div>` : ''}
+
+    <!-- Asistencia de alumnos -->
     <div class="section">
       <div class="section-title">Asistencia de alumnos</div>
       ${asistCursosList.length === 0
