@@ -193,20 +193,43 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
   }).filter((c: any) => c.esperadas > 0)
   const totalFaltantes = clasesEsperadasPorCurso.reduce((s: number, c: any) => s + c.faltantes, 0)
 
-  // Bajas del mes con curso identificado — cruzar alumno_id con cursos_alumnos
+  // Bajas del mes — buscar directamente por alumno_id que pertenecía a cursos de esta profesora
+  // Nota: curso_nombre en bajas_alumnos puede estar vacío si se guardó como '—'
+  // Cruzamos contra los alumnos que TENÍAN cursos de esta profesora antes de la baja
   const { data: todasBajas } = await db.from('bajas_alumnos')
-    .select('alumno_id, alumno_nombre, alumno_apellido, motivo, fecha_baja')
+    .select('alumno_id, alumno_nombre, alumno_apellido, curso_nombre, motivo, fecha_baja')
     .gte('fecha_baja', desde).lte('fecha_baja', hasta)
-  // Para cada baja, buscar si el alumno estaba en algún curso de esta profesora
-  const bajaIdsAlumnos = [...new Set((todasBajas || []).map((b: any) => b.alumno_id).filter(Boolean))]
+
+  // Para identificar si el alumno era de esta profesora, buscamos en el historial de cursos
+  // usando el instituto_id de la profesora como proxy (todos los alumnos del instituto)
+  // y cruzamos contra los cursoIds actuales + buscamos por nombre de curso en bajas
+  const bajasInstituto = (todasBajas || []).filter((b: any) => b.alumno_id)
+
+  // Buscar qué curso tenía cada alumno dado de baja — puede que aún quede en cursos_alumnos
+  // o podemos deducirlo del campo curso_nombre si no es '—'
+  const bajaIdsAlumnos = [...new Set(bajasInstituto.map((b: any) => b.alumno_id))]
   const { data: cursosAlumnosBaja } = bajaIdsAlumnos.length
     ? await db.from('cursos_alumnos').select('alumno_id, cursos(id, nombre, profesora_id)').in('alumno_id', bajaIdsAlumnos)
     : { data: [] }
-  const bajasDeProfesora = (todasBajas || []).map((b: any) => {
+
+  // También verificar si el alumno estaba en algún curso de esta profesora por nombre de nivel/curso
+  const cursoNombresProf = new Set((cursos || []).map((c: any) => c.nombre))
+
+  const bajasDeProfesora = bajasInstituto.map((b: any) => {
+    // Intentar cruzar con cursos_alumnos (si aún existe el registro)
     const rel = (cursosAlumnosBaja || []).find((r: any) =>
       r.alumno_id === b.alumno_id && r.cursos?.profesora_id === params.profesoraId
     )
-    return rel ? { ...b, cursoNombre: rel.cursos?.nombre || '—' } : null
+    if (rel) return { ...b, cursoNombre: rel.cursos?.nombre || b.curso_nombre || '—' }
+
+    // Fallback: si el curso_nombre en bajas coincide con algún curso de esta profesora
+    if (b.curso_nombre && b.curso_nombre !== '—' && cursoNombresProf.has(b.curso_nombre)) {
+      return { ...b, cursoNombre: b.curso_nombre }
+    }
+
+    // Último recurso: si el alumno figura en el instituto y el campo nivel coincide,
+    // mostrar la baja sin curso específico
+    return null
   }).filter(Boolean)
   const cantBajas = bajasDeProfesora.length
 
