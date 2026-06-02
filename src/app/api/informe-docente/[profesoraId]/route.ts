@@ -119,17 +119,6 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
   })
   const alumnosConAusencias = Object.values(ausenciasPorAlumno).filter((a: any) => a.consecutivas >= 2).sort((a: any, b: any) => b.consecutivas - a.consecutivas)
 
-  // Ausencias reiteradas (2+ faltas consecutivas por alumno)
-  const ausenciasPorAlumno: Record<string, { nombre: string; consecutivas: number; clases: string[] }> = {}
-  const clasesFechas = Object.fromEntries((clases || []).map((c: any) => [c.id, c.fecha]))
-  ;(asistData || []).filter((r: any) => r.estado === 'ausente').forEach((r: any) => {
-    const k = r.alumno_id
-    if (!ausenciasPorAlumno[k]) ausenciasPorAlumno[k] = { nombre: `${r.alumnos?.nombre || ''} ${r.alumnos?.apellido || ''}`, consecutivas: 0, clases: [] }
-    ausenciasPorAlumno[k].clases.push(clasesFechas[r.clase_id] || '')
-    ausenciasPorAlumno[k].consecutivas++
-  })
-  const alumnosConAusencias = Object.values(ausenciasPorAlumno).filter(a => a.consecutivas >= 2).sort((a, b) => b.consecutivas - a.consecutivas)
-
   // 6. Exámenes del mes + notas
   const { data: examenes } = cursoIds.length ? await db.from('examenes').select('id, nombre, fecha, tipo, curso_id').in('curso_id', cursoIds).gte('fecha', desde).lte('fecha', hasta).order('fecha') : { data: [] }
   const examenIds = (examenes || []).map((e: any) => e.id)
