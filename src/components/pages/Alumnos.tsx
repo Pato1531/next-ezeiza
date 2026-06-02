@@ -309,14 +309,14 @@ export default function Alumnos() {
     try {
       const [bajasRes, , alumnoRes] = await Promise.all([
         sb.from('bajas_alumnos').insert({
-          alumno_id: sel.id,
+          alumno_id:    sel.id,
           alumno_nombre: sel.nombre,
           alumno_apellido: sel.apellido,
           curso_nombre: cursosDeAlumnos[sel.id] || '—',
-          nivel: sel.nivel,
+          nivel:        sel.nivel,
           cuota_mensual: sel.cuota_mensual,
-          motivo: motivoBaja === 'Otro' ? motivoLibre : motivoBaja,
-          fecha_baja: new Date().toISOString().split('T')[0],
+          motivo:       motivoBaja === 'Otro' ? motivoLibre : motivoBaja,
+          fecha_baja:   new Date().toISOString().split('T')[0],
         }),
         sb.from('cursos_alumnos').delete().eq('alumno_id', sel.id),
         sb.from('alumnos').update({ activo: false }).eq('id', sel.id),
