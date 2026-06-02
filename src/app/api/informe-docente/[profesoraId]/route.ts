@@ -86,6 +86,12 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
   }
   horasTotales = Math.round(horasTotales * 10) / 10
 
+  // Bajas del mes — necesario antes de calcular asistencia para excluir alumnos dados de baja
+  const { data: todasBajas } = await db.from('bajas_alumnos')
+    .select('alumno_id, alumno_nombre, alumno_apellido, curso_nombre, nivel, motivo, fecha_baja, profesora_id')
+    .gte('fecha_baja', desde).lte('fecha_baja', hasta)
+  const alumnosDadosDeBaja = new Set((todasBajas || []).map((b: any) => b.alumno_id).filter(Boolean))
+
   // 5. Asistencia del mes — agrupada por curso
   const { data: asistData } = claseIds.length ? await db.from('asistencia_clases')
     .select('alumno_id, estado, clase_id, alumnos(nombre, apellido)')
@@ -102,7 +108,7 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
   ;(asistData || []).forEach((r: any) => {
     const cid = claseCursoMap[r.clase_id]
     if (!cid || !asistPorCurso[cid]) return
-    // Contar si tiene estado definido (presente/ausente)
+    if (alumnosDadosDeBaja.has(r.alumno_id)) return  // ignorar bajas
     if (r.estado === 'P' || r.estado === 'T' || r.estado === 'A') {
       asistPorCurso[cid].total++
       if (r.estado === 'P' || r.estado === 'T') asistPorCurso[cid].presentes++
@@ -117,9 +123,9 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
     ? Math.round(asistCursosList.reduce((s: number, c: any) => s + c.pct, 0) / asistCursosList.length)
     : null
 
-  // Ausencias reiteradas (2+ en el mes, global)
+  // Ausencias reiteradas — excluir alumnos dados de baja en el mes
   const ausenciasPorAlumno: Record<string, { nombre: string; consecutivas: number }> = {}
-  ;(asistData || []).filter((r: any) => r.estado === 'A').forEach((r: any) => {
+  ;(asistData || []).filter((r: any) => r.estado === 'A' && !alumnosDadosDeBaja.has(r.alumno_id)).forEach((r: any) => {
     const k = r.alumno_id
     if (!ausenciasPorAlumno[k]) ausenciasPorAlumno[k] = { nombre: `${r.alumnos?.nombre || ''} ${r.alumnos?.apellido || ''}`, consecutivas: 0 }
     ausenciasPorAlumno[k].consecutivas++
@@ -194,10 +200,6 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
   const totalFaltantes = clasesEsperadasPorCurso.reduce((s: number, c: any) => s + c.faltantes, 0)
 
   // Bajas del mes — filtrar por profesora_id si existe, sino por curso_nombre
-  const { data: todasBajas } = await db.from('bajas_alumnos')
-    .select('alumno_id, alumno_nombre, alumno_apellido, curso_nombre, nivel, motivo, fecha_baja, profesora_id')
-    .gte('fecha_baja', desde).lte('fecha_baja', hasta)
-
   const cursoNombresProf = new Set((cursos || []).map((c: any) => c.nombre))
 
   // Cruzar con cursos_alumnos para alumnos que aún están activos
@@ -410,10 +412,6 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
     <!-- Planificación -->
     <div class="section">
       <div class="section-title">Planificación y ritmo anual</div>
-      <div class="row">
-        <span class="row-label">Ritmo esperado a esta altura del año</span>
-        <span class="row-val">${ritmoEsperado}%</span>
-      </div>
       ${planifPorCurso.length === 0
         ? '<div style="font-size:13px;color:#9b8eaa;font-style:italic;margin-top:8px">Sin planificación cargada</div>'
         : planifPorCurso.map((c: any) => `
