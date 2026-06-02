@@ -81,16 +81,43 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
   }
   horasTotales = Math.round(horasTotales * 10) / 10
 
-  // 5. Asistencia del mes — por curso
+  // 5. Asistencia del mes — agrupada por curso
   const { data: asistData } = claseIds.length ? await db.from('asistencia_clases')
     .select('alumno_id, estado, clase_id, alumnos(nombre, apellido)')
     .in('clase_id', claseIds) : { data: [] }
 
-  // Promedio asistencia: contar presentes sobre total de registros con estado definido
-  const asistConEstado = (asistData || []).filter((r: any) => r.estado === 'presente' || r.estado === 'ausente')
-  const totalRegistros = asistConEstado.length
-  const totalPresentes = asistConEstado.filter((r: any) => r.estado === 'presente').length
-  const pctAsistencia  = totalRegistros > 0 ? Math.round((totalPresentes / totalRegistros) * 100) : null
+  // Mapa clase → curso
+  const claseCursoMap = Object.fromEntries((clases || []).map((c: any) => [c.id, c.curso_id]))
+
+  // Asistencia por curso (solo registros con estado presente/ausente)
+  const asistPorCurso: Record<string, { presentes: number; total: number; cursoNombre: string }> = {}
+  ;(cursos || []).forEach((c: any) => {
+    asistPorCurso[c.id] = { presentes: 0, total: 0, cursoNombre: c.nombre }
+  })
+  ;(asistData || []).filter((r: any) => r.estado === 'presente' || r.estado === 'ausente').forEach((r: any) => {
+    const cid = claseCursoMap[r.clase_id]
+    if (cid && asistPorCurso[cid]) {
+      asistPorCurso[cid].total++
+      if (r.estado === 'presente') asistPorCurso[cid].presentes++
+    }
+  })
+  const asistCursosList = Object.values(asistPorCurso).filter((c: any) => c.total > 0).map((c: any) => ({
+    cursoNombre: c.cursoNombre,
+    pct: Math.round((c.presentes / c.total) * 100),
+  }))
+  // Promedio global para el KPI
+  const totalReg = Object.values(asistPorCurso).reduce((s: number, c: any) => s + c.total, 0)
+  const totalPres = Object.values(asistPorCurso).reduce((s: number, c: any) => s + c.presentes, 0)
+  const pctAsistencia = totalReg > 0 ? Math.round((totalPres / totalReg) * 100) : null
+
+  // Ausencias reiteradas (2+ en el mes, global)
+  const ausenciasPorAlumno: Record<string, { nombre: string; consecutivas: number }> = {}
+  ;(asistData || []).filter((r: any) => r.estado === 'ausente').forEach((r: any) => {
+    const k = r.alumno_id
+    if (!ausenciasPorAlumno[k]) ausenciasPorAlumno[k] = { nombre: `${r.alumnos?.nombre || ''} ${r.alumnos?.apellido || ''}`, consecutivas: 0 }
+    ausenciasPorAlumno[k].consecutivas++
+  })
+  const alumnosConAusencias = Object.values(ausenciasPorAlumno).filter((a: any) => a.consecutivas >= 2).sort((a: any, b: any) => b.consecutivas - a.consecutivas)
 
   // Ausencias reiteradas (2+ faltas consecutivas por alumno)
   const ausenciasPorAlumno: Record<string, { nombre: string; consecutivas: number; clases: string[] }> = {}
@@ -116,29 +143,37 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
     return { ...ex, promedio, bajos, totalNotas: notasEx.length }
   })
 
-  // 7. Planificación — por curso
+  // 7. Planificación — por curso con estados correctos del sistema
+  const mesTranscurrido = (mesIdx + 1) / 12
+  const ritmoEsperado   = Math.round(mesTranscurrido * 100)
   const { data: unidades } = cursoIds.length ? await db.from('planificacion_cursos').select('id, estado, curso_id, titulo').in('curso_id', cursoIds) : { data: [] }
 
-  // Estadísticas globales (para KPI)
+  // Por curso — dictada = completada, en_curso = al día, pendiente = sin empezar
+  const planifPorCurso = (cursos || []).map((c: any) => {
+    const uds     = (unidades || []).filter((u: any) => u.curso_id === c.id)
+    const dictadas = uds.filter((u: any) => u.estado === 'dictada').length
+    const enCurso  = uds.filter((u: any) => u.estado === 'en_curso').length
+    const total    = uds.length
+    const pct      = total > 0 ? Math.round((dictadas / total) * 100) : null
+    // Semáforo individual por curso
+    const brecha   = pct !== null ? pct - ritmoEsperado : null
+    const sem      = brecha === null ? '⚫' : brecha >= 0 ? '🟢' : brecha >= -10 ? '🟡' : '🔴'
+    const texto    = brecha === null ? 'Sin datos'
+      : brecha >= 0 ? `Adelantado ${brecha}% vs ritmo esperado`
+      : brecha >= -10 ? `${Math.abs(brecha)}% por debajo — riesgo leve`
+      : `${Math.abs(brecha)}% por debajo — requiere atención`
+    return { cursoNombre: c.nombre, dictadas, enCurso, total, pct, sem, texto }
+  }).filter((c: any) => c.total > 0)
+
+  // Totales globales (para referencia interna)
   const totalUnidades    = (unidades || []).length
   const unidadesDictadas = (unidades || []).filter((u: any) => u.estado === 'dictada').length
   const pctAvance        = totalUnidades > 0 ? Math.round((unidadesDictadas / totalUnidades) * 100) : null
 
-  // Por curso
-  const planifPorCurso = (cursos || []).map((c: any) => {
-    const uds = (unidades || []).filter((u: any) => u.curso_id === c.id)
-    const dictadas = uds.filter((u: any) => u.estado === 'dictada').length
-    const total    = uds.length
-    const pct      = total > 0 ? Math.round((dictadas / total) * 100) : null
-    return { cursoNombre: c.nombre, dictadas, total, pct }
-  }).filter((c: any) => c.total > 0)
-
-  // Semáforo de ritmo: ¿va a terminar a tiempo?
-  const mesTranscurrido = (mesIdx + 1) / 12
-  const ritmoEsperado   = Math.round(mesTranscurrido * 100)
-  const brecha          = pctAvance !== null ? pctAvance - ritmoEsperado : null
-  const semaforoRitmo   = brecha === null ? '⚫' : brecha >= 0 ? '🟢' : brecha >= -10 ? '🟡' : '🔴'
-  const textoRitmo      = brecha === null ? 'Sin datos de planificación'
+  // Semáforo global resumido
+  const brecha    = pctAvance !== null ? pctAvance - ritmoEsperado : null
+  const semaforoRitmo = brecha === null ? '⚫' : brecha >= 0 ? '🟢' : brecha >= -10 ? '🟡' : '🔴'
+  const textoRitmo    = brecha === null ? 'Sin datos de planificación'
     : brecha >= 0 ? `Adelantado ${brecha}% respecto al ritmo esperado`
     : brecha >= -10 ? `${Math.abs(brecha)}% por debajo del ritmo — en riesgo leve`
     : `${Math.abs(brecha)}% por debajo del ritmo — requiere atención`
@@ -268,7 +303,7 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
     <div class="kpis">
       <div class="kpi">
         <div class="kpi-val" style="color:${pctAsistencia !== null ? color(pctAsistencia, [70, 85]) : '#9b8eaa'}">${pctAsistencia !== null ? pctAsistencia + '%' : '—'}</div>
-        <div class="kpi-label">Asistencia</div>
+        <div class="kpi-label">Asistencia prom.</div>
       </div>
       <div class="kpi">
         <div class="kpi-val" style="color:${colorPrimario}">${(clases||[]).length}</div>
@@ -279,8 +314,8 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
         <div class="kpi-label">Exámenes</div>
       </div>
       <div class="kpi">
-        <div class="kpi-val" style="color:${pctAvance !== null ? color(pctAvance, [Math.max(0, (ritmoEsperado||0) - 10), ritmoEsperado||0]) : '#9b8eaa'}">${pctAvance !== null ? pctAvance + '%' : '—'}</div>
-        <div class="kpi-label">Avance plan.</div>
+        <div class="kpi-val" style="color:${colorPrimario}">${horasTotales}hs</div>
+        <div class="kpi-label">Horas dictadas</div>
       </div>
     </div>
 
@@ -294,19 +329,22 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
     <!-- Asistencia -->
     <div class="section">
       <div class="section-title">Asistencia de alumnos</div>
+      ${asistCursosList.length === 0
+        ? '<div style="font-size:13px;color:#9b8eaa;font-style:italic">Sin registros de asistencia en el mes</div>'
+        : asistCursosList.map((c: any) => `
       <div class="row">
-        <span class="row-label">Promedio de presentes por clase</span>
-        <span class="row-val" style="color:${pctAsistencia !== null ? color(pctAsistencia, [70, 85]) : '#9b8eaa'}">${pctAsistencia !== null ? pctAsistencia + '%' : 'Sin datos'}</span>
-      </div>
+        <span class="row-label">${c.cursoNombre}</span>
+        <span class="row-val" style="color:${color(c.pct, [70, 85])}">${c.pct}%</span>
+      </div>`).join('')}
       <div class="row">
         <span class="row-label">Alumnos con 2+ ausencias en el mes</span>
         <span class="row-val" style="color:${alumnosConAusencias.length > 0 ? '#c0392b' : '#2d7a4f'}">${alumnosConAusencias.length}</span>
       </div>
-      ${alumnosConAusencias.length > 0 ? alumnosConAusencias.map(a => `
+      ${alumnosConAusencias.map((a: any) => `
       <div class="alert alert-amber">
         <div class="alert-name">${a.nombre.trim()}</div>
         ${a.consecutivas} ausencia${a.consecutivas !== 1 ? 's' : ''} en el mes
-      </div>`).join('') : ''}
+      </div>`).join('')}
     </div>
 
     <!-- Exámenes -->
@@ -334,25 +372,23 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
     <!-- Planificación -->
     <div class="section">
       <div class="section-title">Planificación y ritmo anual</div>
-      ${planifPorCurso.length === 0 ? '<div style="font-size:13px;color:#9b8eaa;font-style:italic">Sin planificación cargada</div>' :
-        planifPorCurso.map((c: any) => `
-        <div class="row">
-          <span class="row-label">${c.cursoNombre}</span>
-          <span class="row-val" style="color:${c.pct !== null ? color(c.pct, [Math.max(0, ritmoEsperado - 10), ritmoEsperado]) : '#9b8eaa'}">
-            ${c.dictadas}/${c.total} unid. · ${c.pct !== null ? c.pct + '%' : '—'}
-          </span>
-        </div>`).join('')}
       <div class="row">
         <span class="row-label">Ritmo esperado a esta altura del año</span>
         <span class="row-val">${ritmoEsperado}%</span>
       </div>
-      <div class="semaforo-row" style="margin-top:10px">
-        <div class="semaforo-icon">${semaforoRitmo}</div>
-        <div>
-          <div class="semaforo-text">${textoRitmo}</div>
-          <div class="semaforo-label">Proyección de finalización del programa</div>
-        </div>
-      </div>
+      ${planifPorCurso.length === 0
+        ? '<div style="font-size:13px;color:#9b8eaa;font-style:italic;margin-top:8px">Sin planificación cargada</div>'
+        : planifPorCurso.map((c: any) => `
+        <div style="border:1px solid #f0edf5;border-radius:10px;padding:12px 14px;margin-top:8px">
+          <div style="font-size:13px;font-weight:600;color:#1a1020;margin-bottom:8px;display:flex;justify-content:space-between">
+            <span>${c.cursoNombre}</span>
+            <span style="color:${c.pct !== null ? color(c.pct, [Math.max(0, ritmoEsperado - 10), ritmoEsperado]) : '#9b8eaa'}">${c.dictadas}/${c.total} · ${c.pct !== null ? c.pct + '%' : '—'}</span>
+          </div>
+          <div class="semaforo-row" style="padding:8px 12px">
+            <div class="semaforo-icon" style="font-size:20px">${c.sem}</div>
+            <div class="semaforo-text" style="font-size:12px">${c.texto}</div>
+          </div>
+        </div>`).join('')}
     </div>
 
     <!-- Administrativo -->
