@@ -49,6 +49,7 @@ const ChipConcepto = ({ tipo }: { tipo: string }) => {
     cuota_recargo: { label: 'Recargo',    color: '#b45309', bg: '#fef3cd' },
     recargo:     { label: 'Recargo',      color: '#b45309', bg: '#fef3cd' },
     matricula:   { label: 'Matrícula',    color: '#1a6b8a', bg: '#e0f0f7' },
+    examen:      { label: 'Examen',       color: '#7c3aed', bg: '#ede9fe' },
     proporcional:{ label: 'Proporcional', color: '#2d7a4f', bg: '#e6f4ec' },
   }
   const c = map[tipo] || { label: tipo, color: 'var(--text3)', bg: 'var(--bg)' }
@@ -101,6 +102,8 @@ export default function Pagos() {
   const [cobrarMatricula, setCobrarMatricula] = useState(false)
   const [cobrarProporcional, setCobrarProporcional] = useState(false)
   const [montoProporcional, setMontoProporcional] = useState('')
+  const [cobrarExamen, setCobrarExamen] = useState(false)
+  const [montoExamen, setMontoExamen] = useState('')
 
   // ── Estado: Feedback post-registro ───────────────────────────────────────
   // Guarda el resumen del último registro para mostrarlo en pantalla
@@ -331,6 +334,7 @@ export default function Pagos() {
     if (cobrarRecargo) t += (parseFloat(montoRecargo) || 0)
     if (cobrarMatricula) t += (a.matricula || 0)
     if (cobrarProporcional) t += (parseFloat(montoProporcional) || 0)
+    if (cobrarExamen) t += (parseFloat(montoExamen) || 0)
     return sum + t
   }, 0)
 
@@ -344,6 +348,7 @@ export default function Pagos() {
     cobrarRecargo && `Recargo ($${fmtMonto(parseFloat(montoRecargo)||0)})`,
     cobrarMatricula && 'Matrícula',
     cobrarProporcional && `Proporcional ($${fmtMonto(parseFloat(montoProporcional)||0)})`,
+    cobrarExamen && `Examen ($${fmtMonto(parseFloat(montoExamen)||0)})`,
   ].filter(Boolean) as string[]
 
   // ── Selección alumnos ─────────────────────────────────────────────────────
@@ -391,6 +396,11 @@ export default function Pagos() {
         monto: parseFloat(montoProporcional) || 0,
         tipo: 'proporcional', observaciones: `Monto proporcional ${mes} ${anioActual}`,
       })
+      if (cobrarExamen) inserts.push({
+        alumno_id: a.id, mes, anio: anioActual, metodo, fecha_pago: fecha,
+        monto: parseFloat(montoExamen) || 0,
+        tipo: 'examen', observaciones: `Examen ${mes} ${anioActual}`,
+      })
     }
 
     try {
@@ -415,6 +425,7 @@ export default function Pagos() {
         if (cobrarRecargo) t += (parseFloat(montoRecargo) || 0)
         if (cobrarMatricula) t += (a.matricula || 0)
         if (cobrarProporcional) t += (parseFloat(montoProporcional) || 0)
+        if (cobrarExamen) t += (parseFloat(montoExamen) || 0)
         return sum + t
       }, 0)
 
@@ -447,7 +458,7 @@ export default function Pagos() {
 
   const guardar = () => {
     if (seleccionados.size === 0) return showToast('Seleccioná al menos un alumno', 'warning')
-    if (!cobrarCuota && !cobrarRecargo && !cobrarMatricula && !cobrarProporcional) return showToast('Seleccioná al menos un concepto', 'warning')
+    if (!cobrarCuota && !cobrarRecargo && !cobrarMatricula && !cobrarProporcional && !cobrarExamen) return showToast('Seleccioná al menos un concepto', 'warning')
     if (cobrarProporcional && (!montoProporcional || parseFloat(montoProporcional) <= 0)) return showToast('Ingresá el monto proporcional', 'warning')
     if (cobrarRecargo && (!montoRecargo || parseFloat(montoRecargo) <= 0)) return showToast('Ingresá el monto del recargo', 'warning')
 
@@ -1084,6 +1095,33 @@ export default function Pagos() {
                     placeholder="Monto proporcional para todos..."
                     value={montoProporcional}
                     onChange={e => setMontoProporcional(e.target.value)}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Examen */}
+            <div style={{ borderRadius:'10px', border: `1.5px solid ${cobrarExamen ? '#7c3aed' : 'var(--border)'}`, background: cobrarExamen ? '#ede9fe' : 'var(--white)', marginTop:'8px' }}>
+              <div onClick={() => setCobrarExamen(!cobrarExamen)} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', cursor:'pointer' }}>
+                <div style={{ width:18, height:18, borderRadius:5, border: `2px solid ${cobrarExamen ? '#7c3aed' : 'var(--border)'}`, background: cobrarExamen ? '#7c3aed' : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  {cobrarExamen && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2.5"><path d="M2 5l2 2 4-4"/></svg>}
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:'13px', fontWeight:600 }}>Examen</div>
+                  <div style={{ fontSize:'11px', color:'var(--text3)', marginTop:'1px' }}>Monto manual — se registra como ingreso de examen en el EERR</div>
+                </div>
+                {cobrarExamen && montoExamen && (
+                  <div style={{ fontSize:'14px', fontWeight:700, color:'#7c3aed' }}>${parseFloat(montoExamen || '0').toLocaleString('es-AR')}</div>
+                )}
+              </div>
+              {cobrarExamen && (
+                <div style={{ padding:'0 12px 10px' }}>
+                  <input
+                    type="number"
+                    style={{ ...IS, borderColor:'#7c3aed' }}
+                    placeholder="Monto del examen..."
+                    value={montoExamen}
+                    onChange={e => setMontoExamen(e.target.value)}
                   />
                 </div>
               )}
