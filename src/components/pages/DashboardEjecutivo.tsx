@@ -499,12 +499,15 @@ export default function DashboardEjecutivo() {
   }
 
   // ── Estado de resultado helpers ──────────────────────────────────────────
-  const CONCEPTOS_EGRESO = [
+  const CONCEPTOS_EGRESO_ANTES_LIQ = [
     'Alquiler','Regalías','Luz','Emergencias','Seguro Integral',
-    'Agua','Municipal','Internet','Sueldos Administrativos',
-    'Sueldo Coordinadora','Gastos Limpieza','Redes Sociales',
+    'Agua','Municipal','Internet',
+  ]
+  const CONCEPTOS_EGRESO_DESPUES_LIQ = [
+    'Sueldos Administrativos','Sueldo Coordinadora','Gastos Limpieza','Redes Sociales',
     'Publicidad','Bonos'
   ]
+  const CONCEPTOS_EGRESO = [...CONCEPTOS_EGRESO_ANTES_LIQ, ...CONCEPTOS_EGRESO_DESPUES_LIQ]
   const CONCEPTOS_INGRESO_EXTRA = ['Ingresos por Exámenes','Ingresos por Matrículas']
 
   const getImporte = (concepto: string) => {
@@ -535,7 +538,8 @@ export default function DashboardEjecutivo() {
     setErGuardando(prev => { const n = { ...prev }; delete n[concepto]; return n })
   }
 
-  const totalEgresos = CONCEPTOS_EGRESO.reduce((s, c) => s + (getImporte(c) || 0), 0)
+  const totalEgresosConceptos = CONCEPTOS_EGRESO.reduce((s, c) => s + (getImporte(c) || 0), 0)
+  const totalEgresos = totalEgresosConceptos + totalLiq
   const totalIngresosExtra = CONCEPTOS_INGRESO_EXTRA.reduce((s, c) => s + (getImporte(c) || 0), 0)
   const totalMes = erIngresos + totalIngresosExtra - totalEgresos
 
@@ -604,7 +608,21 @@ export default function DashboardEjecutivo() {
                   </div>
                 )}
               </div>
-              {CONCEPTOS_EGRESO.map(concepto => {
+              {[...CONCEPTOS_EGRESO_ANTES_LIQ, '__LIQUIDACIONES__', ...CONCEPTOS_EGRESO_DESPUES_LIQ].map(concepto => {
+                if (concepto === '__LIQUIDACIONES__') {
+                  return (
+                    <div key="liq-docentes" style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px',padding:'6px 10px',background:'var(--redl)',borderRadius:'8px'}}>
+                      <div style={{flex:1,fontSize:'13px',color:'var(--text)',fontWeight:600}}>Liquidaciones docentes</div>
+                      <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                        <span style={{fontSize:'11px',color:'var(--text3)'}}>$</span>
+                        <div style={{width:'110px',padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',textAlign:'right',background:'var(--bg)',color:'var(--red)',fontWeight:700}}>
+                          {Math.round(totalLiq).toLocaleString('es-AR')}
+                        </div>
+                        <span style={{fontSize:'10px',color:'var(--text3)',width:'20px'}}>auto</span>
+                      </div>
+                    </div>
+                  )
+                }
                 const val = getImporte(concepto)
                 const editVal = erEditing[concepto]
                 const guardando = erGuardando[concepto]
@@ -619,7 +637,6 @@ export default function DashboardEjecutivo() {
                         onChange={e => {
                           const v = parseFloat(e.target.value) || 0
                           setErEditing(prev => ({ ...prev, [concepto]: v }))
-                          // Guardar automáticamente 800ms después de dejar de tipear
                           if (erDebounceRef.current[concepto]) clearTimeout(erDebounceRef.current[concepto])
                           erDebounceRef.current[concepto] = setTimeout(() => guardarConcepto(concepto, 'egreso', v), 800)
                         }}
@@ -881,7 +898,8 @@ export default function DashboardEjecutivo() {
               const ingExtra   = totalIngresosExtra
               const totalIng   = ingCuotas + ingExtra
               const costoDoc   = liqProxMes
-              const otrosEgr   = totalEgresos
+              // totalEgresosConceptos: egresos manuales sin liquidaciones (evita doble conteo)
+              const otrosEgr   = totalEgresosConceptos
               const totalEgr   = costoDoc + otrosEgr
               const resultado  = totalIng - totalEgr
               const margenPct  = totalIng > 0 ? Math.round((resultado / totalIng) * 100) : 0
