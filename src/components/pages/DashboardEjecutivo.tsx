@@ -57,7 +57,7 @@ export default function DashboardEjecutivo() {
       const [pagosRes, pagosAntRes, liqRes, liqAntRes, bajasRes] = await Promise.all([
         // metodo incluido — era el campo que faltaba
         sb.from('pagos_alumnos')
-          .select('monto, metodo, observaciones, alumno_id, fecha_pago')
+          .select('monto, metodo, observaciones, alumno_id, fecha_pago, tipo')
           .eq('mes', mesNombre).eq('anio', anio)
           .eq('instituto_id', usuario?.instituto_id || ''),
         sb.from('pagos_alumnos')
@@ -180,6 +180,8 @@ export default function DashboardEjecutivo() {
 
   // ── Cálculos financieros ──────────────────────────────────────────────────
   const totalCobrado    = pagos.reduce((s, p) => s + (p.monto || 0), 0)
+  const totalExamenes   = pagos.filter((p: any) => p.tipo === 'examen').reduce((s: number, p: any) => s + (p.monto || 0), 0)
+  const totalMatriculas = pagos.filter((p: any) => p.tipo === 'matricula').reduce((s: number, p: any) => s + (p.monto || 0), 0)
   const totalAntCobrado = pagosMesAnt.reduce((s, p) => s + (p.monto || 0), 0)
   const variacionCobrado = totalAntCobrado > 0
     ? Math.round(((totalCobrado - totalAntCobrado) / totalAntCobrado) * 100)
@@ -531,6 +533,9 @@ export default function DashboardEjecutivo() {
   const CONCEPTOS_INGRESO_EXTRA = ['Ingresos por Exámenes','Ingresos por Matrículas']
 
   const getImporte = (concepto: string) => {
+    // Exámenes y Matrículas: calculados automáticamente desde pagos reales
+    if (concepto === 'Ingresos por Exámenes') return totalExamenes
+    if (concepto === 'Ingresos por Matrículas') return totalMatriculas
     if (concepto in erEditing) return erEditing[concepto]
     const row = erData.find((r: any) => r.concepto === concepto)
     return row?.importe ?? 0
@@ -696,36 +701,21 @@ export default function DashboardEjecutivo() {
             {/* Ingresos extra */}
             <div style={{padding:'10px 16px 4px',borderBottom:'1px solid var(--border)'}}>
               <div style={{fontSize:'10px',fontWeight:700,color:'var(--green)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'8px'}}>Ingresos Adicionales</div>
-              {CONCEPTOS_INGRESO_EXTRA.map(concepto => {
-                const val = getImporte(concepto)
-                const editVal = erEditing[concepto]
-                const guardando = erGuardando[concepto]
-                return (
-                  <div key={concepto} style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px'}}>
-                    <div style={{flex:1,fontSize:'13px',color:'var(--text)',fontWeight:500}}>{concepto}</div>
-                    <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
-                      <span style={{fontSize:'11px',color:'var(--text3)'}}>$</span>
-                      <input
-                        type="number" min="0" step="100"
-                        value={editVal !== undefined ? editVal : val}
-                        onChange={e => {
-                          const v = parseFloat(e.target.value) || 0
-                          setErEditing(prev => ({ ...prev, [concepto]: v }))
-                          if (erDebounceRef.current[concepto]) clearTimeout(erDebounceRef.current[concepto])
-                          erDebounceRef.current[concepto] = setTimeout(() => guardarConcepto(concepto, 'ingreso_extra', v), 800)
-                        }}
-                        onBlur={e => {
-                          const v = parseFloat(e.target.value) || 0
-                          if (erDebounceRef.current[concepto]) clearTimeout(erDebounceRef.current[concepto])
-                          guardarConcepto(concepto, 'ingreso_extra', v)
-                        }}
-                        style={{width:'110px',padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',fontFamily:'inherit',outline:'none',textAlign:'right'}}
-                      />
-                      {guardando && <span style={{fontSize:'10px',color:'var(--text3)'}}>...</span>}
+              {[
+                { label: 'Ingresos por Exámenes',  val: totalExamenes,   color: '#7c3aed', bg: '#ede9fe' },
+                { label: 'Ingresos por Matrículas', val: totalMatriculas, color: '#1a6b8a', bg: '#e0f0f7' },
+              ].map(({ label, val, color, bg }) => (
+                <div key={label} style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px',padding:'6px 10px',background:bg,borderRadius:'8px'}}>
+                  <div style={{flex:1,fontSize:'13px',color:'var(--text)',fontWeight:600}}>{label}</div>
+                  <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                    <span style={{fontSize:'11px',color:'var(--text3)'}}>$</span>
+                    <div style={{width:'110px',padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',textAlign:'right',background:'var(--white)',color,fontWeight:700}}>
+                      {Math.round(val).toLocaleString('es-AR')}
                     </div>
+                    <span style={{fontSize:'10px',color:'var(--text3)',width:'20px'}}>auto</span>
                   </div>
-                )
-              })}
+                </div>
+              ))}
               <div style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderTop:'1px solid var(--border)',marginTop:'4px'}}>
                 <span style={{fontSize:'12px',fontWeight:700,color:'var(--green)'}}>Total Ingresos Adicionales</span>
                 <span style={{fontSize:'14px',fontWeight:800,color:'var(--green)'}}>{fmt$(totalIngresosExtra)}</span>
