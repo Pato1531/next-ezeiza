@@ -459,16 +459,116 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
   const [anioLiq, setAnioLiq] = useState(anioActual)
 
   // ── Tipo de contrato ─────────────────────────────────────────────────
-  // 'hora' = horas/semana × semanas × tarifa | 'fijo' = monto fijo mensual
+  // 'hora' = horas trabajadas reales del mes × tarifa | 'fijo' = monto fijo mensual
   const [tipoContrato, setTipoContrato] = useState<'hora'|'fijo'>(
     prof.tipo_contrato === 'fijo' ? 'fijo' : (prof.horas_semana && prof.horas_semana > 0) ? 'hora' : 'fijo'
   )
-  // Semanas calculadas del calendario
-  const _mesesArr = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
-  const _mIdxCalc = _mesesArr.indexOf(mesLiq)
-  const semanasCalc = _mIdxCalc >= 0 && new Date(anioLiq, _mIdxCalc + 1, 0).getDate() >= 29 ? 5 : 4
   // Pre-cargar sueldo fijo del perfil
   const [sueldoFijo, setSueldoFijo] = useState<number>(prof.sueldo_fijo || 0)
+
+  // ── Cursos de la profesora y feriados ────────────────────────────────
+  const [cursosProf, setCursosProf] = useState<any[]>([])
+  const [feriados, setFeriados] = useState<Set<string>>(new Set())
+  const [loadingCalc, setLoadingCalc] = useState(false)
+
+  // Mapa día de semana texto → número JS (0=Dom)
+  const DIA_A_NUM: Record<string, number> = {
+    'Lun': 1, 'Lunes': 1,
+    'Mar': 2, 'Martes': 2,
+    'Mié': 3, 'Mie': 3, 'Miércoles': 3, 'Miercoles': 3,
+    'Jue': 4, 'Jueves': 4,
+    'Vie': 5, 'Viernes': 5,
+    'Sáb': 6, 'Sab': 6, 'Sábado': 6, 'Sabado': 6,
+  }
+
+  // Parsear el campo dias de un curso → array de números JS
+  const parseDias = (diasStr: string): number[] => {
+    if (!diasStr) return []
+    const nums: number[] = []
+    for (const [key, val] of Object.entries(DIA_A_NUM)) {
+      if (diasStr.includes(key) && !nums.includes(val)) nums.push(val)
+    }
+    return nums
+  }
+
+  // Duración en horas de un curso
+  const duracionHoras = (c: any): number => {
+    if (!c.hora_inicio || !c.hora_fin) return 0
+    const [h1, m1] = c.hora_inicio.split(':').map(Number)
+    const [h2, m2] = c.hora_fin.split(':').map(Number)
+    const diff = (h2 * 60 + m2) - (h1 * 60 + m1)
+    return diff > 0 ? Math.round(diff / 60 * 10) / 10 : 0
+  }
+
+  // Cargar cursos al montar y feriados cuando cambia año
+  useEffect(() => {
+    if (!prof.id) return
+    createClient().from('cursos')
+      .select('id,nombre,dias,hora_inicio,hora_fin')
+      .eq('profesora_id', prof.id)
+      .then(({ data }) => setCursosProf(data || []))
+      .catch(() => {})
+  }, [prof.id])
+
+  useEffect(() => {
+    const fetchFeriados = async () => {
+      setLoadingCalc(true)
+      try {
+        const res = await fetch(`https://nager.date/api/v3/PublicHolidays/${anioLiq}/AR`)
+        if (res.ok) {
+          const data = await res.json()
+          setFeriados(new Set((data as any[]).map((f: any) => f.date as string)))
+        } else {
+          setFeriados(new Set())
+        }
+      } catch {
+        setFeriados(new Set())
+      }
+      setLoadingCalc(false)
+    }
+    fetchFeriados()
+  }, [anioLiq])
+
+  // ── Calcular horas reales del mes ─────────────────────────────────────
+  // Para cada curso: enumerar fechas del mes → filtrar días de clase → excluir feriados
+  const _mesesArr = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+  const _mIdxCalc = _mesesArr.indexOf(mesLiq)
+
+  const calcHorasRealesMes = (): { horasTotales: number; detalle: { nombre: string; clases: number; horas: number; feriadosExcluidos: number }[] } => {
+    if (_mIdxCalc < 0 || !cursosProf.length) return { horasTotales: 0, detalle: [] }
+    const diasEnMes = new Date(anioLiq, _mIdxCalc + 1, 0).getDate()
+    const detalle: { nombre: string; clases: number; horas: number; feriadosExcluidos: number }[] = []
+    let horasTotales = 0
+
+    for (const curso of cursosProf) {
+      const diasNum = parseDias(curso.dias || '')
+      if (!diasNum.length) continue
+      const hs = duracionHoras(curso)
+      if (!hs) continue
+      let clases = 0
+      let feriadosExcluidos = 0
+      for (let d = 1; d <= diasEnMes; d++) {
+        const fecha = new Date(anioLiq, _mIdxCalc, d)
+        const diasem = fecha.getDay()
+        if (diasNum.includes(diasem)) {
+          const fechaStr = `${anioLiq}-${String(_mIdxCalc + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+          if (feriados.has(fechaStr)) {
+            feriadosExcluidos++
+          } else {
+            clases++
+          }
+        }
+      }
+      const horasCurso = Math.round(clases * hs * 10) / 10
+      horasTotales += horasCurso
+      detalle.push({ nombre: curso.nombre, clases, horas: horasCurso, feriadosExcluidos })
+    }
+    return { horasTotales: Math.round(horasTotales * 10) / 10, detalle }
+  }
+
+  const { horasTotales: horasRealesMes, detalle: detalleHoras } = calcHorasRealesMes()
+  // semanasCalc se mantiene solo para compatibilidad con PDF de liquidaciones guardadas
+  const semanasCalc = _mIdxCalc >= 0 && new Date(anioLiq, _mIdxCalc + 1, 0).getDate() >= 29 ? 5 : 4
 
   // ── Conceptos libres ──────────────────────────────────────────────────
   // Cada ítem: { id, label, monto, signo: '+' | '-' }
@@ -534,7 +634,7 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
 
   // ── Cálculos ─────────────────────────────────────────────────────────
   const base = tipoContrato === 'hora'
-    ? (prof.horas_semana || 0) * semanasCalc * (prof.tarifa_hora || 0)
+    ? Math.round(horasRealesMes * (prof.tarifa_hora || 0))
     : (sueldoFijo || prof.sueldo_fijo || 0)
 
   // Filtrar reemplazos solo del mes seleccionado
@@ -576,7 +676,7 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
       mes: mesLiq,
       anio: anioLiq,
       horas_semana: tipoContrato === 'hora' ? prof.horas_semana : 0,
-      horas_mes: tipoContrato === 'hora' ? (prof.horas_semana || 0) * semanasCalc : 0,
+      horas_mes: tipoContrato === 'hora' ? horasRealesMes : 0,
       tarifa_hora: tipoContrato === 'hora' ? prof.tarifa_hora : 0,
       subtotal: base,
       ajuste: totalConceptos,
@@ -675,8 +775,7 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
       .join('')
 
     const filaBase = tipoContrato === 'hora'
-      ? `<tr><td style="color:#888">Hs/semana</td><td style="text-align:right">${prof.horas_semana}hs</td></tr>
-         <tr><td style="color:#888">Hs/mes (${semanasCalc} sem)</td><td style="text-align:right">${(prof.horas_semana||0)*semanasCalc}hs</td></tr>
+      ? `<tr><td style="color:#888">Horas trabajadas en el mes</td><td style="text-align:right">${horasRealesMes}hs</td></tr>
          <tr><td style="color:#888">Tarifa/hora</td><td style="text-align:right">$${prof.tarifa_hora?.toLocaleString('es-AR')}</td></tr>`
       : `<tr><td style="color:#888">Modalidad</td><td style="text-align:right">Sueldo fijo</td></tr>`
 
@@ -763,16 +862,34 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
 
         {tipoContrato === 'hora' ? (
           <>
-            {[
-              ['Horas semanales', `${prof.horas_semana}hs · desde perfil del docente`],
-              ['Tarifa por hora', `$${prof.tarifa_hora?.toLocaleString('es-AR')}`],
-              ['Semanas en el mes', `${semanasCalc} (calculado automáticamente)`],
-            ].map(([k,v]) => (
-              <div key={k as string} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
-                <span style={{fontSize:'13px',color:'var(--text2)'}}>{k}</span>
-                <span style={{fontSize:'13px',fontWeight:500,color:'var(--text)'}}>{v}</span>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+              <span style={{fontSize:'13px',color:'var(--text2)'}}>Tarifa por hora</span>
+              <span style={{fontSize:'13px',fontWeight:500,color:'var(--text)'}}>${prof.tarifa_hora?.toLocaleString('es-AR')}</span>
+            </div>
+            {/* Detalle por curso */}
+            {loadingCalc ? (
+              <div style={{padding:'10px 0',fontSize:'12px',color:'var(--text3)'}}>Calculando clases del mes…</div>
+            ) : detalleHoras.length === 0 ? (
+              <div style={{padding:'10px 0',fontSize:'12px',color:'var(--amber)'}}>⚠ Sin cursos con días/horario asignados</div>
+            ) : (
+              <div style={{marginTop:'6px',marginBottom:'4px'}}>
+                {detalleHoras.map((d, i) => (
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'6px 0',borderBottom:'1px dashed var(--border)',fontSize:'12px'}}>
+                    <span style={{color:'var(--text2)',flex:1,minWidth:0,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{d.nombre}</span>
+                    <span style={{color:'var(--text3)',marginLeft:'8px',flexShrink:0}}>
+                      {d.clases} clase{d.clases !== 1 ? 's' : ''} · {d.horas}hs
+                      {d.feriadosExcluidos > 0 && (
+                        <span style={{color:'var(--amber)',marginLeft:'4px'}}>(-{d.feriadosExcluidos} feriado{d.feriadosExcluidos !== 1 ? 's' : ''})</span>
+                      )}
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
+              <span style={{fontSize:'13px',color:'var(--text2)'}}>Total horas en el mes</span>
+              <span style={{fontSize:'13px',fontWeight:600,color:'var(--v)'}}>{horasRealesMes}hs</span>
+            </div>
           </>
         ) : (
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
