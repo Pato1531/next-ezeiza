@@ -161,43 +161,42 @@ export default function Alumnos() {
 
   // ── Exportar lista de alumnos ────────────────────────────────────────────
   const exportarNotas = async () => {
-    const sb = createClient()
-    // Traer todas las notas de los alumnos filtrados
     const ids = filtrados.map((a: any) => a.id)
     if (!ids.length) return
-    const { data: notas } = await sb.from('notas_alumnos')
-      .select('alumno_id, texto, autor, created_at')
-      .in('alumno_id', ids)
-      .order('created_at', { ascending: false })
+    try {
+      const res = await fetch(`/api/notas-alumnos?alumno_ids=${ids.join(',')}`, {
+        headers: apiHeaders()
+      })
+      const json = await res.json()
+      if (json.error) { alert('Error al traer notas: ' + json.error); return }
+      const notas = json.data || []
 
-    // Agrupar: una fila por alumno con su última nota
-    const rows = filtrados.map((a: any) => {
-      const notasAlumno = (notas || []).filter((n: any) => n.alumno_id === a.id)
-      const ultimaNota  = notasAlumno[0]
-      const curso = cursosDeAlumnos[a.id] || '—'
-      // Buscar profesora del curso
-      const prof = '—' // se muestra en el campo autor de la nota
-      return [
-        `${a.apellido}, ${a.nombre}`,
-        curso,
-        ultimaNota?.autor || '—',
-        ultimaNota?.texto || '',
-        notasAlumno.length > 0 ? notasAlumno.length.toString() : '0',
-      ]
-    })
+      const rows = filtrados.map((a: any) => {
+        const notasAlumno = notas.filter((n: any) => n.alumno_id === a.id)
+        const ultimaNota  = notasAlumno[0]
+        const curso = cursosDeAlumnos[a.id] || '—'
+        return [
+          `${a.apellido}, ${a.nombre}`,
+          curso,
+          ultimaNota?.autor || '—',
+          ultimaNota?.texto?.replace(/\n/g, ' ') || '',
+          notasAlumno.length.toString(),
+        ]
+      })
 
-    const headers = ['Alumno', 'Curso', 'Autor última nota', 'Última nota', 'Total notas']
-    const bom = '\uFEFF'
-    const csv = bom + [headers, ...rows]
-      .map((row: any[]) => row.map((v: any) => `"${String(v||'').replace(/"/g, '""')}"`).join(','))
-      .join('\n')
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `notas-internas-${new Date().toLocaleDateString('es-AR').replace(/\//g,'-')}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
+      const headers = ['Alumno', 'Curso', 'Autor última nota', 'Última nota', 'Total notas']
+      const bom = '\uFEFF'
+      const csv = bom + [headers, ...rows]
+        .map((row: any[]) => row.map((v: any) => `"${String(v||'').replace(/"/g, '""')}"`).join(','))
+        .join('\n')
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `notas-internas-${new Date().toLocaleDateString('es-AR').replace(/\//g,'-')}.csv`
+      link.click()
+      URL.revokeObjectURL(url)
+    } catch(e: any) { alert('Error al exportar: ' + e.message) }
   }
 
   const exportarPDF = () => {
