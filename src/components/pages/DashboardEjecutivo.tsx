@@ -211,7 +211,6 @@ export default function DashboardEjecutivo() {
   const metodosSorted = Object.entries(metodos).sort((a, b) => b[1] - a[1])
 
   // ── Distribución menores / adultos ───────────────────────────────────────
-  const hoy = new Date()
   const cantMenores = alumnos.filter((a: any) => {
     if (a.fecha_nacimiento) {
       const nacimiento = new Date(a.fecha_nacimiento + 'T12:00:00')
