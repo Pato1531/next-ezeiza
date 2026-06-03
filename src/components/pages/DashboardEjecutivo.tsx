@@ -210,7 +210,33 @@ export default function DashboardEjecutivo() {
   })
   const metodosSorted = Object.entries(metodos).sort((a, b) => b[1] - a[1])
 
-  // ── Tasa de retención ────────────────────────────────────────────────────
+  // ── Distribución menores / adultos ───────────────────────────────────────
+  const hoy = new Date()
+  const cantMenores = alumnos.filter((a: any) => {
+    if (a.fecha_nacimiento) {
+      const nacimiento = new Date(a.fecha_nacimiento + 'T12:00:00')
+      const edad = hoy.getFullYear() - nacimiento.getFullYear() -
+        (hoy < new Date(hoy.getFullYear(), nacimiento.getMonth(), nacimiento.getDate()) ? 1 : 0)
+      return edad < 18
+    }
+    return a.es_menor === true
+  })
+  const cantAdultos = alumnos.filter((a: any) => {
+    if (a.fecha_nacimiento) {
+      const nacimiento = new Date(a.fecha_nacimiento + 'T12:00:00')
+      const edad = hoy.getFullYear() - nacimiento.getFullYear() -
+        (hoy < new Date(hoy.getFullYear(), nacimiento.getMonth(), nacimiento.getDate()) ? 1 : 0)
+      return edad >= 18
+    }
+    return a.es_menor !== true
+  })
+  const totalAlumnos  = alumnos.length
+  const pctMenores    = totalAlumnos > 0 ? Math.round((cantMenores.length / totalAlumnos) * 100) : 0
+  const pctAdultos    = totalAlumnos > 0 ? Math.round((cantAdultos.length / totalAlumnos) * 100) : 0
+  // Comparativo: total mes anterior = alumnosMesAnt + bajasMes - altasMes
+  const totalMesAnt   = alumnosMesAnt.size
+  const deltaAlumnos  = totalAlumnos - totalMesAnt
+  // Tasa de retención
   const alumnosQueRetuvimos = alumnosMesAnt.size > 0
     ? [...alumnosMesAnt].filter(id => alumnosPagaron.has(id)).length
     : 0
@@ -956,9 +982,8 @@ export default function DashboardEjecutivo() {
           </div>
 
           {/* Segunda fila: operativa */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'10px',marginBottom:'14px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'10px'}}>
             {[
-              { label:'Alumnos activos', val: alumnos.length, color:'var(--v)' },
               { label:'Cursos activos',  val: cursos.length,  color:'var(--v)' },
               { label:'Altas del mes',   val: `+${altasMes.length}`, color:'var(--green)' },
               { label:'Bajas del mes',   val: `-${bajasMes.length}`, color: bajasMes.length > 0 ? 'var(--red)' : 'var(--text3)' },
@@ -968,6 +993,45 @@ export default function DashboardEjecutivo() {
                 <div style={{fontSize:'10px',color:'var(--text3)',fontWeight:600,marginTop:'2px'}}>{k.label}</div>
               </div>
             ))}
+          </div>
+
+          {/* Métrica de alumnos: total + menores/adultos + comparativo mes anterior */}
+          <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'14px 16px',marginBottom:'14px'}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'10px'}}>
+              <div>
+                <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em'}}>Alumnos activos</div>
+                <div style={{display:'flex',alignItems:'baseline',gap:'8px',marginTop:'4px'}}>
+                  <div style={{fontSize:'28px',fontWeight:800,color:'var(--v)'}}>{totalAlumnos}</div>
+                  {totalMesAnt > 0 && (
+                    <div style={{fontSize:'13px',fontWeight:600,color: deltaAlumnos > 0 ? 'var(--green)' : deltaAlumnos < 0 ? 'var(--red)' : 'var(--text3)'}}>
+                      {deltaAlumnos > 0 ? `+${deltaAlumnos}` : deltaAlumnos < 0 ? `${deltaAlumnos}` : '='} vs mes anterior
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div style={{fontSize:'12px',color:'var(--text3)',textAlign:'right'}}>
+                {totalMesAnt > 0 && <div style={{marginBottom:'2px'}}>Mes anterior: <strong>{totalMesAnt}</strong></div>}
+              </div>
+            </div>
+            {/* Barra menores / adultos */}
+            <div style={{display:'flex',borderRadius:'8px',overflow:'hidden',height:'28px',marginBottom:'8px'}}>
+              <div style={{flex:cantMenores.length,background:'#652f8d',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'#fff',minWidth: cantMenores.length > 0 ? '30px' : '0'}}>
+                {cantMenores.length > 0 && cantMenores.length}
+              </div>
+              <div style={{flex:cantAdultos.length,background:'#9b6dbd',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'#fff',minWidth: cantAdultos.length > 0 ? '30px' : '0'}}>
+                {cantAdultos.length > 0 && cantAdultos.length}
+              </div>
+            </div>
+            <div style={{display:'flex',gap:'16px'}}>
+              <div style={{display:'flex',alignItems:'center',gap:'5px'}}>
+                <div style={{width:'10px',height:'10px',borderRadius:'3px',background:'#652f8d',flexShrink:0}}/>
+                <span style={{fontSize:'12px',color:'var(--text2)'}}>Menores <strong>{cantMenores.length}</strong> <span style={{color:'var(--text3)'}}>({pctMenores}%)</span></span>
+              </div>
+              <div style={{display:'flex',alignItems:'center',gap:'5px'}}>
+                <div style={{width:'10px',height:'10px',borderRadius:'3px',background:'#9b6dbd',flexShrink:0}}/>
+                <span style={{fontSize:'12px',color:'var(--text2)'}}>Adultos <strong>{cantAdultos.length}</strong> <span style={{color:'var(--text3)'}}>({pctAdultos}%)</span></span>
+              </div>
+            </div>
           </div>
 
           {/* Métodos de pago + Barra de cobranza */}
