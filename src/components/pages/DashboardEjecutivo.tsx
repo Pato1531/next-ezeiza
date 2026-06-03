@@ -23,7 +23,6 @@ export default function DashboardEjecutivo() {
   const [pagos,         setPagos]         = useState<any[]>([])
   const [pagosMesAnt,   setPagosMesAnt]   = useState<any[]>([])
   const [liquidaciones, setLiquidaciones] = useState<any[]>([])
-  const [altasMes,      setAltasMes]      = useState<any[]>([])
   const [bajasMes,      setBajasMes]      = useState<any[]>([])
   const [loading,          setLoading]          = useState(true)
   const [alumnosMesAnt,    setAlumnosMesAnt]    = useState<Set<string>>(new Set())
@@ -49,10 +48,12 @@ export default function DashboardEjecutivo() {
     const cargar = async () => {
       setLoading(true)
       const sb = createClient()
+      // finMes: construido sin toISOString() para evitar bug de timezone UTC-3
+      const _diasEnMes = new Date(anio, mes + 1, 0).getDate()
       const inicioMes = `${anio}-${String(mes + 1).padStart(2,'0')}-01`
-      const finMes    = new Date(anio, mes + 1, 0).toISOString().split('T')[0]
+      const finMes    = `${anio}-${String(mes + 1).padStart(2,'0')}-${String(_diasEnMes).padStart(2,'0')}`
 
-      const [pagosRes, pagosAntRes, liqRes, altasRes, bajasRes] = await Promise.all([
+      const [pagosRes, pagosAntRes, liqRes, bajasRes] = await Promise.all([
         // metodo incluido — era el campo que faltaba
         sb.from('pagos_alumnos')
           .select('monto, metodo, observaciones, alumno_id, fecha_pago')
@@ -67,12 +68,6 @@ export default function DashboardEjecutivo() {
           .select('total, estado, profesora_id')
           .eq('mes', mesNombre).eq('anio', anio)
           .eq('instituto_id', usuario?.instituto_id || ''),
-        usuario?.instituto_id
-          ? sb.from('alumnos').select('id, nombre, apellido, nivel, fecha_alta')
-              .gte('fecha_alta', inicioMes).lte('fecha_alta', finMes).eq('activo', true)
-              .eq('instituto_id', usuario.instituto_id)
-          : sb.from('alumnos').select('id, nombre, apellido, nivel, fecha_alta')
-              .gte('fecha_alta', inicioMes).lte('fecha_alta', finMes).eq('activo', true),
         sb.from('bajas_alumnos')
           .select('alumno_nombre, alumno_apellido, nivel, fecha_baja, motivo')
           .gte('fecha_baja', inicioMes).lte('fecha_baja', finMes),
@@ -81,7 +76,7 @@ export default function DashboardEjecutivo() {
       setPagos(pagosRes.data || [])
       setPagosMesAnt(pagosAntRes.data || [])
       setLiquidaciones(liqRes.data || [])
-      setAltasMes(altasRes.data || [])
+      // altasMes se deriva del hook useAlumnos() — reactivo a nuevos alumnos sin re-fetch
       setBajasMes(bajasRes.data || [])
 
       // Retención: IDs del mes anterior
@@ -232,6 +227,14 @@ export default function DashboardEjecutivo() {
   const totalAlumnos  = alumnos.length
   const pctMenores    = totalAlumnos > 0 ? Math.round((cantMenores.length / totalAlumnos) * 100) : 0
   const pctAdultos    = totalAlumnos > 0 ? Math.round((cantAdultos.length / totalAlumnos) * 100) : 0
+  // altasMes derivado del hook en tiempo real: evita race condition al crear un alumno
+  const _inicioMesStr = `${anio}-${String(mes + 1).padStart(2,'0')}-01`
+  const _diasEnMesStr = new Date(anio, mes + 1, 0).getDate()
+  const _finMesStr    = `${anio}-${String(mes + 1).padStart(2,'0')}-${String(_diasEnMesStr).padStart(2,'0')}`
+  const altasMes = alumnos.filter((a: any) => {
+    if (!a.fecha_alta) return false
+    return a.fecha_alta >= _inicioMesStr && a.fecha_alta <= _finMesStr
+  })
   // Comparativo: total mes anterior = alumnosMesAnt + bajasMes - altasMes
   const totalMesAnt   = alumnosMesAnt.size
   const deltaAlumnos  = totalAlumnos - totalMesAnt
