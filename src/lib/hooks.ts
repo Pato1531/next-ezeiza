@@ -500,6 +500,11 @@ export function useAlumnos() {
       cuota_mensual: nuevo.cuota_mensual || 0, es_menor: nuevo.es_menor || false,
       padre_nombre: nuevo.padre_nombre || null, padre_telefono: nuevo.padre_telefono || null,
       padre_email: nuevo.padre_email || null, color: nuevo.color || '#652f8d', activo: true,
+      // Campos adicionales del form que deben persistirse
+      fecha_alta: nuevo.fecha_alta || null,
+      fecha_nacimiento: nuevo.fecha_nacimiento || null,
+      dni: nuevo.dni || null,
+      matricula: nuevo.matricula || null,
     }
     try {
       const res = await window.fetch('/api/crear-alumno', {
