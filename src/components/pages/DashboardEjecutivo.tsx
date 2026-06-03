@@ -189,10 +189,18 @@ export default function DashboardEjecutivo() {
   const sinPagar   = alumnos.length - cobrados
   const pctCobranza = pct(cobrados, alumnos.length)
 
-  // Liquidaciones del mes
-  const liqsMes  = liquidaciones  // ya filtradas por mes/anio en la query
-  const totalLiq = liqsMes.reduce((s, l) => s + (l.total || 0), 0)
-  const liqPend  = profesoras.length - liqsMes.filter(l => l.estado === 'pagada').length
+  // Liquidaciones del mes — separadas por tipo de colaborador
+  const liqsMes       = liquidaciones  // ya filtradas por mes/anio en la query
+  const profsDocentes    = profesoras.filter((p: any) => p.tipo_colaborador !== 'secretaria')
+  const profsSecretarias = profesoras.filter((p: any) => p.tipo_colaborador === 'secretaria')
+  const idsDocentes      = new Set(profsDocentes.map((p: any) => p.id))
+  const idsSecretarias   = new Set(profsSecretarias.map((p: any) => p.id))
+  const liqsDocentes     = liqsMes.filter((l: any) => idsDocentes.has(l.profesora_id))
+  const liqsSecretarias  = liqsMes.filter((l: any) => idsSecretarias.has(l.profesora_id))
+  const totalLiqDocentes    = liqsDocentes.reduce((s: number, l: any) => s + (l.total || 0), 0)
+  const totalLiqSecretarias = liqsSecretarias.reduce((s: number, l: any) => s + (l.total || 0), 0)
+  const totalLiq = totalLiqDocentes + totalLiqSecretarias
+  const liqPend  = profsDocentes.length - liqsDocentes.filter((l: any) => l.estado === 'pagada').length
 
   // Resultado neto estimado
   const neto = totalCobrado - totalLiq
@@ -480,7 +488,8 @@ export default function DashboardEjecutivo() {
       <div class="kpi"><div class="kpi-val">${fmt$(totalCobrado)}</div><div class="kpi-lab">Cobrado</div></div>
       <div class="kpi"><div class="kpi-val">${pctCobrado}%</div><div class="kpi-lab">Cobranza</div></div>
       <div class="kpi"><div class="kpi-val">${alumnos.length}</div><div class="kpi-lab">Alumnos</div></div>
-      <div class="kpi"><div class="kpi-val">${fmt$(totalLiq)}</div><div class="kpi-lab">Liquidaciones</div></div>
+      <div class="kpi"><div class="kpi-val">${fmt$(totalLiqDocentes)}</div><div class="kpi-lab">Liq. docentes</div></div>
+      <div class="kpi"><div class="kpi-val">${fmt$(totalLiqSecretarias)}</div><div class="kpi-lab">Sueldos admin</div></div>
     </div>
     <div class="neto"><div class="neto-val">${fmt$(neto)}</div><div class="neto-lab">Resultado neto estimado</div></div>
     <h2>Métodos de pago</h2>
@@ -504,7 +513,7 @@ export default function DashboardEjecutivo() {
     'Agua','Municipal','Internet',
   ]
   const CONCEPTOS_EGRESO_DESPUES_LIQ = [
-    'Sueldos Administrativos','Sueldo Coordinadora','Gastos Limpieza','Redes Sociales',
+    '__SUELDOS_ADMIN__','Sueldo Coordinadora','Gastos Limpieza','Redes Sociales',
     'Publicidad','Bonos'
   ]
   const CONCEPTOS_EGRESO = [...CONCEPTOS_EGRESO_ANTES_LIQ, ...CONCEPTOS_EGRESO_DESPUES_LIQ]
@@ -539,7 +548,8 @@ export default function DashboardEjecutivo() {
   }
 
   const totalEgresosConceptos = CONCEPTOS_EGRESO.reduce((s, c) => s + (getImporte(c) || 0), 0)
-  const totalEgresos = totalEgresosConceptos + totalLiq
+  // totalEgresos incluye: liq docentes (auto) + liq secretarias (auto) + conceptos manuales
+  const totalEgresos = totalEgresosConceptos + totalLiqDocentes + totalLiqSecretarias
   const totalIngresosExtra = CONCEPTOS_INGRESO_EXTRA.reduce((s, c) => s + (getImporte(c) || 0), 0)
   const totalMes = erIngresos + totalIngresosExtra - totalEgresos
 
@@ -616,7 +626,21 @@ export default function DashboardEjecutivo() {
                       <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
                         <span style={{fontSize:'11px',color:'var(--text3)'}}>$</span>
                         <div style={{width:'110px',padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',textAlign:'right',background:'var(--bg)',color:'var(--red)',fontWeight:700}}>
-                          {Math.round(totalLiq).toLocaleString('es-AR')}
+                          {Math.round(totalLiqDocentes).toLocaleString('es-AR')}
+                        </div>
+                        <span style={{fontSize:'10px',color:'var(--text3)',width:'20px'}}>auto</span>
+                      </div>
+                    </div>
+                  )
+                }
+                if (concepto === '__SUELDOS_ADMIN__') {
+                  return (
+                    <div key="sueldos-admin" style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px',padding:'6px 10px',background:'var(--amberl)',borderRadius:'8px'}}>
+                      <div style={{flex:1,fontSize:'13px',color:'var(--text)',fontWeight:600}}>Sueldos administrativos</div>
+                      <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                        <span style={{fontSize:'11px',color:'var(--text3)'}}>$</span>
+                        <div style={{width:'110px',padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',textAlign:'right',background:'var(--bg)',color:'var(--amber)',fontWeight:700}}>
+                          {Math.round(totalLiqSecretarias).toLocaleString('es-AR')}
                         </div>
                         <span style={{fontSize:'10px',color:'var(--text3)',width:'20px'}}>auto</span>
                       </div>
@@ -897,10 +921,11 @@ export default function DashboardEjecutivo() {
               const ingCuotas  = proyeccionMes?.objetivo || proyeccion || 0
               const ingExtra   = totalIngresosExtra
               const totalIng   = ingCuotas + ingExtra
-              const costoDoc   = liqProxMes
-              // totalEgresosConceptos: egresos manuales sin liquidaciones (evita doble conteo)
+              const costoDoc        = liqProxMes           // docentes: proyectado por calendario
+              const sueldosAdminEst = totalLiqSecretarias  // secretarias: liquidaciones reales del mes
+              // totalEgresosConceptos: egresos manuales (sin Sueldos Admin — ya viene de liq)
               const otrosEgr   = totalEgresosConceptos
-              const totalEgr   = costoDoc + otrosEgr
+              const totalEgr   = costoDoc + sueldosAdminEst + otrosEgr
               const resultado  = totalIng - totalEgr
               const margenPct  = totalIng > 0 ? Math.round((resultado / totalIng) * 100) : 0
               return (
@@ -950,6 +975,10 @@ export default function DashboardEjecutivo() {
                     <div style={{display:'flex',justifyContent:'space-between',padding:'7px 10px',background:'var(--redl)',borderRadius:'8px 8px 0 0',fontSize:'13px',marginBottom:'1px'}}>
                       <span style={{color:'var(--text2)'}}>Liquidaciones docentes (proyectado)</span>
                       <span style={{fontWeight:600,color:'var(--red)'}}>{fmt$(costoDoc)}</span>
+                    </div>
+                    <div style={{display:'flex',justifyContent:'space-between',padding:'7px 10px',background:'var(--amberl)',borderRadius:'0',fontSize:'13px',marginBottom:'1px'}}>
+                      <span style={{color:'var(--text2)'}}>Sueldos administrativos (liquidados)</span>
+                      <span style={{fontWeight:600,color:'var(--amber)'}}>{fmt$(sueldosAdminEst)}</span>
                     </div>
                     {CONCEPTOS_EGRESO.map((c, i) => {
                       const val = getImporte(c)
@@ -1084,9 +1113,15 @@ export default function DashboardEjecutivo() {
             />
             <KpiCard
               label="Liquidaciones docentes"
-              val={fmt$(totalLiq)}
-              sub={`${liqsMes.length}/${profesoras.length} confirmadas · ${liqPend} pendiente${liqPend !== 1 ? 's' : ''}`}
+              val={fmt$(totalLiqDocentes)}
+              sub={`${liqsDocentes.length}/${profsDocentes.length} confirmadas · ${liqPend} pendiente${liqPend !== 1 ? 's' : ''}`}
               color="var(--blue)"
+            />
+            <KpiCard
+              label="Sueldos administrativos"
+              val={fmt$(totalLiqSecretarias)}
+              sub={`${liqsSecretarias.length}/${profsSecretarias.length} liquidadas`}
+              color="var(--amber)"
             />
             <KpiCard
               label="Resultado neto est."
