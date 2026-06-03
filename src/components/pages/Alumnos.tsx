@@ -164,20 +164,29 @@ export default function Alumnos() {
     const ids = filtrados.map((a: any) => a.id)
     if (!ids.length) return
     try {
-      const res = await fetch(`/api/notas-alumnos?alumno_ids=${ids.join(',')}`, {
-        headers: apiHeaders()
+      // Traer notas y cursos en paralelo
+      const [notasRes, cursosRes] = await Promise.all([
+        fetch(`/api/notas-alumnos?alumno_ids=${ids.join(',')}`, { headers: apiHeaders() }),
+        createClient().from('cursos_alumnos')
+          .select('alumno_id, cursos(nombre)')
+          .in('alumno_id', ids)
+      ])
+      const notasJson = await notasRes.json()
+      if (notasJson.error) { alert('Error al traer notas: ' + notasJson.error); return }
+      const notas = notasJson.data || []
+
+      // Mapa alumno_id → nombre del curso
+      const mapCurso: Record<string, string> = {}
+      ;(cursosRes.data || []).forEach((r: any) => {
+        mapCurso[r.alumno_id] = r.cursos?.nombre || '—'
       })
-      const json = await res.json()
-      if (json.error) { alert('Error al traer notas: ' + json.error); return }
-      const notas = json.data || []
 
       const rows = filtrados.map((a: any) => {
         const notasAlumno = notas.filter((n: any) => n.alumno_id === a.id)
         const ultimaNota  = notasAlumno[0]
-        const curso = cursosDeAlumnos[a.id] || '—'
         return [
           `${a.apellido}, ${a.nombre}`,
-          curso,
+          mapCurso[a.id] || '—',
           ultimaNota?.autor || '—',
           ultimaNota?.texto?.replace(/\n/g, ' ') || '',
           notasAlumno.length.toString(),
