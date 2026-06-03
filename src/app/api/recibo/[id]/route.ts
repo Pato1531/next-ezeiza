@@ -69,6 +69,7 @@ export async function GET(
         pg.tipo === 'matricula'     ? 'Matrícula'
         : pg.tipo === 'proporcional' ? `Monto proporcional ${p.mes} ${p.anio}`
         : pg.tipo === 'recargo'      ? `Cuota con recargo ${p.mes} ${p.anio}`
+        : pg.tipo === 'examen'       ? `Examen ${p.mes} ${p.anio}`
         : `Cuota ${p.mes} ${p.anio}`
       return `
         <div class="linea-pago">
