@@ -506,6 +506,7 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
     createClient().from('cursos')
       .select('id,nombre,dias,hora_inicio,hora_fin')
       .eq('profesora_id', prof.id)
+      .eq('activo', true)
       .then(({ data }) => setCursosProf(data || []))
       .catch(() => {})
   }, [prof.id])
@@ -1517,6 +1518,4 @@ function AusenciasTab({ prof, usuario }: { prof: any; usuario: any }) {
       )}
     </Card>
   )
-
-
 }
