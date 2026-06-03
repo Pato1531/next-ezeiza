@@ -866,23 +866,109 @@ export default function DashboardEjecutivo() {
                     <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'3px'}}>ingresos − liquidaciones</div>
                   </div>
                 </div>
-                <div style={{fontSize:'10.5px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'8px'}}>Detalle por docente</div>
-                <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
-                  {rentabilidadCursos.map((c: any) => (
-                    <div key={c.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 12px',background:'var(--bg)',borderRadius:'8px'}}>
-                      <div>
-                        <div style={{fontSize:'13px',fontWeight:600}}>{c.profesora}</div>
-                        <div style={{fontSize:'11px',color:'var(--text3)'}}>{c.nombre}</div>
-                      </div>
-                      <div style={{fontSize:'14px',fontWeight:700,color:'var(--red)'}}>{fmt$(c.costo)}</div>
-                    </div>
-                  ))}
-                </div>
+
               </>
             )}
           </div>
 
-          {/* D) Alumnos en riesgo de deserción */}
+          {/* D) Estado de resultado estimado */}
+          <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
+            <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'14px'}}>
+              Estado de resultado estimado — {mesNombre} {anio}
+            </div>
+            {(() => {
+              const ingCuotas  = proyeccionMes?.objetivo || proyeccion || 0
+              const ingExtra   = totalIngresosExtra
+              const totalIng   = ingCuotas + ingExtra
+              const costoDoc   = liqProxMes
+              const otrosEgr   = totalEgresos
+              const totalEgr   = costoDoc + otrosEgr
+              const resultado  = totalIng - totalEgr
+              const margenPct  = totalIng > 0 ? Math.round((resultado / totalIng) * 100) : 0
+              return (
+                <>
+                  {/* KPI resultado */}
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'16px'}}>
+                    <div style={{background:'var(--vl)',borderRadius:'12px',padding:'14px',textAlign:'center'}}>
+                      <div style={{fontSize:'11px',color:'var(--v)',fontWeight:700,marginBottom:'4px'}}>Ingresos estimados</div>
+                      <div style={{fontSize:'22px',fontWeight:800,color:'var(--v)'}}>{fmt$(totalIng)}</div>
+                      <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'3px'}}>objetivo cuotas + extras</div>
+                    </div>
+                    <div style={{
+                      background: resultado >= 0 ? 'var(--greenl)' : 'var(--redl)',
+                      borderRadius:'12px',padding:'14px',textAlign:'center'
+                    }}>
+                      <div style={{fontSize:'11px',color: resultado >= 0 ? 'var(--green)' : 'var(--red)',fontWeight:700,marginBottom:'4px'}}>
+                        Resultado estimado
+                      </div>
+                      <div style={{fontSize:'22px',fontWeight:800,color: resultado >= 0 ? 'var(--green)' : 'var(--red)'}}>
+                        {resultado >= 0 ? '+' : ''}{fmt$(resultado)}
+                      </div>
+                      <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'3px'}}>{margenPct}% de margen</div>
+                    </div>
+                  </div>
+
+                  {/* Tabla detalle */}
+                  <div style={{display:'flex',flexDirection:'column',gap:'1px'}}>
+
+                    {/* — Ingresos — */}
+                    <div style={{fontSize:'10px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.06em',padding:'6px 0 4px'}}>Ingresos</div>
+                    <div style={{display:'flex',justifyContent:'space-between',padding:'7px 10px',background:'var(--bg)',borderRadius:'8px 8px 0 0',fontSize:'13px'}}>
+                      <span style={{color:'var(--text2)'}}>Cuotas (objetivo del mes)</span>
+                      <span style={{fontWeight:600,color:'var(--v)'}}>{fmt$(ingCuotas)}</span>
+                    </div>
+                    {CONCEPTOS_INGRESO_EXTRA.map((c, i) => (
+                      <div key={c} style={{display:'flex',justifyContent:'space-between',padding:'7px 10px',background:'var(--bg)',borderRadius: i === CONCEPTOS_INGRESO_EXTRA.length-1 ? '0 0 8px 8px' : '0',fontSize:'13px',marginBottom:'1px'}}>
+                        <span style={{color:'var(--text2)'}}>{c}</span>
+                        <span style={{fontWeight:600,color:'var(--v)'}}>{fmt$(getImporte(c))}</span>
+                      </div>
+                    ))}
+                    <div style={{display:'flex',justifyContent:'space-between',padding:'8px 10px',fontSize:'13px',fontWeight:700,borderTop:'2px solid var(--border)',marginTop:'4px',marginBottom:'12px'}}>
+                      <span>Total ingresos</span><span style={{color:'var(--v)'}}>{fmt$(totalIng)}</span>
+                    </div>
+
+                    {/* — Egresos — */}
+                    <div style={{fontSize:'10px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.06em',padding:'6px 0 4px'}}>Egresos</div>
+                    <div style={{display:'flex',justifyContent:'space-between',padding:'7px 10px',background:'var(--redl)',borderRadius:'8px 8px 0 0',fontSize:'13px',marginBottom:'1px'}}>
+                      <span style={{color:'var(--text2)'}}>Liquidaciones docentes (proyectado)</span>
+                      <span style={{fontWeight:600,color:'var(--red)'}}>{fmt$(costoDoc)}</span>
+                    </div>
+                    {CONCEPTOS_EGRESO.map((c, i) => {
+                      const val = getImporte(c)
+                      if (!val) return null
+                      return (
+                        <div key={c} style={{display:'flex',justifyContent:'space-between',padding:'7px 10px',background:'var(--bg)',borderRadius: i === CONCEPTOS_EGRESO.length-1 ? '0 0 8px 8px' : '0',fontSize:'13px',marginBottom:'1px'}}>
+                          <span style={{color:'var(--text2)'}}>{c}</span>
+                          <span style={{fontWeight:600,color:'var(--red)'}}>{fmt$(val)}</span>
+                        </div>
+                      )
+                    })}
+                    {otrosEgr === 0 && (
+                      <div style={{fontSize:'12px',color:'var(--text3)',padding:'6px 10px',fontStyle:'italic'}}>
+                        Sin egresos cargados en Est. Resultado — cargalos en la tab "Est. Resultado"
+                      </div>
+                    )}
+                    <div style={{display:'flex',justifyContent:'space-between',padding:'8px 10px',fontSize:'13px',fontWeight:700,borderTop:'2px solid var(--border)',marginTop:'4px',marginBottom:'12px'}}>
+                      <span>Total egresos</span><span style={{color:'var(--red)'}}>{fmt$(totalEgr)}</span>
+                    </div>
+
+                    {/* — Resultado — */}
+                    <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'10px 14px',
+                      background: resultado >= 0 ? 'var(--greenl)' : 'var(--redl)',
+                      border: `2px solid ${resultado >= 0 ? 'var(--green)' : 'var(--red)'}`,
+                      borderRadius:'10px',fontSize:'14px',fontWeight:800}}>
+                      <span>Resultado neto estimado</span>
+                      <span style={{color: resultado >= 0 ? 'var(--green)' : 'var(--red)'}}>
+                        {resultado >= 0 ? '+' : ''}{fmt$(resultado)}
+                      </span>
+                    </div>
+                  </div>
+                </>
+              )
+            })()}
+          </div>
+
+          {/* E) Alumnos en riesgo de deserción */}
           <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
               <div>
