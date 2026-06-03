@@ -286,23 +286,30 @@ export default function DashboardEjecutivo() {
     const cantAlumnos = inscriptos.length
     const ingresosCurso = inscriptos.reduce((s: number, r: any) => s + (r.alumnos?.cuota_mensual || 0), 0)
 
-    // Preferir clases reales registradas; fallback al cálculo por calendario
-    const clasesDelCurso = rentabilidadData.clasesReales.filter((cl: any) => cl.curso_id === c.id)
-    let horasReales: number
-    let fuenteCalculo: string
-
-    if (clasesDelCurso.length > 0 && c.hora_inicio && c.hora_fin) {
-      // Clases reales × duración real de la clase
-      const [h1, m1] = c.hora_inicio.split(':').map(Number)
-      const [h2, m2] = c.hora_fin.split(':').map(Number)
-      const duracion = ((h2 * 60 + m2) - (h1 * 60 + m1)) / 60
-      horasReales = Math.round(clasesDelCurso.length * duracion * 10) / 10
-      fuenteCalculo = `${clasesDelCurso.length} clases · ${duracion}hs c/u`
-    } else {
-      // Fallback: estimación por calendario
-      horasReales = calcularHorasCursoMes(c, rentabilidadData.feriados)
-      fuenteCalculo = 'estimado por calendario'
-    }
+    // Siempre usar cálculo por calendario: clases proyectadas del mes según días del curso menos feriados
+    const horasReales = calcularHorasCursoMes(c, rentabilidadData.feriados)
+    const clasesEnMes = c.dias && c.hora_inicio && c.hora_fin
+      ? (() => {
+          const mapaDias: Record<string, number> = {
+            'Lun': 1, 'Mar': 2, 'Mié': 3, 'Jue': 4, 'Vie': 5, 'Sáb': 6, 'Dom': 0,
+            'lun': 1, 'mar': 2, 'mie': 3, 'jue': 4, 'vie': 5, 'sab': 6, 'dom': 0,
+          }
+          const diasCurso = new Set(c.dias.split(/[\/,\s]+/).map((d: string) => mapaDias[d.trim()]).filter((n: any) => n !== undefined))
+          const [h1, m1] = c.hora_inicio.split(':').map(Number)
+          const [h2, m2] = c.hora_fin.split(':').map(Number)
+          const dur = ((h2 * 60 + m2) - (h1 * 60 + m1)) / 60
+          const diasEnMes = new Date(anio, mes + 1, 0).getDate()
+          let cnt = 0
+          for (let d = 1; d <= diasEnMes; d++) {
+            const fechaStr = `${anio}-${String(mes + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+            if (diasCurso.has(new Date(anio, mes, d).getDay()) && !rentabilidadData.feriados.has(fechaStr)) cnt++
+          }
+          return { clases: cnt, dur: Math.round(dur * 10) / 10 }
+        })()
+      : { clases: 0, dur: 0 }
+    const fuenteCalculo = clasesEnMes.clases > 0
+      ? `${clasesEnMes.clases} clases · ${clasesEnMes.dur}hs c/u`
+      : 'sin datos de horario'
 
     const costoPorMes = prof ? (prof.tarifa_hora || 0) * horasReales : 0
     const margen = ingresosCurso - costoPorMes
