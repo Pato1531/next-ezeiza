@@ -1517,4 +1517,6 @@ function AusenciasTab({ prof, usuario }: { prof: any; usuario: any }) {
       )}
     </Card>
   )
+
+
 }
