@@ -716,24 +716,7 @@ export default function Dashboard() {
         </>}
       </div>
 
-      {/* ── ZONA 3B: DETALLE AUSENCIAS ── */}
-      {alertasAusencia.length > 0 && (
-        <>
-          <SL style={{marginBottom:'10px'}}>Ausencias consecutivas</SL>
-          <div style={{marginBottom:'20px'}}>
-            {alertasAusencia.map((al:any,i:number) => (
-              <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'11px 14px',background:'var(--white)',border:'1.5px solid #f5c5c5',borderRadius:'14px',marginBottom:'8px'}}>
-                <Av color={al.color} nombre={al.nombre} apellido={al.apellido} size={36} />
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:'13.5px',fontWeight:600}}>{al.nombre} {al.apellido}</div>
-                  <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'1px'}}>{al.curso} · {al.consecutivas} faltas seguidas</div>
-                </div>
-                <span style={{padding:'3px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:'var(--redl)',color:'var(--red)',flexShrink:0}}>{al.consecutivas} ausencias</span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
+
 
       {/* ── ZONA 4: CUMPLEAÑOS (menor peso) ── */}
       {cumpleanos.length > 0 && (
