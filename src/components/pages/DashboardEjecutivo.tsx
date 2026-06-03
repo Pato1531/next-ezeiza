@@ -22,7 +22,8 @@ export default function DashboardEjecutivo() {
   // ── Datos financieros ─────────────────────────────────────────────────────
   const [pagos,         setPagos]         = useState<any[]>([])
   const [pagosMesAnt,   setPagosMesAnt]   = useState<any[]>([])
-  const [liquidaciones, setLiquidaciones] = useState<any[]>([])
+  const [liquidaciones,    setLiquidaciones]    = useState<any[]>([])
+  const [liquidacionesAnt, setLiquidacionesAnt] = useState<any[]>([])
   const [bajasMes,      setBajasMes]      = useState<any[]>([])
   const [loading,          setLoading]          = useState(true)
   const [alumnosMesAnt,    setAlumnosMesAnt]    = useState<Set<string>>(new Set())
@@ -53,7 +54,7 @@ export default function DashboardEjecutivo() {
       const inicioMes = `${anio}-${String(mes + 1).padStart(2,'0')}-01`
       const finMes    = `${anio}-${String(mes + 1).padStart(2,'0')}-${String(_diasEnMes).padStart(2,'0')}`
 
-      const [pagosRes, pagosAntRes, liqRes, bajasRes] = await Promise.all([
+      const [pagosRes, pagosAntRes, liqRes, liqAntRes, bajasRes] = await Promise.all([
         // metodo incluido — era el campo que faltaba
         sb.from('pagos_alumnos')
           .select('monto, metodo, observaciones, alumno_id, fecha_pago')
@@ -68,6 +69,10 @@ export default function DashboardEjecutivo() {
           .select('total, estado, profesora_id')
           .eq('mes', mesNombre).eq('anio', anio)
           .eq('instituto_id', usuario?.instituto_id || ''),
+        sb.from('liquidaciones')
+          .select('total, profesora_id')
+          .eq('mes', mesAntNombre).eq('anio', anioAnt)
+          .eq('instituto_id', usuario?.instituto_id || ''),
         sb.from('bajas_alumnos')
           .select('alumno_nombre, alumno_apellido, nivel, fecha_baja, motivo')
           .gte('fecha_baja', inicioMes).lte('fecha_baja', finMes),
@@ -76,6 +81,7 @@ export default function DashboardEjecutivo() {
       setPagos(pagosRes.data || [])
       setPagosMesAnt(pagosAntRes.data || [])
       setLiquidaciones(liqRes.data || [])
+      setLiquidacionesAnt(liqAntRes.data || [])
       // altasMes se deriva del hook useAlumnos() — reactivo a nuevos alumnos sin re-fetch
       setBajasMes(bajasRes.data || [])
 
@@ -201,6 +207,11 @@ export default function DashboardEjecutivo() {
   const totalLiqSecretarias = liqsSecretarias.reduce((s: number, l: any) => s + (l.total || 0), 0)
   const totalLiq = totalLiqDocentes + totalLiqSecretarias
   const liqPend  = profsDocentes.length - liqsDocentes.filter((l: any) => l.estado === 'pagada').length
+  // Mes anterior — para comparativo "vs mes pasado"
+  const totalLiqAnt            = liquidacionesAnt.reduce((s: number, l: any) => s + (l.total || 0), 0)
+  const totalLiqDocentesAnt    = liquidacionesAnt.filter((l: any) => idsDocentes.has(l.profesora_id)).reduce((s: number, l: any) => s + (l.total || 0), 0)
+  const totalLiqSecretariasAnt = liquidacionesAnt.filter((l: any) => idsSecretarias.has(l.profesora_id)).reduce((s: number, l: any) => s + (l.total || 0), 0)
+  const totalColabAnt          = totalLiqDocentesAnt + totalLiqSecretariasAnt
 
   // Resultado neto estimado
   const neto = totalCobrado - totalLiq
@@ -884,32 +895,66 @@ export default function DashboardEjecutivo() {
             ) : null}
           </div>
 
-          {/* C) Proyección liquidaciones próximo mes */}
+          {/* C) Proyección colaboradores */}
           <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
             <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'12px'}}>
-              Proyección de liquidaciones — {proxMesNombre} {proxAnio}
+              Proyección colaboradores — {proxMesNombre} {proxAnio}
             </div>
-            {rentabilidadCursos.length === 0 ? (
-              <div style={{textAlign:'center',padding:'16px',color:'var(--text3)',fontSize:'13px'}}>
-                Sin datos de cursos con docente y tarifa asignada
-              </div>
-            ) : (
-              <>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'14px'}}>
-                  <div style={{background:'var(--redl)',borderRadius:'12px',padding:'14px',textAlign:'center'}}>
-                    <div style={{fontSize:'11px',color:'var(--red)',fontWeight:700,marginBottom:'4px'}}>Total a liquidar</div>
-                    <div style={{fontSize:'24px',fontWeight:800,color:'var(--red)'}}>{fmt$(liqProxMes)}</div>
-                    <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'3px'}}>{rentabilidadCursos.length} curso{rentabilidadCursos.length!==1?'s':''} · {new Set(rentabilidadCursos.map((c:any)=>c.profesora)).size} docente{new Set(rentabilidadCursos.map((c:any)=>c.profesora)).size!==1?'s':''}</div>
+            {(() => {
+              const totalColabProx = liqProxMes + totalLiqSecretarias
+              const delta = totalColabAnt > 0 ? totalColabProx - totalColabAnt : null
+              const deltaSign = delta !== null ? (delta >= 0 ? '+' : '') : ''
+              return (
+                <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+                  {/* Docentes */}
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',background:'var(--redl)',borderRadius:'10px'}}>
+                    <div>
+                      <div style={{fontSize:'13px',fontWeight:700,color:'var(--red)'}}>Liquidaciones docentes</div>
+                      <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}}>
+                        {rentabilidadCursos.length} curso{rentabilidadCursos.length!==1?'s':''} · {new Set(rentabilidadCursos.map((c:any)=>c.profesora)).size} docente{new Set(rentabilidadCursos.map((c:any)=>c.profesora)).size!==1?'s':''}
+                      </div>
+                    </div>
+                    <div style={{textAlign:'right'}}>
+                      <div style={{fontSize:'22px',fontWeight:800,color:'var(--red)'}}>{fmt$(liqProxMes)}</div>
+                      {totalLiqDocentesAnt > 0 && (
+                        <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>
+                          vs {mesAntNombre}: {liqProxMes - totalLiqDocentesAnt >= 0 ? '+' : ''}{fmt$(liqProxMes - totalLiqDocentesAnt)}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div style={{background:'var(--greenl)',borderRadius:'12px',padding:'14px',textAlign:'center'}}>
-                    <div style={{fontSize:'11px',color:'var(--green)',fontWeight:700,marginBottom:'4px'}}>Margen proyectado</div>
-                    <div style={{fontSize:'24px',fontWeight:800,color:'var(--green)'}}>{fmt$(proyeccionMes?.objetivo ? proyeccionMes.objetivo - liqProxMes : proyeccion - liqProxMes)}</div>
-                    <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'3px'}}>ingresos − liquidaciones</div>
+                  {/* Administrativos */}
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'12px 14px',background:'var(--amberl)',borderRadius:'10px'}}>
+                    <div>
+                      <div style={{fontSize:'13px',fontWeight:700,color:'var(--amber)'}}>Sueldos administrativos</div>
+                      <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}}>
+                        {profsSecretarias.length} colaborador{profsSecretarias.length!==1?'es':''}
+                      </div>
+                    </div>
+                    <div style={{textAlign:'right'}}>
+                      <div style={{fontSize:'22px',fontWeight:800,color:'var(--amber)'}}>{fmt$(totalLiqSecretarias)}</div>
+                      {totalLiqSecretariasAnt > 0 && (
+                        <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>
+                          vs {mesAntNombre}: {totalLiqSecretarias - totalLiqSecretariasAnt >= 0 ? '+' : ''}{fmt$(totalLiqSecretarias - totalLiqSecretariasAnt)}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {/* Total */}
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 14px',borderTop:'2px solid var(--border)',marginTop:'2px'}}>
+                    <span style={{fontSize:'12px',fontWeight:700,color:'var(--text2)'}}>Total colaboradores</span>
+                    <div style={{textAlign:'right'}}>
+                      <span style={{fontSize:'15px',fontWeight:800,color:'var(--text)'}}>{fmt$(totalColabProx)}</span>
+                      {delta !== null && (
+                        <div style={{fontSize:'10px',color: delta <= 0 ? 'var(--green)' : 'var(--text3)',marginTop:'1px'}}>
+                          {deltaSign}{fmt$(delta)} vs {mesAntNombre}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-
-              </>
-            )}
+              )
+            })()}
           </div>
 
           {/* D) Estado de resultado estimado */}
@@ -1009,6 +1054,23 @@ export default function DashboardEjecutivo() {
                         {resultado >= 0 ? '+' : ''}{fmt$(resultado)}
                       </span>
                     </div>
+                    {/* — Margen bruto — */}
+                    {(() => {
+                      const margenBruto    = totalIng - costoDoc
+                      const margenBrutoPct = totalIng > 0 ? Math.round((margenBruto / totalIng) * 100) : 0
+                      return (
+                        <div style={{marginTop:'10px',padding:'10px 14px',background:'var(--bg)',border:'1.5px solid var(--border)',borderRadius:'10px'}}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'4px'}}>
+                            <span style={{fontSize:'12px',fontWeight:700,color:'var(--text2)'}}>Margen bruto</span>
+                            <span style={{fontSize:'14px',fontWeight:800,color:'var(--v)'}}>{fmt$(margenBruto)}</span>
+                          </div>
+                          <div style={{display:'flex',justifyContent:'space-between',fontSize:'11px',color:'var(--text3)'}}>
+                            <span>Ingresos − liq. docentes · antes de gastos operativos</span>
+                            <span style={{fontWeight:700,color:'var(--v)'}}>{margenBrutoPct}%</span>
+                          </div>
+                        </div>
+                      )
+                    })()}
                   </div>
                 </>
               )
