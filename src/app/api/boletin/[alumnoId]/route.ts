@@ -135,15 +135,19 @@ export async function GET(
       for (const ex of examenes) {
         const { data: notaData } = await sb
           .from('notas_examenes')
-          .select('nota, observacion')
+          .select('nota, observacion, ausente')
           .eq('examen_id', ex.id)
           .eq('alumno_id', params.alumnoId)
           .single()
 
-        // Si no hay nota cargada para este alumno, no incluir en el boletín
-        if (!notaData || notaData.nota === null || notaData.nota === undefined || notaData.nota === '') continue
+        // No incluir si no hay registro alguno (ni nota ni ausente)
+        const esAusente = notaData?.ausente === true
+        const sinDatos  = !notaData || (!esAusente && (notaData.nota === null || notaData.nota === undefined || notaData.nota === ''))
+        if (sinDatos) continue
 
-        const badge = notaBadge(notaData.nota)
+        const badge = esAusente
+          ? { label: 'Ausente', bg: '#fef3c7', color: '#b45309' }
+          : notaBadge(notaData.nota)
         examenesConNota.push({
           nombre: ex.nombre,
           tipo: ex.tipo || '',
@@ -170,9 +174,11 @@ export async function GET(
       ? examenesConNota.map(ex => {
           // Mostrar nota numérica como "84/100"
           const num = Number(ex.notaLabel)
-          const notaDisplay = !isNaN(num) && ex.notaLabel !== '—'
-            ? `${ex.notaLabel}<span style="font-size:10px;font-weight:400;opacity:.6">/100</span>`
-            : ex.notaLabel
+          const notaDisplay = ex.notaLabel === 'Ausente'
+            ? ex.notaLabel
+            : !isNaN(num) && ex.notaLabel !== '—'
+              ? `${ex.notaLabel}<span style="font-size:10px;font-weight:400;opacity:.6">/100</span>`
+              : ex.notaLabel
           return `
         <tr>
           <td>${ex.nombre}</td>
