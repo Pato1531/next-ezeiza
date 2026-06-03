@@ -232,8 +232,10 @@ export default function DashboardEjecutivo() {
   const _diasEnMesStr = new Date(anio, mes + 1, 0).getDate()
   const _finMesStr    = `${anio}-${String(mes + 1).padStart(2,'0')}-${String(_diasEnMesStr).padStart(2,'0')}`
   const altasMes = alumnos.filter((a: any) => {
-    if (!a.fecha_alta) return false
-    return a.fecha_alta >= _inicioMesStr && a.fecha_alta <= _finMesStr
+    // Usar fecha_alta; si es null fallback a created_at (primeros 10 chars = YYYY-MM-DD)
+    const fecha = a.fecha_alta || (a.created_at ? a.created_at.slice(0, 10) : null)
+    if (!fecha) return false
+    return fecha >= _inicioMesStr && fecha <= _finMesStr
   })
   // Comparativo: total mes anterior = alumnosMesAnt + bajasMes - altasMes
   const totalMesAnt   = alumnosMesAnt.size
