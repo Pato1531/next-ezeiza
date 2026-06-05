@@ -35,6 +35,8 @@ export default function Dashboard() {
   const [alumnosSinCurso, setAlumnosSinCurso] = useState(0)
   const [cuotasPendientes, setCuotasPendientes] = useState(0)
   const [alertasAusencia, setAlertasAusencia] = useState<any[]>([])
+  const [alertasTest, setAlertasTest] = useState<any[]>([])
+  const [resolviendoTest, setResolviendoTest] = useState<string|null>(null)
   const [loading, setLoading] = useState(true)
   const [resMesProfIdx, setResMesProfIdx] = useState(new Date().getMonth())
   const [resMesProfAnio, setResMesProfAnio] = useState(new Date().getFullYear())
@@ -438,6 +440,17 @@ export default function Dashboard() {
       console.error('[Dashboard] alertas ausencias:', e)
     }
 
+    // Alertas de test de unidades
+    try {
+      const res = await fetch('/api/alertas-test', { headers: apiHeaders() })
+      if (res.ok) {
+        const json = await res.json()
+        setAlertasTest(json.data || [])
+      }
+    } catch (e) {
+      console.error('[Dashboard] alertas test:', e)
+    }
+
     setLoading(false)
   }
 
@@ -606,7 +619,26 @@ export default function Dashboard() {
   }
 
   // ── VISTA GENERAL ──
-  const alertasUrgentes = alertasAusencia.length > 0 || alumnosSinCurso > 0 || cuotasPendientes > 0 || cumpleanos.some((c:any) => c.diasParaCumple === 0)
+  const marcarTestTomado = async (id: string) => {
+    setResolviendoTest(id)
+    try {
+      await fetch('/api/alertas-test', {
+        method: 'PATCH',
+        headers: apiHeaders(),
+        body: JSON.stringify({ id }),
+      })
+      setAlertasTest(prev => prev.filter(a => a.id !== id))
+    } catch (e) {
+      console.error('[Dashboard] marcar test tomado:', e)
+    }
+    setResolviendoTest(null)
+  }
+
+  // Alertas de test filtradas por rol
+  const alertasTestDocente = alertasTest.filter((a: any) => a.profesora_id === miProfesora?.id)
+  const alertasTestGestion = alertasTest // director, coordinadora y secretaria ven todas
+
+  const alertasUrgentes = alertasAusencia.length > 0 || alumnosSinCurso > 0 || cuotasPendientes > 0 || cumpleanos.some((c:any) => c.diasParaCumple === 0) || alertasTest.length > 0
 
   return (
     <div className="fade-in">
@@ -624,7 +656,7 @@ export default function Dashboard() {
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
             <SL>Alertas</SL>
             <span style={{padding:'2px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:700,background:'var(--redl)',color:'var(--red)'}}>
-              {[alertasAusencia.length>0,alumnosSinCurso>0,cuotasPendientes>0].filter(Boolean).length + cumpleanos.filter((c:any)=>c.diasParaCumple===0).length} pendiente{[alertasAusencia.length>0,alumnosSinCurso>0,cuotasPendientes>0].filter(Boolean).length + cumpleanos.filter((c:any)=>c.diasParaCumple===0).length !== 1 ? 's' : ''}
+              {[alertasAusencia.length>0,alumnosSinCurso>0,cuotasPendientes>0].filter(Boolean).length + cumpleanos.filter((c:any)=>c.diasParaCumple===0).length + alertasTest.length} pendiente{[alertasAusencia.length>0,alumnosSinCurso>0,cuotasPendientes>0].filter(Boolean).length + cumpleanos.filter((c:any)=>c.diasParaCumple===0).length + alertasTest.length !== 1 ? 's' : ''}
             </span>
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
@@ -667,6 +699,64 @@ export default function Dashboard() {
               <Alerta key={c.id} tipo="red" icono="🎂">
                 <strong>¡Hoy cumple años!</strong> {c.nombre} {c.apellido}
               </Alerta>
+            ))}
+
+            {/* ── Alertas test de unidades — docente ve sus propios cursos ── */}
+            {usuario?.rol === 'profesora' && alertasTestDocente.map((a: any) => (
+              <div key={a.id} style={{
+                display:'flex',alignItems:'flex-start',gap:'12px',padding:'12px 14px',
+                background:'var(--white)',border:'1.5px solid #c4b5fd',borderRadius:'14px'
+              }}>
+                <span style={{fontSize:'20px',flexShrink:0}}>📝</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'13.5px',fontWeight:700,color:'#5b21b6',marginBottom:'2px'}}>
+                    Evaluación pendiente — {a.curso_nombre}
+                  </div>
+                  <div style={{fontSize:'12px',color:'var(--text2)'}}>
+                    {a.unidades?.join(' · ')}
+                  </div>
+                </div>
+                <button
+                  onClick={() => marcarTestTomado(a.id)}
+                  disabled={resolviendoTest === a.id}
+                  style={{
+                    padding:'5px 12px',borderRadius:'20px',border:'none',cursor:'pointer',
+                    background:'#ede9fe',color:'#5b21b6',fontSize:'11px',fontWeight:700,
+                    flexShrink:0,opacity: resolviendoTest === a.id ? 0.5 : 1
+                  }}
+                >
+                  {resolviendoTest === a.id ? '...' : '✓ Tomado'}
+                </button>
+              </div>
+            ))}
+
+            {/* ── Alertas test de unidades — director y coordinadora ven todas ── */}
+            {(usuario?.rol === 'director' || usuario?.rol === 'coordinadora' || usuario?.rol === 'secretaria') && alertasTestGestion.map((a: any) => (
+              <div key={a.id} style={{
+                display:'flex',alignItems:'flex-start',gap:'12px',padding:'12px 14px',
+                background:'var(--white)',border:'1.5px solid #c4b5fd',borderRadius:'14px'
+              }}>
+                <span style={{fontSize:'20px',flexShrink:0}}>📝</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'13.5px',fontWeight:700,color:'#5b21b6',marginBottom:'2px'}}>
+                    {a.profesora_nombre} tiene evaluación pendiente — {a.curso_nombre}
+                  </div>
+                  <div style={{fontSize:'12px',color:'var(--text2)'}}>
+                    {a.unidades?.join(' · ')}
+                  </div>
+                </div>
+                <button
+                  onClick={() => marcarTestTomado(a.id)}
+                  disabled={resolviendoTest === a.id}
+                  style={{
+                    padding:'5px 12px',borderRadius:'20px',border:'none',cursor:'pointer',
+                    background:'#ede9fe',color:'#5b21b6',fontSize:'11px',fontWeight:700,
+                    flexShrink:0,opacity: resolviendoTest === a.id ? 0.5 : 1
+                  }}
+                >
+                  {resolviendoTest === a.id ? '...' : '✓ Tomado'}
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -716,7 +806,24 @@ export default function Dashboard() {
         </>}
       </div>
 
-
+      {/* ── ZONA 3B: DETALLE AUSENCIAS ── */}
+      {alertasAusencia.length > 0 && (
+        <>
+          <SL style={{marginBottom:'10px'}}>Ausencias consecutivas</SL>
+          <div style={{marginBottom:'20px'}}>
+            {alertasAusencia.map((al:any,i:number) => (
+              <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'11px 14px',background:'var(--white)',border:'1.5px solid #f5c5c5',borderRadius:'14px',marginBottom:'8px'}}>
+                <Av color={al.color} nombre={al.nombre} apellido={al.apellido} size={36} />
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'13.5px',fontWeight:600}}>{al.nombre} {al.apellido}</div>
+                  <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'1px'}}>{al.curso} · {al.consecutivas} faltas seguidas</div>
+                </div>
+                <span style={{padding:'3px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:'var(--redl)',color:'var(--red)',flexShrink:0}}>{al.consecutivas} ausencias</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
 
       {/* ── ZONA 4: CUMPLEAÑOS (menor peso) ── */}
       {cumpleanos.length > 0 && (
