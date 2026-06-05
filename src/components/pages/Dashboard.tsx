@@ -637,6 +637,46 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Cumpleaños de colegas (profesoras con fecha_nacimiento, próximos 30 días) */}
+        {(() => {
+          const hoyD = new Date(); hoyD.setHours(0,0,0,0)
+          const colegas = profesoras
+            .filter((p: any) => p.fecha_nacimiento)
+            .map((p: any) => {
+              const [, mm, dd] = p.fecha_nacimiento.split('-')
+              let cumpleDate = new Date(hoyD.getFullYear(), parseInt(mm)-1, parseInt(dd))
+              if (cumpleDate < hoyD) cumpleDate = new Date(hoyD.getFullYear()+1, parseInt(mm)-1, parseInt(dd))
+              const diff = Math.round((cumpleDate.getTime() - hoyD.getTime()) / 86400000)
+              return { ...p, diasParaCumple: diff, fechaStr: `${dd}/${mm}` }
+            })
+            .filter((p: any) => p.diasParaCumple <= 30)
+            .sort((a: any, b: any) => a.diasParaCumple - b.diasParaCumple)
+          if (colegas.length === 0) return null
+          return (
+            <div style={{marginBottom:'20px'}}>
+              <SL style={{marginBottom:'10px'}}>Cumpleaños del equipo</SL>
+              <div style={{background:'var(--white)',border:'1.5px solid #fce7f3',borderRadius:'16px',overflow:'hidden'}}>
+                {colegas.map((co: any, idx: number) => (
+                  <div key={co.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'10px 16px',
+                    borderBottom:idx<colegas.length-1?'1px solid #fce7f3':'none',
+                    background:co.diasParaCumple===0?'#fff0f8':'transparent'}}>
+                    <Av color={co.color||'#db2777'} nombre={co.nombre} apellido={co.apellido} size={34} />
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:'13px',fontWeight:600}}>{co.nombre} {co.apellido}</div>
+                      <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'1px'}}>
+                        {co.diasParaCumple===0 ? <span style={{color:'#db2777',fontWeight:700}}>🎉 Hoy</span>
+                        : co.diasParaCumple===1 ? <span style={{color:'#db2777',fontWeight:600}}>Mañana</span>
+                        : `En ${co.diasParaCumple} días`}
+                      </div>
+                    </div>
+                    <div style={{background:'#fce7f3',color:'#db2777',padding:'3px 10px',borderRadius:'20px',fontSize:'12px',fontWeight:700,flexShrink:0}}>{co.fechaStr}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
+        })()}
+
         {/* Próximos eventos */}
         {proximosEventos.length > 0 && (
           <>
