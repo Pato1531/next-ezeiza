@@ -37,6 +37,7 @@ export default function Dashboard() {
   const [alertasAusencia, setAlertasAusencia] = useState<any[]>([])
   const [alertasTest, setAlertasTest] = useState<any[]>([])
   const [resolviendoTest, setResolviendoTest] = useState<string|null>(null)
+  const [confirmandoTest, setConfirmandoTest] = useState<string|null>(null)
   const [loading, setLoading] = useState(true)
   const [resMesProfIdx, setResMesProfIdx] = useState(new Date().getMonth())
   const [resMesProfAnio, setResMesProfAnio] = useState(new Date().getFullYear())
@@ -237,23 +238,20 @@ export default function Dashboard() {
     cargarAlertas()
   }, [alumnos.length, usuario?.instituto_id])
 
-  // Alertas de test: useEffect propio para no depender de alumnos.length
-  // Para profesora espera a que miProfesora esté cargada
+  // Alertas de test: useEffect propio, no depende de alumnos.length
+  // Para profesora espera a que miProfesora esté cargada y filtra server-side
   useEffect(() => {
     if (!usuario?.instituto_id) return
     if (usuario?.rol === 'profesora' && !miProfesora?.id) return
-    const cargarAlertasTest = async () => {
+    const cargar = async () => {
       try {
-        const res = await fetch('/api/alertas-test', { headers: apiHeaders() })
-        if (res.ok) {
-          const json = await res.json()
-          setAlertasTest(json.data || [])
-        }
-      } catch (e) {
-        console.error('[Dashboard] alertas test:', e)
-      }
+        const h: Record<string,string> = { ...apiHeaders() }
+        if (usuario?.rol === 'profesora' && miProfesora?.id) h['x-profesora-id'] = miProfesora.id
+        const res = await fetch('/api/alertas-test', { headers: h })
+        if (res.ok) { const j = await res.json(); setAlertasTest(j.data || []) }
+      } catch {}
     }
-    cargarAlertasTest()
+    cargar()
   }, [usuario?.instituto_id, miProfesora?.id])
 
   useEffect(() => {
@@ -459,7 +457,7 @@ export default function Dashboard() {
       console.error('[Dashboard] alertas ausencias:', e)
     }
 
-    // Alertas de test de unidades — cargadas en su propio useEffect
+    // alertas-test cargadas en su propio useEffect
 
     setLoading(false)
   }
@@ -630,6 +628,14 @@ export default function Dashboard() {
 
   // ── VISTA GENERAL ──
   const marcarTestTomado = async (id: string) => {
+    // Primer toque: mostrar confirmación
+    if (confirmandoTest !== id) {
+      setConfirmandoTest(id)
+      setTimeout(() => setConfirmandoTest(p => p === id ? null : p), 4000)
+      return
+    }
+    // Segundo toque: ejecutar
+    setConfirmandoTest(null)
     setResolviendoTest(id)
     try {
       await fetch('/api/alertas-test', {
@@ -731,11 +737,14 @@ export default function Dashboard() {
                   disabled={resolviendoTest === a.id}
                   style={{
                     padding:'5px 12px',borderRadius:'20px',border:'none',cursor:'pointer',
-                    background:'#ede9fe',color:'#5b21b6',fontSize:'11px',fontWeight:700,
-                    flexShrink:0,opacity: resolviendoTest === a.id ? 0.5 : 1
+                    background: confirmandoTest === a.id ? '#fef3c7' : '#ede9fe',
+                    color: confirmandoTest === a.id ? '#b45309' : '#5b21b6',
+                    fontSize:'11px',fontWeight:700,
+                    flexShrink:0,opacity: resolviendoTest === a.id ? 0.5 : 1,
+                    transition:'all .2s'
                   }}
                 >
-                  {resolviendoTest === a.id ? 'Guardando...' : 'Marcar como tomado'}
+                  {resolviendoTest === a.id ? 'Guardando...' : confirmandoTest === a.id ? '¿Confirmás? Tocá de nuevo' : 'Marcar como tomado'}
                 </button>
               </div>
             ))}
@@ -760,11 +769,14 @@ export default function Dashboard() {
                   disabled={resolviendoTest === a.id}
                   style={{
                     padding:'5px 12px',borderRadius:'20px',border:'none',cursor:'pointer',
-                    background:'#ede9fe',color:'#5b21b6',fontSize:'11px',fontWeight:700,
-                    flexShrink:0,opacity: resolviendoTest === a.id ? 0.5 : 1
+                    background: confirmandoTest === a.id ? '#fef3c7' : '#ede9fe',
+                    color: confirmandoTest === a.id ? '#b45309' : '#5b21b6',
+                    fontSize:'11px',fontWeight:700,
+                    flexShrink:0,opacity: resolviendoTest === a.id ? 0.5 : 1,
+                    transition:'all .2s'
                   }}
                 >
-                  {resolviendoTest === a.id ? 'Guardando...' : 'Marcar como tomado'}
+                  {resolviendoTest === a.id ? 'Guardando...' : confirmandoTest === a.id ? '¿Confirmás? Tocá de nuevo' : 'Marcar como tomado'}
                 </button>
               </div>
             ))}
