@@ -18,6 +18,16 @@ const DIAS_SEMANA = ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb']
 
 function hoy() { return new Date().toISOString().split('T')[0] }
 
+// Dado fecha_nacimiento (YYYY-MM-DD), devuelve la fecha del próximo cumple (o hoy si es hoy)
+function proximoCumple(fechaNac: string): string {
+  const hoyDate = new Date()
+  const anio = hoyDate.getFullYear()
+  const [, mm, dd] = fechaNac.split('-')
+  let candidato = `${anio}-${mm}-${dd}`
+  if (candidato < hoy()) candidato = `${anio + 1}-${mm}-${dd}`
+  return candidato
+}
+
 export default function Agenda() {
   const { usuario } = useAuth()
   const esDirector = usuario?.rol === 'director'
@@ -25,7 +35,8 @@ export default function Agenda() {
   const { profesoras } = useProfesoras()
 
   const [eventos, setEventos] = useState<any[]>([])
-  const [feriados, setFeriados] = useState<Record<string, string>>({}) // dateStr → nombre
+  // feriados: dateStr → nombre — solo para indicadores visuales, NO se mezclan en la lista Próximos
+  const [feriados, setFeriados] = useState<Record<string, string>>({})
   const [vista, setVista] = useState<'proximos'|'calendario'|'nuevo'>('proximos')
   const [form, setForm] = useState({
     titulo: '', tipo: 'reunion', fecha: hoy(), hora_inicio: '', hora_fin: '',
@@ -38,7 +49,6 @@ export default function Agenda() {
   const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(null)
   const [usuariosInstituto, setUsuariosInstituto] = useState<any[]>([])
   const [cargandoUsuarios, setCargandoUsuarios] = useState(false)
-  // Caché de años ya cargados para no re-fetchear
   const [feriadosAnios, setFeriadosAnios] = useState<Set<number>>(new Set())
 
   useEffect(() => { cargarEventos() }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -56,7 +66,7 @@ export default function Agenda() {
       .catch(() => { setUsuariosInstituto([]); setCargandoUsuarios(false) })
   }, [usuario?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Cargar feriados de Argentina desde nager.date (incluye puentes oficiales) ──
+  // ── Feriados argentinos (nager.date) — solo para indicadores visuales del calendario ──
   const cargarFeriados = useCallback(async (anio: number) => {
     if (feriadosAnios.has(anio)) return
     try {
@@ -67,7 +77,7 @@ export default function Agenda() {
       data.forEach(f => { mapa[f.date] = f.localName })
       setFeriados(prev => ({ ...prev, ...mapa }))
       setFeriadosAnios(prev => new Set(prev).add(anio))
-    } catch { /* silencioso — feriados son informativos, no críticos */ }
+    } catch { /* silencioso */ }
   }, [feriadosAnios])
 
   useEffect(() => { cargarFeriados(anioActual) }, [anioActual]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -95,6 +105,71 @@ export default function Agenda() {
   }
 
   const misEventos = eventos.filter(esVisible)
+
+  // ── Cumpleaños automáticos de colaboradores (solo coord/director los ven) ──
+  // Se generan desde fecha_nacimiento de profesoras — no van a la DB, son virtuales
+  const cumplesCola: any[] = esCoord
+    ? profesoras
+        .filter((p: any) => p.fecha_nacimiento)
+        .map((p: any) => ({
+          _virtual: true,
+          id: `cumple-${p.id}`,
+          titulo: `🎂 Cumple: ${p.nombre} ${p.apellido}`,
+          tipo: 'cumpleanos',
+          fecha: proximoCumple(p.fecha_nacimiento),
+          hora_inicio: '',
+          hora_fin: '',
+          descripcion: '',
+          convocados: 'coordinacion',
+          destinatarios_ids: null,
+        }))
+    : []
+
+  const hoyStr = hoy()
+
+  // Lista Próximos: eventos de DB + cumples virtuales, ordenados por fecha, sin duplicados
+  const todosProximos = [...misEventos, ...cumplesCola]
+    .filter(e => e.fecha >= hoyStr)
+    .sort((a, b) => a.fecha.localeCompare(b.fecha))
+    .slice(0, 25)
+
+  const pasados = misEventos
+    .filter(e => e.fecha < hoyStr)
+    .slice(-10)
+    .reverse()
+
+  // ── Calendario ──
+  const primerDia  = new Date(anioActual, mesActual, 1).getDay()
+  const diasEnMes  = new Date(anioActual, mesActual + 1, 0).getDate()
+  const celdas: (number|null)[] = Array(primerDia).fill(null)
+  for (let i = 1; i <= diasEnMes; i++) celdas.push(i)
+  while (celdas.length % 7 !== 0) celdas.push(null)
+
+  // Eventos del día (DB + cumples virtuales del mes visible)
+  const cumplesMes = cumplesCola.filter(c => {
+    const [a, m] = c.fecha.split('-').map(Number)
+    return a === anioActual && m === mesActual + 1
+  })
+  const todosEventosMes = [...misEventos, ...cumplesMes]
+
+  const eventosDia = (dia: number) => {
+    const dateStr = `${anioActual}-${String(mesActual+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`
+    return todosEventosMes.filter(e => e.fecha === dateStr)
+  }
+
+  const feriadosDelMes = Object.entries(feriados).filter(([date]) => {
+    const [a, m] = date.split('-').map(Number)
+    return a === anioActual && m === mesActual + 1
+  })
+
+  const handleDiaClick = (dateStr: string, evsDia: any[]) => {
+    if (evsDia.length > 0 || feriados[dateStr]) {
+      setDiaSeleccionado(prev => prev === dateStr ? null : dateStr)
+    } else if (esCoord) {
+      setForm(f => ({ ...f, fecha: dateStr }))
+      setVista('nuevo')
+    }
+  }
 
   const guardar = async () => {
     if (!form.titulo || !form.fecha) return alert('Título y fecha son obligatorios')
@@ -174,43 +249,13 @@ export default function Agenda() {
     return map[ev.convocados] || ev.convocados
   }
 
-  const hoyStr = hoy()
-  const proximos = misEventos.filter(e => e.fecha >= hoyStr).slice(0, 20)
-  const pasados  = misEventos.filter(e => e.fecha < hoyStr).slice(-10).reverse()
-
-  // ── Calendario ──
-  const primerDia  = new Date(anioActual, mesActual, 1).getDay()
-  const diasEnMes  = new Date(anioActual, mesActual + 1, 0).getDate()
-  const celdas: (number|null)[] = Array(primerDia).fill(null)
-  for (let i = 1; i <= diasEnMes; i++) celdas.push(i)
-  while (celdas.length % 7 !== 0) celdas.push(null)
-
-  const eventosDia = (dia: number) => {
-    const dateStr = `${anioActual}-${String(mesActual+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`
-    return misEventos.filter(e => e.fecha === dateStr)
-  }
-
-  // Feriados del mes visible (de la API)
-  const feriadosDelMes = Object.entries(feriados).filter(([date]) => {
-    const [a, m] = date.split('-').map(Number)
-    return a === anioActual && m === mesActual + 1
-  })
-
-  // Handler de clic en día: abre detalle si hay eventos, abre nuevo si está vacío (solo coord)
-  const handleDiaClick = (dateStr: string, evsDia: any[]) => {
-    if (evsDia.length > 0 || feriados[dateStr]) {
-      setDiaSeleccionado(prev => prev === dateStr ? null : dateStr)
-    } else if (esCoord) {
-      setForm(f => ({ ...f, fecha: dateStr }))
-      setVista('nuevo')
-    }
-  }
-
   const IS = { width:'100%', padding:'10px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'14px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
 
+  // ── RENDER ──────────────────────────────────────────────────────────────────
   return (
     <div className="fade-in">
-      {/* ── HEADER ── */}
+
+      {/* HEADER */}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px'}}>
         <div>
           <div style={{fontSize:'20px',fontWeight:700}}>Agenda del instituto</div>
@@ -219,14 +264,13 @@ export default function Agenda() {
         {esCoord && (
           <button
             onClick={() => { setForm(f => ({ ...f, fecha: hoy() })); setVista('nuevo') }}
-            style={{padding:'9px 14px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}
-          >
+            style={{padding:'9px 14px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
             + Nuevo
           </button>
         )}
       </div>
 
-      {/* ── TABS ── */}
+      {/* TABS — solo Próximos y Calendario */}
       <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch',marginBottom:'16px',marginLeft:'-4px',paddingLeft:'4px'}}>
         <div style={{display:'flex',gap:'6px',minWidth:'max-content'}}>
           {(['proximos','calendario'] as const).map(v => (
@@ -240,12 +284,12 @@ export default function Agenda() {
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════
+      {/* ══════════════════════════════════════
           VISTA: PRÓXIMOS
-      ══════════════════════════════════════════ */}
-      {vista === 'proximos' && (
+      ══════════════════════════════════════ */}
+      {(vista === 'proximos' || vista === 'nuevo') && vista !== 'nuevo' && (
         <>
-          {proximos.length === 0 && (
+          {todosProximos.length === 0 && (
             <div style={{textAlign:'center',padding:'48px 20px',color:'var(--text3)',background:'var(--white)',borderRadius:'16px',border:'1.5px solid var(--border)'}}>
               <div style={{fontSize:'32px',marginBottom:'8px'}}>📅</div>
               <div style={{fontWeight:600}}>No hay eventos próximos</div>
@@ -253,14 +297,15 @@ export default function Agenda() {
             </div>
           )}
 
-          {proximos.length > 0 && (
+          {todosProximos.length > 0 && (
             <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',overflow:'hidden',marginBottom:'12px'}}>
-              {proximos.map((ev, i) => {
+              {todosProximos.map((ev, i) => {
                 const tipo = TIPOS.find(t => t.value === ev.tipo) || TIPOS[7]
                 const esHoy = ev.fecha === hoyStr
+                const esVirtual = !!ev._virtual
                 return (
                   <div key={ev.id} style={{display:'flex',gap:'12px',padding:'14px 16px',
-                    borderBottom:i<proximos.length-1?'1px solid var(--border)':'none',
+                    borderBottom:i<todosProximos.length-1?'1px solid var(--border)':'none',
                     background:esHoy?'var(--vl)':'transparent'}}>
                     <div style={{flexShrink:0,width:'44px',background:tipo.bg,borderRadius:'12px',padding:'8px 4px',textAlign:'center'}}>
                       <div style={{fontSize:'18px'}}>{tipo.emoji}</div>
@@ -274,20 +319,25 @@ export default function Agenda() {
                         <span>{new Date(ev.fecha+'T12:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'})}</span>
                         {ev.hora_inicio && <span>· {ev.hora_inicio}{ev.hora_fin ? ` – ${ev.hora_fin}` : ''}</span>}
                         <span style={{padding:'1px 7px',borderRadius:'10px',background:tipo.bg,color:tipo.color,fontSize:'10px',fontWeight:600}}>{tipo.label}</span>
-                        {esCoord && (
+                        {esCoord && !esVirtual && (
                           <span style={{padding:'1px 7px',borderRadius:'10px',background:'var(--bg)',color:'var(--text3)',fontSize:'10px',fontWeight:600}}>
                             {convocadosLabel(ev)}
                           </span>
+                        )}
+                        {esVirtual && (
+                          <span style={{padding:'1px 7px',borderRadius:'10px',background:'#fce7f3',color:'#db2777',fontSize:'10px',fontWeight:600}}>Auto</span>
                         )}
                       </div>
                       {ev.descripcion && <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'4px',lineHeight:1.4}}>{ev.descripcion}</div>}
                     </div>
                     <div style={{display:'flex',flexDirection:'column',gap:'4px',flexShrink:0,alignItems:'flex-end'}}>
-                      <button onClick={() => exportarICS(ev)} title="Agregar a Google Calendar / Apple Calendar"
-                        style={{background:'var(--vl)',border:'1.5px solid var(--v)',borderRadius:'8px',cursor:'pointer',padding:'4px 8px',fontSize:'11px',fontWeight:700,color:'var(--v)',whiteSpace:'nowrap'}}>
-                        📅 +Cal
-                      </button>
-                      {esCoord && (
+                      {!esVirtual && (
+                        <button onClick={() => exportarICS(ev)} title="Agregar a Google Calendar / Apple Calendar"
+                          style={{background:'var(--vl)',border:'1.5px solid var(--v)',borderRadius:'8px',cursor:'pointer',padding:'4px 8px',fontSize:'11px',fontWeight:700,color:'var(--v)',whiteSpace:'nowrap'}}>
+                          📅 +Cal
+                        </button>
+                      )}
+                      {esCoord && !esVirtual && (
                         <button onClick={() => eliminar(ev.id)}
                           style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'16px',padding:'2px 4px',lineHeight:1}}
                           title="Eliminar">×</button>
@@ -332,9 +382,9 @@ export default function Agenda() {
         </>
       )}
 
-      {/* ══════════════════════════════════════════
+      {/* ══════════════════════════════════════
           VISTA: CALENDARIO
-      ══════════════════════════════════════════ */}
+      ══════════════════════════════════════ */}
       {vista === 'calendario' && (
         <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px'}}>
 
@@ -353,11 +403,10 @@ export default function Agenda() {
             </button>
           </div>
 
-          {/* Banner de feriados del mes */}
+          {/* Banners de feriados del mes — solo informativos, no duplican la lista */}
           {feriadosDelMes.length > 0 && (
             <div style={{marginBottom:'12px',display:'flex',flexDirection:'column',gap:'5px'}}>
               {feriadosDelMes.map(([date, nombre]) => {
-                const dNum = parseInt(date.split('-')[2])
                 const dSemana = new Date(date+'T12:00').toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})
                 return (
                   <div key={date} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 10px',background:'#fef3cd',border:'1px solid #b45309',borderRadius:'10px'}}>
@@ -379,7 +428,7 @@ export default function Agenda() {
             ))}
           </div>
 
-          {/* Celdas del mes */}
+          {/* Celdas */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'2px'}}>
             {celdas.map((dia, idx) => {
               if (!dia) return <div key={idx} />
@@ -391,14 +440,12 @@ export default function Agenda() {
               const tieneAlgo = evsDia.length > 0 || esFeriado
               const tipoEv = evsDia[0] ? (TIPOS.find(t => t.value === evsDia[0].tipo) || TIPOS[7]) : null
 
-              // Color de fondo de la celda
               let cellBg = 'transparent'
               if (seleccionado) cellBg = 'var(--v)'
               else if (esHoy) cellBg = 'var(--vl)'
               else if (esFeriado && evsDia.length === 0) cellBg = '#fef3cd'
               else if (tipoEv) cellBg = tipoEv.bg
 
-              // Color del número
               let numColor = 'var(--text)'
               if (seleccionado) numColor = '#fff'
               else if (esHoy) numColor = 'var(--v)'
@@ -408,16 +455,13 @@ export default function Agenda() {
               return (
                 <div key={idx}
                   onClick={() => handleDiaClick(dateStr, evsDia)}
-                  style={{
-                    aspectRatio:'1',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+                  style={{aspectRatio:'1',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
                     borderRadius:'8px',background:cellBg,
                     cursor: tieneAlgo || esCoord ? 'pointer' : 'default',
                     border: seleccionado ? '2px solid var(--v)' : '2px solid transparent',
-                    transition:'all .12s',position:'relative',
-                  }}>
+                    transition:'all .12s',position:'relative'}}>
                   <div style={{fontSize:'13px',fontWeight:esHoy||tieneAlgo?700:400,color:numColor}}>{dia}</div>
-                  {/* Dots de eventos */}
-                  {(evsDia.length > 0 || esFeriado) && (
+                  {tieneAlgo && (
                     <div style={{display:'flex',gap:'2px',position:'absolute',bottom:'3px',flexWrap:'wrap',justifyContent:'center',maxWidth:'90%'}}>
                       {esFeriado && <div style={{width:'4px',height:'4px',borderRadius:'50%',background:seleccionado?'rgba(255,255,255,.7)':'#b45309'}} />}
                       {evsDia.slice(0,3).map((ev: any, i: number) => {
@@ -431,9 +475,9 @@ export default function Agenda() {
             })}
           </div>
 
-          {/* ── PANEL DE DETALLE DEL DÍA SELECCIONADO ── */}
+          {/* Panel de detalle del día */}
           {diaSeleccionado && (() => {
-            const evsDia = misEventos.filter(e => e.fecha === diaSeleccionado)
+            const evsDia = todosEventosMes.filter(e => e.fecha === diaSeleccionado)
             const feriadoNombre = feriados[diaSeleccionado]
             const fechaLabel = new Date(diaSeleccionado + 'T12:00').toLocaleDateString('es-AR', {
               weekday:'long', day:'numeric', month:'long'
@@ -455,7 +499,6 @@ export default function Agenda() {
                   </div>
                 </div>
 
-                {/* Banner feriado dentro del panel */}
                 {feriadoNombre && (
                   <div style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 10px',background:'#fef3cd',border:'1px solid #b45309',borderRadius:'8px',marginBottom:'8px'}}>
                     <span style={{fontSize:'14px'}}>🏖</span>
@@ -476,6 +519,7 @@ export default function Agenda() {
                 <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
                   {evsDia.map(ev => {
                     const tipo = TIPOS.find(t => t.value === ev.tipo) || TIPOS[7]
+                    const esVirtual = !!ev._virtual
                     return (
                       <div key={ev.id} style={{display:'flex',gap:'10px',alignItems:'flex-start',padding:'10px',background:'var(--white)',borderRadius:'10px',border:'1px solid var(--border)'}}>
                         <div style={{width:'32px',height:'32px',borderRadius:'8px',background:tipo.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px',flexShrink:0}}>
@@ -486,7 +530,8 @@ export default function Agenda() {
                           <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'2px',display:'flex',gap:'6px',flexWrap:'wrap'}}>
                             {ev.hora_inicio && <span>{ev.hora_inicio}{ev.hora_fin ? ` – ${ev.hora_fin}` : ''}</span>}
                             <span style={{padding:'1px 6px',borderRadius:'8px',background:tipo.bg,color:tipo.color,fontSize:'10px',fontWeight:600}}>{tipo.label}</span>
-                            {esCoord && ev.convocados && (
+                            {esVirtual && <span style={{padding:'1px 6px',borderRadius:'8px',background:'#fce7f3',color:'#db2777',fontSize:'10px',fontWeight:600}}>Auto</span>}
+                            {esCoord && !esVirtual && ev.convocados && (
                               <span style={{padding:'1px 6px',borderRadius:'8px',background:'var(--bg)',color:'var(--text3)',fontSize:'10px',fontWeight:600}}>
                                 {convocadosLabel(ev)}
                               </span>
@@ -494,17 +539,19 @@ export default function Agenda() {
                           </div>
                           {ev.descripcion && <div style={{fontSize:'11px',color:'var(--text2)',marginTop:'4px',lineHeight:1.4}}>{ev.descripcion}</div>}
                         </div>
-                        <div style={{display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-end',flexShrink:0}}>
-                          <button onClick={() => exportarICS(ev)}
-                            style={{background:'var(--vl)',border:'1px solid var(--v)',borderRadius:'6px',cursor:'pointer',padding:'3px 6px',fontSize:'10px',fontWeight:700,color:'var(--v)',whiteSpace:'nowrap'}}>
-                            +Cal
-                          </button>
-                          {esCoord && (
-                            <button onClick={() => { eliminar(ev.id); }}
-                              style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'14px',lineHeight:1}}
-                              title="Eliminar">×</button>
-                          )}
-                        </div>
+                        {!esVirtual && (
+                          <div style={{display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-end',flexShrink:0}}>
+                            <button onClick={() => exportarICS(ev)}
+                              style={{background:'var(--vl)',border:'1px solid var(--v)',borderRadius:'6px',cursor:'pointer',padding:'3px 6px',fontSize:'10px',fontWeight:700,color:'var(--v)',whiteSpace:'nowrap'}}>
+                              +Cal
+                            </button>
+                            {esCoord && (
+                              <button onClick={() => eliminar(ev.id)}
+                                style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'14px',lineHeight:1}}
+                                title="Eliminar">×</button>
+                            )}
+                          </div>
+                        )}
                       </div>
                     )
                   })}
@@ -513,7 +560,7 @@ export default function Agenda() {
             )
           })()}
 
-          {/* Leyenda de tipos */}
+          {/* Leyenda */}
           <div style={{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'14px'}}>
             {TIPOS.map(t => (
               <div key={t.value} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'11px',color:'var(--text3)',fontWeight:600}}>
@@ -525,9 +572,9 @@ export default function Agenda() {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════
+      {/* ══════════════════════════════════════
           VISTA: NUEVO EVENTO
-      ══════════════════════════════════════════ */}
+      ══════════════════════════════════════ */}
       {vista === 'nuevo' && esCoord && (
         <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px'}}>
           <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'16px'}}>
