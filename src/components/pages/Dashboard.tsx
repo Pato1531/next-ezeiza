@@ -237,6 +237,25 @@ export default function Dashboard() {
     cargarAlertas()
   }, [alumnos.length, usuario?.instituto_id])
 
+  // Alertas de test: useEffect propio para no depender de alumnos.length
+  // Para profesora espera a que miProfesora esté cargada
+  useEffect(() => {
+    if (!usuario?.instituto_id) return
+    if (usuario?.rol === 'profesora' && !miProfesora?.id) return
+    const cargarAlertasTest = async () => {
+      try {
+        const res = await fetch('/api/alertas-test', { headers: apiHeaders() })
+        if (res.ok) {
+          const json = await res.json()
+          setAlertasTest(json.data || [])
+        }
+      } catch (e) {
+        console.error('[Dashboard] alertas test:', e)
+      }
+    }
+    cargarAlertasTest()
+  }, [usuario?.instituto_id, miProfesora?.id])
+
   useEffect(() => {
     if (!usuario?.rol || !['director','coordinadora'].includes(usuario.rol)) return
     if (!profesoras.length) return
@@ -440,16 +459,7 @@ export default function Dashboard() {
       console.error('[Dashboard] alertas ausencias:', e)
     }
 
-    // Alertas de test de unidades
-    try {
-      const res = await fetch('/api/alertas-test', { headers: apiHeaders() })
-      if (res.ok) {
-        const json = await res.json()
-        setAlertasTest(json.data || [])
-      }
-    } catch (e) {
-      console.error('[Dashboard] alertas test:', e)
-    }
+    // Alertas de test de unidades — cargadas en su propio useEffect
 
     setLoading(false)
   }
@@ -725,7 +735,7 @@ export default function Dashboard() {
                     flexShrink:0,opacity: resolviendoTest === a.id ? 0.5 : 1
                   }}
                 >
-                  {resolviendoTest === a.id ? '...' : '✓ Tomado'}
+                  {resolviendoTest === a.id ? 'Guardando...' : 'Marcar como tomado'}
                 </button>
               </div>
             ))}
@@ -754,7 +764,7 @@ export default function Dashboard() {
                     flexShrink:0,opacity: resolviendoTest === a.id ? 0.5 : 1
                   }}
                 >
-                  {resolviendoTest === a.id ? '...' : '✓ Tomado'}
+                  {resolviendoTest === a.id ? 'Guardando...' : 'Marcar como tomado'}
                 </button>
               </div>
             ))}
