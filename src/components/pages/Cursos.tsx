@@ -2117,26 +2117,27 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas, profesoraId, c
 
   useEffect(() => { cargar() }, [cursoId])
 
-  // Sincronizar alertas de test: al cargar unidades o cambiar estado, enviar al servidor
-  // El servidor (service_role) determina cuántas alertas faltan y las crea
+  // Sincronizar alertas al cambiar dictadas — dependencia como string estable
+  const _dictadasKey = unidades
+    .filter(u => u.estado === 'dictada')
+    .sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
+    .map((u: any) => u.titulo).join('|')
   useEffect(() => {
-    if (!profesoraId || unidades.length === 0) return
-    const dictadas = [...unidades]
-      .filter(u => u.estado === 'dictada')
-      .sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
+    if (!profesoraId || !_dictadasKey) return
+    const dictadas = _dictadasKey.split('|')
     if (dictadas.length < 2) return
     fetch('/api/alertas-test', {
       method: 'POST',
       headers: apiHeaders(),
       body: JSON.stringify({
-        curso_id:         cursoId,
-        profesora_id:     profesoraId,
-        curso_nombre:     cursoNombre || cursoId,
-        profesora_nombre: profesoraNombre || '',
-        unidades_dictadas: dictadas.map((u: any) => u.titulo),
+        curso_id:          cursoId,
+        profesora_id:      profesoraId,
+        curso_nombre:      cursoNombre || cursoId,
+        profesora_nombre:  profesoraNombre || '',
+        unidades_dictadas: dictadas,
       }),
     }).catch(() => {})
-  }, [unidades.filter(u => u.estado === 'dictada').length])
+  }, [_dictadasKey])
 
   const cargar = async () => {
     setLoading(true)
@@ -2218,8 +2219,18 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas, profesoraId, c
       body: JSON.stringify({ id, estado: nuevoEstado }),
     })
 
-    // La sincronización de alertas la maneja el useEffect que observa
-    // el conteo de unidades dictadas — no hace falta lógica extra aquí
+    // Si se destilda, limpiar alertas huérfanas server-side
+    if (nuevoEstado !== 'dictada' && profesoraId) {
+      const restantes = nuevasUnidades
+        .filter(u => u.estado === 'dictada')
+        .sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
+        .map((u: any) => u.titulo)
+      fetch('/api/alertas-test', {
+        method: 'DELETE',
+        headers: apiHeaders(),
+        body: JSON.stringify({ curso_id: cursoId, unidades_dictadas: restantes }),
+      }).catch(() => {})
+    }
   }
 
   const eliminar = async (id: string) => {
