@@ -548,6 +548,43 @@ export default function Dashboard() {
           </div>
         )}
 
+        {/* Alertas de test de unidades — solo para la profesora */}
+        {alertasTest.length > 0 && (
+          <div style={{marginBottom:'20px'}}>
+            <SL style={{marginBottom:'10px'}}>Evaluaciones pendientes</SL>
+            {alertasTest.map((a: any) => (
+              <div key={a.id} style={{
+                display:'flex',alignItems:'flex-start',gap:'12px',padding:'12px 14px',
+                background:'var(--white)',border:'1.5px solid #c4b5fd',borderRadius:'14px',marginBottom:'8px'
+              }}>
+                <span style={{fontSize:'20px',flexShrink:0}}>📝</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:'13.5px',fontWeight:700,color:'#5b21b6',marginBottom:'2px'}}>
+                    Evaluación pendiente — {a.curso_nombre}
+                  </div>
+                  <div style={{fontSize:'12px',color:'var(--text2)'}}>
+                    {a.unidades?.join(' · ')}
+                  </div>
+                </div>
+                <button
+                  onClick={() => marcarTestTomado(a.id)}
+                  disabled={resolviendoTest === a.id}
+                  style={{
+                    padding:'5px 12px',borderRadius:'20px',border:'none',cursor:'pointer',
+                    background: confirmandoTest === a.id ? '#fef3c7' : '#ede9fe',
+                    color: confirmandoTest === a.id ? '#b45309' : '#5b21b6',
+                    fontSize:'11px',fontWeight:700,flexShrink:0,
+                    opacity: resolviendoTest === a.id ? 0.5 : 1,
+                    transition:'all .2s'
+                  }}
+                >
+                  {resolviendoTest === a.id ? 'Guardando...' : confirmandoTest === a.id ? '¿Confirmás? Tocá de nuevo' : 'Marcar como tomado'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Exámenes próximos */}
         {examensPendientes.length > 0 && (
           <div style={{marginBottom:'20px'}}>
