@@ -106,24 +106,22 @@ export default function Agenda() {
 
   const misEventos = eventos.filter(esVisible)
 
-  // ── Cumpleaños automáticos de colaboradores (solo coord/director los ven) ──
-  // Se generan desde fecha_nacimiento de profesoras — no van a la DB, son virtuales
-  const cumplesCola: any[] = esCoord
-    ? profesoras
-        .filter((p: any) => p.fecha_nacimiento)
-        .map((p: any) => ({
-          _virtual: true,
-          id: `cumple-${p.id}`,
-          titulo: `🎂 Cumple: ${p.nombre} ${p.apellido}`,
-          tipo: 'cumpleanos',
-          fecha: proximoCumple(p.fecha_nacimiento),
-          hora_inicio: '',
-          hora_fin: '',
-          descripcion: '',
-          convocados: 'coordinacion',
-          destinatarios_ids: null,
-        }))
-    : []
+  // ── Cumpleaños automáticos de colaboradores — visibles para todos los roles ──
+  // Virtuales: no van a la DB. La docente ve a sus colegas; coord/director ven a todo el equipo.
+  const cumplesCola: any[] = profesoras
+    .filter((p: any) => p.fecha_nacimiento)
+    .map((p: any) => ({
+      _virtual: true,
+      id: `cumple-${p.id}`,
+      titulo: `🎂 Cumple: ${p.nombre} ${p.apellido}`,
+      tipo: 'cumpleanos',
+      fecha: proximoCumple(p.fecha_nacimiento),
+      hora_inicio: '',
+      hora_fin: '',
+      descripcion: '',
+      convocados: 'coordinacion',
+      destinatarios_ids: null,
+    }))
 
   const hoyStr = hoy()
 
@@ -145,12 +143,12 @@ export default function Agenda() {
   for (let i = 1; i <= diasEnMes; i++) celdas.push(i)
   while (celdas.length % 7 !== 0) celdas.push(null)
 
-  // Eventos del día (DB + cumples virtuales del mes visible)
-  const cumplesMes = cumplesCola.filter(c => {
-    const [a, m] = c.fecha.split('-').map(Number)
-    return a === anioActual && m === mesActual + 1
-  })
-  const todosEventosMes = [...misEventos, ...cumplesMes]
+  // Eventos del mes visible (DB + cumples virtuales) — filtrados estrictamente por mes
+  const mesStr = String(mesActual + 1).padStart(2, '0')
+  const prefixMes = `${anioActual}-${mesStr}`
+  const eventosMesDB = misEventos.filter((e: any) => e.fecha.startsWith(prefixMes))
+  const cumplesMes = cumplesCola.filter((c: any) => c.fecha.startsWith(prefixMes))
+  const todosEventosMes = [...eventosMesDB, ...cumplesMes]
 
   const eventosDia = (dia: number) => {
     const dateStr = `${anioActual}-${String(mesActual+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`
