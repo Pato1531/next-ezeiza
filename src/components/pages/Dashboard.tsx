@@ -477,7 +477,7 @@ export default function Dashboard() {
         const diff = Math.round((cumple - hoyMs) / 86400000)
         return { ...p, diasParaCumple: diff, fechaStr: `${dd}/${mm}` }
       })
-      .filter((p: any) => p.diasParaCumple <= 60)
+      .filter((p: any) => p.diasParaCumple <= 120)
       .sort((a: any, b: any) => a.diasParaCumple - b.diasParaCumple)
   })()
 
@@ -964,7 +964,7 @@ export default function Dashboard() {
         <div style={{marginBottom:'20px'}}>
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
             <SL>Cumpleaños del equipo</SL>
-            <span style={{fontSize:'11px',color:'var(--text3)',fontWeight:500}}>60 días</span>
+            <span style={{fontSize:'11px',color:'var(--text3)',fontWeight:500}}>4 meses</span>
           </div>
           <div style={{background:'var(--white)',border:'1.5px solid #fce7f3',borderRadius:'16px',overflow:'hidden'}}>
             <div style={{background:'linear-gradient(135deg,#fce7f3,#fff0f8)',padding:'10px 16px',borderBottom:'1px solid #fce7f3',display:'flex',alignItems:'center',gap:'8px'}}>
