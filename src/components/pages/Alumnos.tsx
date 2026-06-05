@@ -355,12 +355,21 @@ export default function Alumnos() {
     setGuardandoBaja(true)
     const sb = createClient()
     try {
+      // Obtener nombre del curso actual del alumno
+      const { data: cursoData } = await sb
+        .from('cursos_alumnos')
+        .select('cursos(nombre)')
+        .eq('alumno_id', sel.id)
+        .limit(1)
+        .single()
+      const cursoNombre = (cursoData as any)?.cursos?.nombre || '—'
+
       const [bajasRes, , alumnoRes] = await Promise.all([
         sb.from('bajas_alumnos').insert({
           alumno_id:    sel.id,
           alumno_nombre: sel.nombre,
           alumno_apellido: sel.apellido,
-          curso_nombre: cursosDeAlumnos[sel.id] || '—',
+          curso_nombre: cursoNombre,
           nivel:        sel.nivel,
           cuota_mensual: sel.cuota_mensual,
           motivo:       motivoBaja === 'Otro' ? motivoLibre : motivoBaja,
