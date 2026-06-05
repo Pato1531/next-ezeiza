@@ -1342,7 +1342,14 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, puedeEditarPl
 
       {tab === 'examenes' && <ExamenesTab cursoId={c.id} alumnosCurso={alumnosCurso} puedeEditar={puedeEditar} puedeCrearExamen={true} />}
 
-      {tab === 'planificacion' && <PlanificacionTab cursoId={c.id} puedeEditar={puedeEditarPlanif ?? puedeEditar} clasesDictadas={clasesLocal.length} />}
+      {tab === 'planificacion' && <PlanificacionTab
+          cursoId={c.id}
+          puedeEditar={puedeEditarPlanif ?? puedeEditar}
+          clasesDictadas={clasesLocal.length}
+          profesoraId={c.profesora_id}
+          cursoNombre={c.nombre}
+          profesoraNombre={profesoras.find((p:any) => p.id === c.profesora_id)?.nombre + ' ' + (profesoras.find((p:any) => p.id === c.profesora_id)?.apellido || '')}
+        />}
 
       {tab === 'progreso' && <ProgresoTab cursoId={c.id} clasesDictadas={clasesLocal.length} />}
 
@@ -2091,7 +2098,10 @@ function BuscadorModal({ alumnos, onSelect }: any) {
 
 
 // ── TAB PLANIFICACIÓN ANUAL ──────────────────────────────────────────────────
-function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: string; puedeEditar: boolean; clasesDictadas: number }) {
+function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas, profesoraId, cursoNombre, profesoraNombre }: {
+  cursoId: string; puedeEditar: boolean; clasesDictadas: number
+  profesoraId?: string; cursoNombre?: string; profesoraNombre?: string
+}) {
   const [unidades, setUnidades] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState(false)
@@ -2178,12 +2188,52 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas }: { cursoId: s
   }
 
   const cambiarEstado = async (id: string, nuevoEstado: string) => {
-    setUnidades(prev => prev.map(u => u.id === id ? { ...u, estado: nuevoEstado } : u))
+    // Actualizar local y persistir
+    const nuevasUnidades = unidades.map(u => u.id === id ? { ...u, estado: nuevoEstado } : u)
+    setUnidades(nuevasUnidades)
     await fetch('/api/planificacion', {
       method: 'PUT',
       headers: apiHeaders(),
       body: JSON.stringify({ id, estado: nuevoEstado }),
     })
+
+    // ── Alerta test de unidades ──────────────────────────────────────────
+    // Solo disparar cuando se marca como "dictada"
+    if (nuevoEstado !== 'dictada' || !profesoraId) return
+
+    // Contar unidades dictadas (incluyendo la que se acaba de marcar)
+    const dictadas = nuevasUnidades.filter(u => u.estado === 'dictada')
+
+    // Verificar cuántas alertas ya existen para este curso (para saber el offset)
+    const sb = createClient()
+    const { data: alertasExistentes } = await sb
+      .from('alertas_test_unidades')
+      .select('id, unidades')
+      .eq('curso_id', cursoId)
+
+    // Calcular cuántas unidades ya fueron cubiertas por alertas previas
+    const unidadesCubiertasCount = (alertasExistentes || []).length * 2
+
+    // Unidades dictadas nuevas (no cubiertas por alertas anteriores), ordenadas por su posición
+    const dictadasOrdenadas = dictadas
+      .sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
+    const nuevasDictadas = dictadasOrdenadas.slice(unidadesCubiertasCount)
+
+    // Si llegamos a 2 nuevas dictadas, crear la alerta
+    if (nuevasDictadas.length >= 2) {
+      const par = nuevasDictadas.slice(0, 2)
+      await fetch('/api/alertas-test', {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({
+          curso_id:        cursoId,
+          profesora_id:    profesoraId,
+          curso_nombre:    cursoNombre || cursoId,
+          profesora_nombre: profesoraNombre || '',
+          unidades:        par.map((u: any) => u.titulo),
+        }),
+      })
+    }
   }
 
   const eliminar = async (id: string) => {
