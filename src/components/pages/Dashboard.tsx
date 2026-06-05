@@ -649,7 +649,7 @@ export default function Dashboard() {
               const diff = Math.round((cumpleDate.getTime() - hoyD.getTime()) / 86400000)
               return { ...p, diasParaCumple: diff, fechaStr: `${dd}/${mm}` }
             })
-            .filter((p: any) => p.diasParaCumple <= 30)
+            .filter((p: any) => p.diasParaCumple <= 60)
             .sort((a: any, b: any) => a.diasParaCumple - b.diasParaCumple)
           if (colegas.length === 0) return null
           return (
@@ -953,6 +953,54 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+
+      {/* ── ZONA 4B: CUMPLEAÑOS COLABORADORES ── */}
+      {(() => {
+        const hoyD = new Date(); hoyD.setHours(0,0,0,0)
+        const colegas = profesoras
+          .filter((p: any) => p.fecha_nacimiento)
+          .map((p: any) => {
+            const [, mm, dd] = p.fecha_nacimiento.split('-')
+            let cumpleDate = new Date(hoyD.getFullYear(), parseInt(mm)-1, parseInt(dd))
+            if (cumpleDate < hoyD) cumpleDate = new Date(hoyD.getFullYear()+1, parseInt(mm)-1, parseInt(dd))
+            const diff = Math.round((cumpleDate.getTime() - hoyD.getTime()) / 86400000)
+            return { ...p, diasParaCumple: diff, fechaStr: `${dd}/${mm}` }
+          })
+          .filter((p: any) => p.diasParaCumple <= 60)
+          .sort((a: any, b: any) => a.diasParaCumple - b.diasParaCumple)
+        if (colegas.length === 0) return null
+        return (
+          <div style={{marginBottom:'20px'}}>
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
+              <SL>Cumpleaños del equipo</SL>
+              <span style={{fontSize:'11px',color:'var(--text3)',fontWeight:500}}>60 días</span>
+            </div>
+            <div style={{background:'var(--white)',border:'1.5px solid #fce7f3',borderRadius:'16px',overflow:'hidden'}}>
+              <div style={{background:'linear-gradient(135deg,#fce7f3,#fff0f8)',padding:'10px 16px',borderBottom:'1px solid #fce7f3',display:'flex',alignItems:'center',gap:'8px'}}>
+                <span style={{fontSize:'18px'}}>🎂</span>
+                <span style={{fontSize:'12px',fontWeight:700,color:'#db2777'}}>{colegas.length} próximo{colegas.length !== 1 ? 's' : ''}</span>
+              </div>
+              {colegas.map((co: any, idx: number) => (
+                <div key={co.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'10px 16px',
+                  borderBottom:idx<colegas.length-1?'1px solid #fce7f3':'none',
+                  background:co.diasParaCumple===0?'#fff0f8':'transparent'}}>
+                  <Av color={co.color||'#db2777'} nombre={co.nombre} apellido={co.apellido} size={36} />
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:'13px',fontWeight:600}}>{co.nombre} {co.apellido}</div>
+                    <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'2px'}}>
+                      {co.diasParaCumple===0 ? <span style={{color:'#db2777',fontWeight:700}}>🎉 Hoy</span>
+                      : co.diasParaCumple===1 ? <span style={{color:'#db2777',fontWeight:600}}>Mañana</span>
+                      : `En ${co.diasParaCumple} días`}
+                    </div>
+                  </div>
+                  <div style={{background:'#fce7f3',color:'#db2777',padding:'3px 10px',borderRadius:'20px',fontSize:'12px',fontWeight:700,flexShrink:0}}>{co.fechaStr}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* ── RESUMEN POR PROFESORA ── */}
       {['director','coordinadora'].includes(usuario?.rol||'') && (
