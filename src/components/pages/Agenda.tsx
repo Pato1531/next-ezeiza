@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useProfesoras, apiHeaders } from '@/lib/hooks'
 
@@ -25,7 +25,8 @@ export default function Agenda() {
   const { profesoras } = useProfesoras()
 
   const [eventos, setEventos] = useState<any[]>([])
-  const [vista, setVista] = useState<'calendario'|'proximos'|'nuevo'>('proximos')
+  const [feriados, setFeriados] = useState<Record<string, string>>({}) // dateStr → nombre
+  const [vista, setVista] = useState<'proximos'|'calendario'|'nuevo'>('proximos')
   const [form, setForm] = useState({
     titulo: '', tipo: 'reunion', fecha: hoy(), hora_inicio: '', hora_fin: '',
     descripcion: '', convocados: 'todos', docente_id: '',
@@ -37,8 +38,10 @@ export default function Agenda() {
   const [diaSeleccionado, setDiaSeleccionado] = useState<string | null>(null)
   const [usuariosInstituto, setUsuariosInstituto] = useState<any[]>([])
   const [cargandoUsuarios, setCargandoUsuarios] = useState(false)
+  // Caché de años ya cargados para no re-fetchear
+  const [feriadosAnios, setFeriadosAnios] = useState<Set<number>>(new Set())
 
-  useEffect(() => { cargarEventos() }, [])
+  useEffect(() => { cargarEventos() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!usuario?.id || !esCoord) return
@@ -46,35 +49,38 @@ export default function Agenda() {
     fetch('/api/usuarios', { headers: apiHeaders() })
       .then(async r => {
         const json = await r.json()
-        console.log('[Agenda] /api/usuarios status:', r.status, 'data:', json)
-        if (json.data) {
-          setUsuariosInstituto(json.data.filter((u: any) => u.activo))
-        } else {
-          console.warn('[Agenda] sin data:', json.error)
-          setUsuariosInstituto([])
-        }
+        if (json.data) setUsuariosInstituto(json.data.filter((u: any) => u.activo))
+        else setUsuariosInstituto([])
         setCargandoUsuarios(false)
       })
-      .catch(e => { console.error('[Agenda] fetch error:', e); setUsuariosInstituto([]); setCargandoUsuarios(false) })
+      .catch(() => { setUsuariosInstituto([]); setCargandoUsuarios(false) })
   }, [usuario?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Cargar feriados de Argentina desde nager.date (incluye puentes oficiales) ──
+  const cargarFeriados = useCallback(async (anio: number) => {
+    if (feriadosAnios.has(anio)) return
+    try {
+      const res = await fetch(`https://date.nager.at/api/v3/PublicHolidays/${anio}/AR`)
+      if (!res.ok) return
+      const data: { date: string; localName: string }[] = await res.json()
+      const mapa: Record<string, string> = {}
+      data.forEach(f => { mapa[f.date] = f.localName })
+      setFeriados(prev => ({ ...prev, ...mapa }))
+      setFeriadosAnios(prev => new Set(prev).add(anio))
+    } catch { /* silencioso — feriados son informativos, no críticos */ }
+  }, [feriadosAnios])
+
+  useEffect(() => { cargarFeriados(anioActual) }, [anioActual]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const cargarEventos = async () => {
-    // Usa API route (service_role + instituto_id) — no query directa desde el browser
     const res = await fetch('/api/agenda-eventos', { headers: apiHeaders() })
-    if (!res.ok) { console.error('[Agenda] cargarEventos HTTP', res.status); return }
+    if (!res.ok) return
     const json = await res.json()
-    if (json.error) { console.error('[Agenda] cargarEventos', json.error); return }
-    setEventos(json.data || [])
+    if (!json.error) setEventos(json.data || [])
   }
 
-  // ── Filtrar eventos según visibilidad del usuario actual ──────────────────
-  // Un evento es visible si:
-  //   1. convocados === 'todos'
-  //   2. convocados coincide con el rol del usuario
-  //   3. convocados === 'individual' y el id del usuario está en destinatarios_ids
-  //   4. El usuario es director o coordinadora (ven todo para gestionar)
   const esVisible = (ev: any) => {
-    if (esCoord) return true  // director/coordinadora/secretaria ven todo
+    if (esCoord) return true
     if (ev.convocados === 'todos') return true
     if (ev.convocados === 'individual') {
       const lista: string[] = Array.isArray(ev.destinatarios_ids)
@@ -102,9 +108,7 @@ export default function Agenda() {
         creado_por: usuario?.nombre,
       }
       const res = await fetch('/api/guardar-evento', {
-        method: 'POST',
-        headers: apiHeaders(),
-        body: JSON.stringify(payload)
+        method: 'POST', headers: apiHeaders(), body: JSON.stringify(payload)
       })
       const json = await res.json()
       if (json.error) { alert('Error: ' + json.error); setGuardando(false); return }
@@ -118,18 +122,63 @@ export default function Agenda() {
   const eliminar = async (id: string) => {
     if (!confirm('¿Eliminar este evento?')) return
     const res = await fetch('/api/agenda-eventos', {
-      method: 'DELETE',
-      headers: apiHeaders(),
-      body: JSON.stringify({ id }),
+      method: 'DELETE', headers: apiHeaders(), body: JSON.stringify({ id }),
     })
     if (res.ok) setEventos(prev => prev.filter(e => e.id !== id))
   }
 
+  const exportarICS = (ev: any) => {
+    const pad = (n: number) => String(n).padStart(2, '0')
+    const [anio, mes, dia] = ev.fecha.split('-').map(Number)
+    let dtStart: string, dtEnd: string
+    if (ev.hora_inicio) {
+      const [h, m] = ev.hora_inicio.split(':').map(Number)
+      dtStart = `${anio}${pad(mes)}${pad(dia)}T${pad(h)}${pad(m)}00`
+      if (ev.hora_fin) {
+        const [hf, mf] = ev.hora_fin.split(':').map(Number)
+        dtEnd = `${anio}${pad(mes)}${pad(dia)}T${pad(hf)}${pad(mf)}00`
+      } else {
+        dtEnd = `${anio}${pad(mes)}${pad(dia)}T${pad(h+1)}${pad(m)}00`
+      }
+    } else {
+      dtStart = `${anio}${pad(mes)}${pad(dia)}`
+      const diaSig = new Date(anio, mes - 1, dia + 1)
+      dtEnd = `${diaSig.getFullYear()}${pad(diaSig.getMonth()+1)}${pad(diaSig.getDate())}`
+    }
+    const uid = `${ev.id || Date.now()}@edugest`
+    const ahora = new Date().toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z'
+    const descripcion = (ev.descripcion || '').replace(/\n/g, '\\n')
+    const ics = [
+      'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//EduGest//Agenda//ES',
+      'CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
+      `UID:${uid}`,`DTSTAMP:${ahora}`,
+      ev.hora_inicio ? `DTSTART:${dtStart}` : `DTSTART;VALUE=DATE:${dtStart}`,
+      ev.hora_inicio ? `DTEND:${dtEnd}`   : `DTEND;VALUE=DATE:${dtEnd}`,
+      `SUMMARY:${ev.titulo}`,
+      descripcion ? `DESCRIPTION:${descripcion}` : '',
+      'END:VEVENT','END:VCALENDAR',
+    ].filter(Boolean).join('\r\n')
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url; a.download = `${ev.titulo.replace(/[^a-z0-9]/gi, '_')}.ics`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const convocadosLabel = (ev: any) => {
+    if (ev.convocados === 'individual') {
+      const n = ev.destinatarios_ids?.length || 0
+      return `👤 ${n} persona${n !== 1 ? 's' : ''}`
+    }
+    const map: Record<string,string> = { todos:'Todos', docentes:'Docentes', coordinacion:'Coordinación', secretaria:'Secretaría' }
+    return map[ev.convocados] || ev.convocados
+  }
+
   const hoyStr = hoy()
   const proximos = misEventos.filter(e => e.fecha >= hoyStr).slice(0, 20)
-  const pasados  = misEventos.filter(e => e.fecha < hoyStr).slice(-5).reverse()
+  const pasados  = misEventos.filter(e => e.fecha < hoyStr).slice(-10).reverse()
 
-  // Calendario
+  // ── Calendario ──
   const primerDia  = new Date(anioActual, mesActual, 1).getDay()
   const diasEnMes  = new Date(anioActual, mesActual + 1, 0).getDate()
   const celdas: (number|null)[] = Array(primerDia).fill(null)
@@ -141,99 +190,59 @@ export default function Agenda() {
     return misEventos.filter(e => e.fecha === dateStr)
   }
 
-  // Badge para mostrar a quiénes va el evento
-  const convocadosLabel = (ev: any) => {
-    if (ev.convocados === 'individual') {
-      const n = ev.destinatarios_ids?.length || 0
-      return `👤 ${n} persona${n !== 1 ? 's' : ''}`
+  // Feriados del mes visible (de la API)
+  const feriadosDelMes = Object.entries(feriados).filter(([date]) => {
+    const [a, m] = date.split('-').map(Number)
+    return a === anioActual && m === mesActual + 1
+  })
+
+  // Handler de clic en día: abre detalle si hay eventos, abre nuevo si está vacío (solo coord)
+  const handleDiaClick = (dateStr: string, evsDia: any[]) => {
+    if (evsDia.length > 0 || feriados[dateStr]) {
+      setDiaSeleccionado(prev => prev === dateStr ? null : dateStr)
+    } else if (esCoord) {
+      setForm(f => ({ ...f, fecha: dateStr }))
+      setVista('nuevo')
     }
-    const map: Record<string,string> = { todos:'Todos', docentes:'Docentes', coordinacion:'Coordinación', secretaria:'Secretaría' }
-    return map[ev.convocados] || ev.convocados
-  }
-
-
-  // ── Generar y descargar archivo .ICS para Google/Apple/Outlook Calendar ──
-  const exportarICS = (ev: any) => {
-    const pad = (n: number) => String(n).padStart(2, '0')
-
-    // Construir fecha en formato YYYYMMDD
-    const [anio, mes, dia] = ev.fecha.split('-').map(Number)
-
-    let dtStart: string
-    let dtEnd: string
-
-    if (ev.hora_inicio) {
-      const [h, m] = ev.hora_inicio.split(':').map(Number)
-      dtStart = `${anio}${pad(mes)}${pad(dia)}T${pad(h)}${pad(m)}00`
-      if (ev.hora_fin) {
-        const [hf, mf] = ev.hora_fin.split(':').map(Number)
-        dtEnd = `${anio}${pad(mes)}${pad(dia)}T${pad(hf)}${pad(mf)}00`
-      } else {
-        // Por defecto 1 hora de duración
-        const finH = h + 1
-        dtEnd = `${anio}${pad(mes)}${pad(dia)}T${pad(finH)}${pad(m)}00`
-      }
-    } else {
-      // Evento de día completo
-      dtStart = `${anio}${pad(mes)}${pad(dia)}`
-      const diaSig = new Date(anio, mes - 1, dia + 1)
-      dtEnd = `${diaSig.getFullYear()}${pad(diaSig.getMonth()+1)}${pad(diaSig.getDate())}`
-    }
-
-    const uid = `${ev.id || Date.now()}@edugest`
-    const ahora = new Date().toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z'
-    const descripcion = (ev.descripcion || '').replace(/\n/g, '\\n')
-
-    const ics = [
-      'BEGIN:VCALENDAR',
-      'VERSION:2.0',
-      'PRODID:-//EduGest//Agenda//ES',
-      'CALSCALE:GREGORIAN',
-      'METHOD:PUBLISH',
-      'BEGIN:VEVENT',
-      `UID:${uid}`,
-      `DTSTAMP:${ahora}`,
-      ev.hora_inicio ? `DTSTART:${dtStart}` : `DTSTART;VALUE=DATE:${dtStart}`,
-      ev.hora_inicio ? `DTEND:${dtEnd}`   : `DTEND;VALUE=DATE:${dtEnd}`,
-      `SUMMARY:${ev.titulo}`,
-      descripcion ? `DESCRIPTION:${descripcion}` : '',
-      'END:VEVENT',
-      'END:VCALENDAR',
-    ].filter(Boolean).join('\r\n')
-
-    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href     = url
-    a.download = `${ev.titulo.replace(/[^a-z0-9]/gi, '_')}.ics`
-    a.click()
-    URL.revokeObjectURL(url)
   }
 
   const IS = { width:'100%', padding:'10px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'14px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
 
   return (
     <div className="fade-in">
+      {/* ── HEADER ── */}
       <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px'}}>
         <div>
           <div style={{fontSize:'20px',fontWeight:700}}>Agenda del instituto</div>
           <div style={{fontSize:'13px',color:'var(--text2)',marginTop:'2px'}}>Compartida con todo el equipo</div>
         </div>
-        {esCoord && <button onClick={() => setVista('nuevo')} style={{padding:'9px 14px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>+ Nuevo</button>}
+        {esCoord && (
+          <button
+            onClick={() => { setForm(f => ({ ...f, fecha: hoy() })); setVista('nuevo') }}
+            style={{padding:'9px 14px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}
+          >
+            + Nuevo
+          </button>
+        )}
       </div>
 
-      {/* TABS */}
+      {/* ── TABS ── */}
       <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch',marginBottom:'16px',marginLeft:'-4px',paddingLeft:'4px'}}>
         <div style={{display:'flex',gap:'6px',minWidth:'max-content'}}>
-          {(['proximos','calendario','nuevo'] as const).filter(v => v !== 'nuevo' || esCoord).map(v => (
-            <button key={v} onClick={() => setVista(v)} style={{padding:'9px 16px',borderRadius:'20px',border:'1.5px solid',fontSize:'12px',fontWeight:700,cursor:'pointer',background:vista===v?'var(--v)':'transparent',color:vista===v?'#fff':'var(--text2)',borderColor:vista===v?'var(--v)':'var(--border)',whiteSpace:'nowrap',flexShrink:0}}>
-              {v === 'proximos' ? '📋 Próximos' : v === 'calendario' ? '📅 Calendario' : '+ Nuevo evento'}
+          {(['proximos','calendario'] as const).map(v => (
+            <button key={v} onClick={() => setVista(v)}
+              style={{padding:'9px 16px',borderRadius:'20px',border:'1.5px solid',fontSize:'12px',fontWeight:700,cursor:'pointer',
+                background:vista===v?'var(--v)':'transparent',color:vista===v?'#fff':'var(--text2)',
+                borderColor:vista===v?'var(--v)':'var(--border)',whiteSpace:'nowrap',flexShrink:0}}>
+              {v === 'proximos' ? '📋 Próximos' : '📅 Calendario'}
             </button>
           ))}
         </div>
       </div>
 
-      {/* ── PRÓXIMOS ── */}
+      {/* ══════════════════════════════════════════
+          VISTA: PRÓXIMOS
+      ══════════════════════════════════════════ */}
       {vista === 'proximos' && (
         <>
           {proximos.length === 0 && (
@@ -243,16 +252,21 @@ export default function Agenda() {
               {esCoord && <div style={{fontSize:'13px',marginTop:'4px'}}>Creá el primero con el botón + Nuevo</div>}
             </div>
           )}
+
           {proximos.length > 0 && (
             <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',overflow:'hidden',marginBottom:'12px'}}>
               {proximos.map((ev, i) => {
                 const tipo = TIPOS.find(t => t.value === ev.tipo) || TIPOS[7]
                 const esHoy = ev.fecha === hoyStr
                 return (
-                  <div key={ev.id} style={{display:'flex',gap:'12px',padding:'14px 16px',borderBottom:i<proximos.length-1?'1px solid var(--border)':'none',background:esHoy?'var(--vl)':'transparent'}}>
+                  <div key={ev.id} style={{display:'flex',gap:'12px',padding:'14px 16px',
+                    borderBottom:i<proximos.length-1?'1px solid var(--border)':'none',
+                    background:esHoy?'var(--vl)':'transparent'}}>
                     <div style={{flexShrink:0,width:'44px',background:tipo.bg,borderRadius:'12px',padding:'8px 4px',textAlign:'center'}}>
                       <div style={{fontSize:'18px'}}>{tipo.emoji}</div>
-                      <div style={{fontSize:'11px',fontWeight:800,color:tipo.color}}>{String(new Date(ev.fecha+'T12:00').getDate()).padStart(2,'0')}</div>
+                      <div style={{fontSize:'11px',fontWeight:800,color:tipo.color}}>
+                        {String(new Date(ev.fecha+'T12:00').getDate()).padStart(2,'0')}
+                      </div>
                     </div>
                     <div style={{flex:1,minWidth:0}}>
                       <div style={{fontSize:'14px',fontWeight:700,color:'var(--text)',marginBottom:'2px'}}>{ev.titulo}</div>
@@ -260,7 +274,6 @@ export default function Agenda() {
                         <span>{new Date(ev.fecha+'T12:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'})}</span>
                         {ev.hora_inicio && <span>· {ev.hora_inicio}{ev.hora_fin ? ` – ${ev.hora_fin}` : ''}</span>}
                         <span style={{padding:'1px 7px',borderRadius:'10px',background:tipo.bg,color:tipo.color,fontSize:'10px',fontWeight:600}}>{tipo.label}</span>
-                        {/* Badge de convocados — visible solo para quienes gestionan */}
                         {esCoord && (
                           <span style={{padding:'1px 7px',borderRadius:'10px',background:'var(--bg)',color:'var(--text3)',fontSize:'10px',fontWeight:600}}>
                             {convocadosLabel(ev)}
@@ -270,15 +283,14 @@ export default function Agenda() {
                       {ev.descripcion && <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'4px',lineHeight:1.4}}>{ev.descripcion}</div>}
                     </div>
                     <div style={{display:'flex',flexDirection:'column',gap:'4px',flexShrink:0,alignItems:'flex-end'}}>
-                      <button
-                        onClick={() => exportarICS(ev)}
-                        title="Agregar a Google Calendar / Apple Calendar"
-                        style={{background:'var(--vl)',border:'1.5px solid var(--v)',borderRadius:'8px',cursor:'pointer',padding:'4px 8px',fontSize:'11px',fontWeight:700,color:'var(--v)',whiteSpace:'nowrap'}}
-                      >
+                      <button onClick={() => exportarICS(ev)} title="Agregar a Google Calendar / Apple Calendar"
+                        style={{background:'var(--vl)',border:'1.5px solid var(--v)',borderRadius:'8px',cursor:'pointer',padding:'4px 8px',fontSize:'11px',fontWeight:700,color:'var(--v)',whiteSpace:'nowrap'}}>
                         📅 +Cal
                       </button>
                       {esCoord && (
-                        <button onClick={() => eliminar(ev.id)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'16px',padding:'2px 4px',lineHeight:1}} title="Eliminar">×</button>
+                        <button onClick={() => eliminar(ev.id)}
+                          style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'16px',padding:'2px 4px',lineHeight:1}}
+                          title="Eliminar">×</button>
                       )}
                     </div>
                   </div>
@@ -290,17 +302,27 @@ export default function Agenda() {
           {/* Pasados */}
           {pasados.length > 0 && (
             <>
-              <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'8px'}}>Eventos pasados</div>
+              <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'8px',marginTop:'4px'}}>
+                Eventos pasados
+              </div>
               <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',overflow:'hidden'}}>
                 {pasados.map((ev, i) => {
                   const tipo = TIPOS.find(t => t.value === ev.tipo) || TIPOS[7]
                   return (
-                    <div key={ev.id} style={{display:'flex',gap:'12px',padding:'12px 16px',borderBottom:i<pasados.length-1?'1px solid var(--border)':'none',opacity:.6}}>
+                    <div key={ev.id} style={{display:'flex',gap:'12px',padding:'12px 16px',
+                      borderBottom:i<pasados.length-1?'1px solid var(--border)':'none',opacity:.55}}>
                       <div style={{fontSize:'20px'}}>{tipo.emoji}</div>
                       <div style={{flex:1}}>
                         <div style={{fontSize:'13px',fontWeight:600,color:'var(--text)'}}>{ev.titulo}</div>
-                        <div style={{fontSize:'11px',color:'var(--text3)'}}>{new Date(ev.fecha+'T12:00').toLocaleDateString('es-AR',{day:'numeric',month:'long'})}</div>
+                        <div style={{fontSize:'11px',color:'var(--text3)'}}>
+                          {new Date(ev.fecha+'T12:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}
+                        </div>
                       </div>
+                      {esCoord && (
+                        <button onClick={() => eliminar(ev.id)}
+                          style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'16px',alignSelf:'center'}}
+                          title="Eliminar">×</button>
+                      )}
                     </div>
                   )
                 })}
@@ -310,31 +332,100 @@ export default function Agenda() {
         </>
       )}
 
-      {/* ── CALENDARIO ── */}
+      {/* ══════════════════════════════════════════
+          VISTA: CALENDARIO
+      ══════════════════════════════════════════ */}
       {vista === 'calendario' && (
         <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px'}}>
-          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px'}}>
-            <button onClick={() => { if(mesActual===0){setMesActual(11);setAnioActual(a=>a-1)}else setMesActual(m=>m-1) }} style={{width:'32px',height:'32px',borderRadius:'8px',background:'var(--vl)',border:'none',cursor:'pointer',color:'var(--v)',fontSize:'16px',fontWeight:700}}>‹</button>
+
+          {/* Navegación de mes */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px'}}>
+            <button
+              onClick={() => { setDiaSeleccionado(null); if(mesActual===0){setMesActual(11);setAnioActual(a=>a-1)}else setMesActual(m=>m-1) }}
+              style={{width:'32px',height:'32px',borderRadius:'8px',background:'var(--vl)',border:'none',cursor:'pointer',color:'var(--v)',fontSize:'18px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              ‹
+            </button>
             <div style={{fontSize:'16px',fontWeight:800}}>{MESES[mesActual]} {anioActual}</div>
-            <button onClick={() => { if(mesActual===11){setMesActual(0);setAnioActual(a=>a+1)}else setMesActual(m=>m+1) }} style={{width:'32px',height:'32px',borderRadius:'8px',background:'var(--vl)',border:'none',cursor:'pointer',color:'var(--v)',fontSize:'16px',fontWeight:700}}>›</button>
+            <button
+              onClick={() => { setDiaSeleccionado(null); if(mesActual===11){setMesActual(0);setAnioActual(a=>a+1)}else setMesActual(m=>m+1) }}
+              style={{width:'32px',height:'32px',borderRadius:'8px',background:'var(--vl)',border:'none',cursor:'pointer',color:'var(--v)',fontSize:'18px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              ›
+            </button>
           </div>
-          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'2px',marginBottom:'8px'}}>
-            {DIAS_SEMANA.map(d => <div key={d} style={{textAlign:'center',fontSize:'10px',fontWeight:700,color:'var(--text3)',padding:'4px 0'}}>{d}</div>)}
+
+          {/* Banner de feriados del mes */}
+          {feriadosDelMes.length > 0 && (
+            <div style={{marginBottom:'12px',display:'flex',flexDirection:'column',gap:'5px'}}>
+              {feriadosDelMes.map(([date, nombre]) => {
+                const dNum = parseInt(date.split('-')[2])
+                const dSemana = new Date(date+'T12:00').toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})
+                return (
+                  <div key={date} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 10px',background:'#fef3cd',border:'1px solid #b45309',borderRadius:'10px'}}>
+                    <span style={{fontSize:'14px'}}>🏖</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <span style={{fontSize:'12px',color:'#633806',fontWeight:700,textTransform:'capitalize'}}>{dSemana}</span>
+                      <span style={{fontSize:'11px',color:'#7c4a14',marginLeft:'6px'}}>— {nombre}</span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Días de la semana */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'2px',marginBottom:'4px'}}>
+            {DIAS_SEMANA.map(d => (
+              <div key={d} style={{textAlign:'center',fontSize:'10px',fontWeight:700,color:'var(--text3)',padding:'4px 0'}}>{d}</div>
+            ))}
           </div>
+
+          {/* Celdas del mes */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'2px'}}>
             {celdas.map((dia, idx) => {
               if (!dia) return <div key={idx} />
               const dateStr = `${anioActual}-${String(mesActual+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`
-              const evs = eventosDia(dia)
+              const evsDia = eventosDia(dia)
+              const esFeriado = !!feriados[dateStr]
               const esHoy = dateStr === hoyStr
-              const tipoEv = evs[0] ? (TIPOS.find(t => t.value === evs[0].tipo) || TIPOS[7]) : null
               const seleccionado = diaSeleccionado === dateStr
+              const tieneAlgo = evsDia.length > 0 || esFeriado
+              const tipoEv = evsDia[0] ? (TIPOS.find(t => t.value === evsDia[0].tipo) || TIPOS[7]) : null
+
+              // Color de fondo de la celda
+              let cellBg = 'transparent'
+              if (seleccionado) cellBg = 'var(--v)'
+              else if (esHoy) cellBg = 'var(--vl)'
+              else if (esFeriado && evsDia.length === 0) cellBg = '#fef3cd'
+              else if (tipoEv) cellBg = tipoEv.bg
+
+              // Color del número
+              let numColor = 'var(--text)'
+              if (seleccionado) numColor = '#fff'
+              else if (esHoy) numColor = 'var(--v)'
+              else if (esFeriado && !tipoEv) numColor = '#b45309'
+              else if (tipoEv) numColor = tipoEv.color
+
               return (
                 <div key={idx}
-                  onClick={() => evs.length > 0 ? setDiaSeleccionado(seleccionado ? null : dateStr) : undefined}
-                  style={{aspectRatio:'1',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',borderRadius:'8px',background:seleccionado?'var(--v)':esHoy?'var(--vl)':tipoEv?tipoEv.bg:'transparent',cursor:evs.length?'pointer':'default',position:'relative',border:seleccionado?'2px solid var(--v)':'2px solid transparent',transition:'all .12s'}}>
-                  <div style={{fontSize:'13px',fontWeight:esHoy||evs.length?700:400,color:seleccionado?'#fff':esHoy?'var(--v)':tipoEv?tipoEv.color:'var(--text)'}}>{dia}</div>
-                  {evs.length > 0 && <div style={{width:'4px',height:'4px',borderRadius:'50%',background:seleccionado?'rgba(255,255,255,.7)':esHoy?'var(--v)':tipoEv?.color,position:'absolute',bottom:'3px'}} />}
+                  onClick={() => handleDiaClick(dateStr, evsDia)}
+                  style={{
+                    aspectRatio:'1',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+                    borderRadius:'8px',background:cellBg,
+                    cursor: tieneAlgo || esCoord ? 'pointer' : 'default',
+                    border: seleccionado ? '2px solid var(--v)' : '2px solid transparent',
+                    transition:'all .12s',position:'relative',
+                  }}>
+                  <div style={{fontSize:'13px',fontWeight:esHoy||tieneAlgo?700:400,color:numColor}}>{dia}</div>
+                  {/* Dots de eventos */}
+                  {(evsDia.length > 0 || esFeriado) && (
+                    <div style={{display:'flex',gap:'2px',position:'absolute',bottom:'3px',flexWrap:'wrap',justifyContent:'center',maxWidth:'90%'}}>
+                      {esFeriado && <div style={{width:'4px',height:'4px',borderRadius:'50%',background:seleccionado?'rgba(255,255,255,.7)':'#b45309'}} />}
+                      {evsDia.slice(0,3).map((ev: any, i: number) => {
+                        const t = TIPOS.find(t => t.value === ev.tipo) || TIPOS[7]
+                        return <div key={i} style={{width:'4px',height:'4px',borderRadius:'50%',background:seleccionado?'rgba(255,255,255,.7)':t.color}} />
+                      })}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -343,28 +434,77 @@ export default function Agenda() {
           {/* ── PANEL DE DETALLE DEL DÍA SELECCIONADO ── */}
           {diaSeleccionado && (() => {
             const evsDia = misEventos.filter(e => e.fecha === diaSeleccionado)
-            const fechaLabel = new Date(diaSeleccionado + 'T12:00').toLocaleDateString('es-AR', { weekday:'long', day:'numeric', month:'long' })
+            const feriadoNombre = feriados[diaSeleccionado]
+            const fechaLabel = new Date(diaSeleccionado + 'T12:00').toLocaleDateString('es-AR', {
+              weekday:'long', day:'numeric', month:'long'
+            })
             return (
-              <div style={{marginTop:'16px',background:'var(--bg)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'14px'}}>
+              <div style={{marginTop:'14px',background:'var(--bg)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'14px'}}>
                 <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
                   <div style={{fontSize:'13px',fontWeight:700,color:'var(--text)',textTransform:'capitalize'}}>{fechaLabel}</div>
-                  <button onClick={() => setDiaSeleccionado(null)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'18px',lineHeight:1,padding:'0 4px'}}>×</button>
+                  <div style={{display:'flex',gap:'6px',alignItems:'center'}}>
+                    {esCoord && (
+                      <button
+                        onClick={() => { setForm(f => ({ ...f, fecha: diaSeleccionado })); setVista('nuevo') }}
+                        style={{padding:'4px 10px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'8px',fontSize:'11px',fontWeight:600,cursor:'pointer'}}>
+                        + Evento
+                      </button>
+                    )}
+                    <button onClick={() => setDiaSeleccionado(null)}
+                      style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'18px',lineHeight:1,padding:'0 4px'}}>×</button>
+                  </div>
                 </div>
+
+                {/* Banner feriado dentro del panel */}
+                {feriadoNombre && (
+                  <div style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 10px',background:'#fef3cd',border:'1px solid #b45309',borderRadius:'8px',marginBottom:'8px'}}>
+                    <span style={{fontSize:'14px'}}>🏖</span>
+                    <div>
+                      <div style={{fontSize:'12px',fontWeight:700,color:'#633806'}}>Feriado nacional</div>
+                      <div style={{fontSize:'11px',color:'#7c4a14'}}>{feriadoNombre} · Sin clases</div>
+                    </div>
+                  </div>
+                )}
+
+                {evsDia.length === 0 && !feriadoNombre && (
+                  <div style={{textAlign:'center',padding:'12px',color:'var(--text3)',fontSize:'13px'}}>
+                    No hay eventos para este día
+                    {esCoord && <div style={{fontSize:'12px',marginTop:'4px'}}>Usá + Evento para agregar uno</div>}
+                  </div>
+                )}
+
                 <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
                   {evsDia.map(ev => {
                     const tipo = TIPOS.find(t => t.value === ev.tipo) || TIPOS[7]
                     return (
                       <div key={ev.id} style={{display:'flex',gap:'10px',alignItems:'flex-start',padding:'10px',background:'var(--white)',borderRadius:'10px',border:'1px solid var(--border)'}}>
-                        <div style={{width:'32px',height:'32px',borderRadius:'8px',background:tipo.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px',flexShrink:0}}>{tipo.emoji}</div>
+                        <div style={{width:'32px',height:'32px',borderRadius:'8px',background:tipo.bg,display:'flex',alignItems:'center',justifyContent:'center',fontSize:'16px',flexShrink:0}}>
+                          {tipo.emoji}
+                        </div>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:'13px',fontWeight:700,color:'var(--text)'}}>{ev.titulo}</div>
                           <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'2px',display:'flex',gap:'6px',flexWrap:'wrap'}}>
                             {ev.hora_inicio && <span>{ev.hora_inicio}{ev.hora_fin ? ` – ${ev.hora_fin}` : ''}</span>}
                             <span style={{padding:'1px 6px',borderRadius:'8px',background:tipo.bg,color:tipo.color,fontSize:'10px',fontWeight:600}}>{tipo.label}</span>
+                            {esCoord && ev.convocados && (
+                              <span style={{padding:'1px 6px',borderRadius:'8px',background:'var(--bg)',color:'var(--text3)',fontSize:'10px',fontWeight:600}}>
+                                {convocadosLabel(ev)}
+                              </span>
+                            )}
                           </div>
                           {ev.descripcion && <div style={{fontSize:'11px',color:'var(--text2)',marginTop:'4px',lineHeight:1.4}}>{ev.descripcion}</div>}
                         </div>
-                        <button onClick={() => exportarICS(ev)} title="Agregar a calendario" style={{background:'var(--vl)',border:'1px solid var(--v)',borderRadius:'6px',cursor:'pointer',padding:'3px 6px',fontSize:'10px',fontWeight:700,color:'var(--v)',flexShrink:0,whiteSpace:'nowrap'}}>+Cal</button>
+                        <div style={{display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-end',flexShrink:0}}>
+                          <button onClick={() => exportarICS(ev)}
+                            style={{background:'var(--vl)',border:'1px solid var(--v)',borderRadius:'6px',cursor:'pointer',padding:'3px 6px',fontSize:'10px',fontWeight:700,color:'var(--v)',whiteSpace:'nowrap'}}>
+                            +Cal
+                          </button>
+                          {esCoord && (
+                            <button onClick={() => { eliminar(ev.id); }}
+                              style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'14px',lineHeight:1}}
+                              title="Eliminar">×</button>
+                          )}
+                        </div>
                       </div>
                     )
                   })}
@@ -372,6 +512,8 @@ export default function Agenda() {
               </div>
             )
           })()}
+
+          {/* Leyenda de tipos */}
           <div style={{display:'flex',flexWrap:'wrap',gap:'8px',marginTop:'14px'}}>
             {TIPOS.map(t => (
               <div key={t.value} style={{display:'flex',alignItems:'center',gap:'4px',fontSize:'11px',color:'var(--text3)',fontWeight:600}}>
@@ -383,10 +525,18 @@ export default function Agenda() {
         </div>
       )}
 
-      {/* ── NUEVO EVENTO ── */}
+      {/* ══════════════════════════════════════════
+          VISTA: NUEVO EVENTO
+      ══════════════════════════════════════════ */}
       {vista === 'nuevo' && esCoord && (
         <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px'}}>
-          <div style={{fontSize:'16px',fontWeight:700,marginBottom:'16px'}}>Nuevo evento</div>
+          <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'16px'}}>
+            <button onClick={() => setVista('proximos')}
+              style={{width:'32px',height:'32px',borderRadius:'8px',background:'var(--bg)',border:'1px solid var(--border)',cursor:'pointer',color:'var(--text2)',fontSize:'16px',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+              ←
+            </button>
+            <div style={{fontSize:'16px',fontWeight:700}}>Nuevo evento</div>
+          </div>
 
           <div style={{marginBottom:'11px'}}>
             <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Título *</div>
@@ -429,19 +579,25 @@ export default function Agenda() {
 
           <div style={{marginBottom:'11px'}}>
             <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'3px'}}>Descripción</div>
-            <textarea style={{...IS,resize:'none',lineHeight:1.5}} rows={3} value={form.descripcion} onChange={(e:any)=>setForm({...form,descripcion:e.target.value})} placeholder="Detalles del evento..." />
+            <textarea style={{...IS,resize:'none',lineHeight:1.5}} rows={3}
+              value={form.descripcion} onChange={(e:any)=>setForm({...form,descripcion:e.target.value})}
+              placeholder="Detalles del evento..." />
           </div>
 
           <div style={{marginBottom:'16px'}}>
             <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'6px'}}>¿Quiénes son convocados?</div>
             <div style={{display:'flex',flexWrap:'wrap',gap:'6px'}}>
               {[{v:'todos',l:'Todos'},{v:'docentes',l:'Docentes'},{v:'coordinadora',l:'Coordinación'},{v:'secretaria',l:'Secretaría'},{v:'individual',l:'👤 Específicos'}].map(({v,l}) => (
-                <button key={v} onClick={() => setForm({...form,convocados:v,destinatarios_ids:[]})} style={{padding:'6px 12px',borderRadius:'20px',border:'1.5px solid',fontSize:'12px',fontWeight:600,cursor:'pointer',background:form.convocados===v?'var(--v)':'transparent',color:form.convocados===v?'#fff':'var(--text2)',borderColor:form.convocados===v?'var(--v)':'var(--border)'}}>{l}</button>
+                <button key={v} onClick={() => setForm({...form,convocados:v,destinatarios_ids:[]})}
+                  style={{padding:'6px 12px',borderRadius:'20px',border:'1.5px solid',fontSize:'12px',fontWeight:600,cursor:'pointer',
+                    background:form.convocados===v?'var(--v)':'transparent',color:form.convocados===v?'#fff':'var(--text2)',
+                    borderColor:form.convocados===v?'var(--v)':'var(--border)'}}>
+                  {l}
+                </button>
               ))}
             </div>
           </div>
 
-          {/* ── SELECTOR DE USUARIOS INDIVIDUALES ── */}
           {form.convocados === 'individual' && (
             <div style={{marginBottom:'16px',background:'var(--bg)',border:'1.5px solid var(--border)',borderRadius:'10px',padding:'12px'}}>
               <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'8px'}}>
@@ -461,7 +617,8 @@ export default function Agenda() {
                     .map(u => {
                       const sel = form.destinatarios_ids.includes(u.id)
                       return (
-                        <label key={u.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 10px',borderRadius:'8px',cursor:'pointer',background:sel?'var(--vl)':'transparent',border:`1.5px solid ${sel?'var(--v)':'transparent'}`,transition:'all .12s'}}>
+                        <label key={u.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'8px 10px',borderRadius:'8px',cursor:'pointer',
+                          background:sel?'var(--vl)':'transparent',border:`1.5px solid ${sel?'var(--v)':'transparent'}`,transition:'all .12s'}}>
                           <input type="checkbox" checked={sel}
                             onChange={() => setForm(f => ({
                               ...f,
@@ -483,8 +640,12 @@ export default function Agenda() {
           )}
 
           <div style={{display:'flex',gap:'10px'}}>
-            <button onClick={() => setVista('proximos')} style={{flex:1,padding:'12px',background:'transparent',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>Cancelar</button>
-            <button onClick={guardar} disabled={guardando} style={{flex:2,padding:'12px',background:guardando?'#aaa':'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:700,cursor:'pointer'}}>
+            <button onClick={() => setVista('proximos')}
+              style={{flex:1,padding:'12px',background:'transparent',color:'var(--text2)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'14px',fontWeight:600,cursor:'pointer'}}>
+              Cancelar
+            </button>
+            <button onClick={guardar} disabled={guardando}
+              style={{flex:2,padding:'12px',background:guardando?'#aaa':'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'14px',fontWeight:700,cursor:'pointer'}}>
               {guardando ? 'Guardando...' : 'Guardar evento'}
             </button>
           </div>
@@ -493,4 +654,3 @@ export default function Agenda() {
     </div>
   )
 }
-
