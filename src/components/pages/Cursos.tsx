@@ -2117,43 +2117,26 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas, profesoraId, c
 
   useEffect(() => { cargar() }, [cursoId])
 
-  // Backfill: al cargar, detectar unidades dictadas sin alertas y crearlas
+  // Sincronizar alertas de test: al cargar unidades o cambiar estado, enviar al servidor
+  // El servidor (service_role) determina cuántas alertas faltan y las crea
   useEffect(() => {
     if (!profesoraId || unidades.length === 0) return
-    const backfill = async () => {
-      const dictadas = [...unidades]
-        .filter(u => u.estado === 'dictada')
-        .sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
-      if (dictadas.length < 2) return
-
-      // Ver cuántas alertas ya existen para este curso
-      const sb = createClient()
-      const { data: alertasExistentes } = await sb
-        .from('alertas_test_unidades')
-        .select('id, unidades')
-        .eq('curso_id', cursoId)
-
-      const cubiertasCount = (alertasExistentes || []).length * 2
-      const nuevasDictadas = dictadas.slice(cubiertasCount)
-
-      // Crear alertas en pares para las que no tienen alerta
-      for (let i = 0; i + 1 < nuevasDictadas.length; i += 2) {
-        const par = nuevasDictadas.slice(i, i + 2)
-        await fetch('/api/alertas-test', {
-          method: 'POST',
-          headers: apiHeaders(),
-          body: JSON.stringify({
-            curso_id:         cursoId,
-            profesora_id:     profesoraId,
-            curso_nombre:     cursoNombre || cursoId,
-            profesora_nombre: profesoraNombre || '',
-            unidades:         par.map((u: any) => u.titulo),
-          }),
-        })
-      }
-    }
-    backfill()
-  }, [unidades.length > 0 ? unidades.map(u => u.estado).join(',') : ''])
+    const dictadas = [...unidades]
+      .filter(u => u.estado === 'dictada')
+      .sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
+    if (dictadas.length < 2) return
+    fetch('/api/alertas-test', {
+      method: 'POST',
+      headers: apiHeaders(),
+      body: JSON.stringify({
+        curso_id:         cursoId,
+        profesora_id:     profesoraId,
+        curso_nombre:     cursoNombre || cursoId,
+        profesora_nombre: profesoraNombre || '',
+        unidades_dictadas: dictadas.map((u: any) => u.titulo),
+      }),
+    }).catch(() => {})
+  }, [unidades.filter(u => u.estado === 'dictada').length])
 
   const cargar = async () => {
     setLoading(true)
@@ -2235,43 +2218,8 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas, profesoraId, c
       body: JSON.stringify({ id, estado: nuevoEstado }),
     })
 
-    // ── Alerta test de unidades ──────────────────────────────────────────
-    // Solo disparar cuando se marca como "dictada"
-    if (nuevoEstado !== 'dictada' || !profesoraId) return
-
-    // Contar unidades dictadas (incluyendo la que se acaba de marcar)
-    const dictadas = nuevasUnidades.filter(u => u.estado === 'dictada')
-
-    // Verificar cuántas alertas ya existen para este curso (para saber el offset)
-    const sb = createClient()
-    const { data: alertasExistentes } = await sb
-      .from('alertas_test_unidades')
-      .select('id, unidades')
-      .eq('curso_id', cursoId)
-
-    // Calcular cuántas unidades ya fueron cubiertas por alertas previas
-    const unidadesCubiertasCount = (alertasExistentes || []).length * 2
-
-    // Unidades dictadas nuevas (no cubiertas por alertas anteriores), ordenadas por su posición
-    const dictadasOrdenadas = dictadas
-      .sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
-    const nuevasDictadas = dictadasOrdenadas.slice(unidadesCubiertasCount)
-
-    // Si llegamos a 2 nuevas dictadas, crear la alerta
-    if (nuevasDictadas.length >= 2) {
-      const par = nuevasDictadas.slice(0, 2)
-      await fetch('/api/alertas-test', {
-        method: 'POST',
-        headers: apiHeaders(),
-        body: JSON.stringify({
-          curso_id:        cursoId,
-          profesora_id:    profesoraId,
-          curso_nombre:    cursoNombre || cursoId,
-          profesora_nombre: profesoraNombre || '',
-          unidades:        par.map((u: any) => u.titulo),
-        }),
-      })
-    }
+    // La sincronización de alertas la maneja el useEffect que observa
+    // el conteo de unidades dictadas — no hace falta lógica extra aquí
   }
 
   const eliminar = async (id: string) => {
