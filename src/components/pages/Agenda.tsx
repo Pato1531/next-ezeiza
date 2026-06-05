@@ -37,7 +37,7 @@ export default function Agenda() {
   const [eventos, setEventos] = useState<any[]>([])
   // feriados: dateStr → nombre — solo para indicadores visuales, NO se mezclan en la lista Próximos
   const [feriados, setFeriados] = useState<Record<string, string>>({})
-  const [vista, setVista] = useState<'proximos'|'calendario'|'nuevo'>('proximos')
+  const [vista, setVista] = useState<'proximos'|'mensual'|'anual'|'nuevo'>('proximos')
   const [form, setForm] = useState({
     titulo: '', tipo: 'reunion', fecha: hoy(), hora_inicio: '', hora_fin: '',
     descripcion: '', convocados: 'todos', docente_id: '',
@@ -270,15 +270,15 @@ export default function Agenda() {
         )}
       </div>
 
-      {/* TABS — solo Próximos y Calendario */}
+      {/* TABS */}
       <div style={{overflowX:'auto',WebkitOverflowScrolling:'touch',marginBottom:'16px',marginLeft:'-4px',paddingLeft:'4px'}}>
         <div style={{display:'flex',gap:'6px',minWidth:'max-content'}}>
-          {(['proximos','calendario'] as const).map(v => (
+          {(['proximos','mensual','anual'] as const).map(v => (
             <button key={v} onClick={() => setVista(v)}
               style={{padding:'9px 16px',borderRadius:'20px',border:'1.5px solid',fontSize:'12px',fontWeight:700,cursor:'pointer',
                 background:vista===v?'var(--v)':'transparent',color:vista===v?'#fff':'var(--text2)',
                 borderColor:vista===v?'var(--v)':'var(--border)',whiteSpace:'nowrap',flexShrink:0}}>
-              {v === 'proximos' ? '📋 Próximos' : '📅 Calendario'}
+              {v === 'proximos' ? '📋 Próximos' : v === 'mensual' ? '📅 Mensual' : '🗓 Anual'}
             </button>
           ))}
         </div>
@@ -287,7 +287,7 @@ export default function Agenda() {
       {/* ══════════════════════════════════════
           VISTA: PRÓXIMOS
       ══════════════════════════════════════ */}
-      {(vista === 'proximos' || vista === 'nuevo') && vista !== 'nuevo' && (
+      {vista === 'proximos' && (
         <>
           {todosProximos.length === 0 && (
             <div style={{textAlign:'center',padding:'48px 20px',color:'var(--text3)',background:'var(--white)',borderRadius:'16px',border:'1.5px solid var(--border)'}}>
@@ -383,9 +383,9 @@ export default function Agenda() {
       )}
 
       {/* ══════════════════════════════════════
-          VISTA: CALENDARIO
+          VISTA: MENSUAL
       ══════════════════════════════════════ */}
-      {vista === 'calendario' && (
+      {vista === 'mensual' && (
         <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px'}}>
 
           {/* Navegación de mes */}
@@ -403,9 +403,8 @@ export default function Agenda() {
             </button>
           </div>
 
-          {/* Panel de todos los eventos del mes (feriados + eventos + cumples) */}
+          {/* Lista compacta de eventos del mes actual */}
           {(() => {
-            // Todos los eventos del mes ordenados por fecha
             const eventosMesOrdenados = [
               ...feriadosDelMes.map(([date, nombre]) => ({
                 _feriado: true, fecha: date, titulo: nombre,
@@ -413,29 +412,30 @@ export default function Agenda() {
               })),
               ...todosEventosMes,
             ].sort((a, b) => a.fecha.localeCompare(b.fecha))
-
-            if (eventosMesOrdenados.length === 0) return null
+            if (eventosMesOrdenados.length === 0) return (
+              <div style={{marginBottom:'10px',fontSize:'12px',color:'var(--text3)',textAlign:'center',padding:'8px 0'}}>
+                Sin eventos este mes
+              </div>
+            )
             return (
               <div style={{marginBottom:'12px',display:'flex',flexDirection:'column',gap:'4px'}}>
                 {eventosMesOrdenados.map(ev => {
                   const tipo = TIPOS.find(t => t.value === ev.tipo) || TIPOS[7]
                   const esFer = !!(ev as any)._feriado
-                  const diaSemana = new Date(ev.fecha+'T12:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'})
+                  const diaSemana = new Date(ev.fecha+'T12:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric'})
                   return (
                     <div key={ev.id}
                       onClick={() => !esFer && handleDiaClick(ev.fecha, eventosDia(parseInt(ev.fecha.split('-')[2])))}
-                      style={{display:'flex',alignItems:'center',gap:'8px',padding:'7px 10px',
+                      style={{display:'flex',alignItems:'center',gap:'8px',padding:'6px 10px',
                         background: esFer ? '#fef3cd' : tipo.bg,
                         border: `1px solid ${esFer ? '#b45309' : tipo.color}`,
                         borderRadius:'8px',cursor:esFer?'default':'pointer'}}>
-                      <span style={{fontSize:'13px',flexShrink:0}}>{tipo.emoji}</span>
-                      <div style={{flex:1,minWidth:0,overflow:'hidden'}}>
-                        <span style={{fontSize:'12px',fontWeight:700,color: esFer ? '#633806' : tipo.color,
-                          textTransform:'capitalize',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',display:'block'}}>
-                          {ev.titulo}
-                        </span>
-                      </div>
-                      <span style={{fontSize:'11px',color: esFer ? '#7c4a14' : tipo.color,flexShrink:0,opacity:.8,textTransform:'capitalize'}}>
+                      <span style={{fontSize:'12px',flexShrink:0}}>{tipo.emoji}</span>
+                      <span style={{flex:1,fontSize:'12px',fontWeight:600,color:esFer?'#633806':tipo.color,
+                        overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                        {ev.titulo}
+                      </span>
+                      <span style={{fontSize:'11px',color:esFer?'#7c4a14':tipo.color,flexShrink:0,opacity:.8,textTransform:'capitalize'}}>
                         {diaSemana}
                       </span>
                     </div>
@@ -597,8 +597,98 @@ export default function Agenda() {
       )}
 
       {/* ══════════════════════════════════════
-          VISTA: NUEVO EVENTO
+          VISTA: ANUAL
       ══════════════════════════════════════ */}
+      {vista === 'anual' && (
+        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px'}}>
+          {/* Selector de año */}
+          <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px'}}>
+            <button
+              onClick={() => setAnioActual(a => a - 1)}
+              style={{width:'32px',height:'32px',borderRadius:'8px',background:'var(--vl)',border:'none',cursor:'pointer',color:'var(--v)',fontSize:'18px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              ‹
+            </button>
+            <div style={{fontSize:'16px',fontWeight:800}}>{anioActual}</div>
+            <button
+              onClick={() => setAnioActual(a => a + 1)}
+              style={{width:'32px',height:'32px',borderRadius:'8px',background:'var(--vl)',border:'none',cursor:'pointer',color:'var(--v)',fontSize:'18px',fontWeight:700,display:'flex',alignItems:'center',justifyContent:'center'}}>
+              ›
+            </button>
+          </div>
+
+          {/* Un bloque por mes */}
+          {MESES.map((nombreMes, mIdx) => {
+            const mesStr = String(mIdx + 1).padStart(2, '0')
+
+            // Feriados del mes
+            const feriadosMes = Object.entries(feriados).filter(([d]) => {
+              const [a, m] = d.split('-').map(Number)
+              return a === anioActual && m === mIdx + 1
+            })
+
+            // Eventos de la DB del mes
+            const eventosMes = [...misEventos, ...cumplesCola].filter(e => {
+              const [a, m] = e.fecha.split('-').map(Number)
+              return a === anioActual && m === mIdx + 1
+            })
+
+            const todos = [
+              ...feriadosMes.map(([date, nombre]) => ({
+                _feriado: true, fecha: date, titulo: nombre,
+                tipo: 'feriado', id: `feriado-${date}`
+              })),
+              ...eventosMes,
+            ].sort((a, b) => a.fecha.localeCompare(b.fecha))
+
+            if (todos.length === 0) return null
+
+            return (
+              <div key={mIdx} style={{marginBottom:'14px'}}>
+                {/* Header del mes */}
+                <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'6px'}}>
+                  <div style={{fontSize:'13px',fontWeight:700,color:'var(--v)'}}>{nombreMes}</div>
+                  <div style={{flex:1,height:'1px',background:'var(--border)'}} />
+                  <div style={{fontSize:'11px',color:'var(--text3)',fontWeight:600}}>{todos.length} evento{todos.length !== 1 ? 's' : ''}</div>
+                </div>
+
+                {/* Lista de eventos del mes */}
+                <div style={{display:'flex',flexDirection:'column',gap:'3px'}}>
+                  {todos.map(ev => {
+                    const tipo = TIPOS.find(t => t.value === ev.tipo) || TIPOS[7]
+                    const esFer = !!(ev as any)._feriado
+                    const dia = new Date(ev.fecha+'T12:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric'})
+                    return (
+                      <div key={ev.id} style={{display:'flex',alignItems:'center',gap:'8px',padding:'5px 9px',
+                        background:esFer?'#fef3cd':tipo.bg,
+                        border:`1px solid ${esFer?'#b45309':tipo.color}`,
+                        borderRadius:'7px'}}>
+                        <span style={{fontSize:'11px',flexShrink:0}}>{tipo.emoji}</span>
+                        <span style={{flex:1,fontSize:'12px',fontWeight:600,color:esFer?'#633806':tipo.color,
+                          overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>
+                          {ev.titulo}
+                        </span>
+                        <span style={{fontSize:'10px',color:esFer?'#7c4a14':tipo.color,flexShrink:0,opacity:.8,textTransform:'capitalize'}}>
+                          {dia}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+
+          {/* Si no hay ningún evento en todo el año */}
+          {[...misEventos, ...cumplesCola].filter(e => e.fecha.startsWith(String(anioActual))).length === 0 &&
+           Object.keys(feriados).filter(d => d.startsWith(String(anioActual))).length === 0 && (
+            <div style={{textAlign:'center',padding:'32px',color:'var(--text3)'}}>
+              Sin eventos registrados para {anioActual}
+            </div>
+          )}
+        </div>
+      )}
+
+
       {vista === 'nuevo' && esCoord && (
         <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px'}}>
           <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'16px'}}>
