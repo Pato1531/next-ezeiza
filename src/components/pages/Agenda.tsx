@@ -403,35 +403,59 @@ export default function Agenda() {
             </button>
           </div>
 
-          {/* Banners de feriados del mes — solo informativos, no duplican la lista */}
-          {feriadosDelMes.length > 0 && (
-            <div style={{marginBottom:'12px',display:'flex',flexDirection:'column',gap:'5px'}}>
-              {feriadosDelMes.map(([date, nombre]) => {
-                const dSemana = new Date(date+'T12:00').toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long'})
-                return (
-                  <div key={date} style={{display:'flex',alignItems:'center',gap:'8px',padding:'8px 10px',background:'#fef3cd',border:'1px solid #b45309',borderRadius:'10px'}}>
-                    <span style={{fontSize:'14px'}}>🏖</span>
-                    <div style={{flex:1,minWidth:0}}>
-                      <span style={{fontSize:'12px',color:'#633806',fontWeight:700,textTransform:'capitalize'}}>{dSemana}</span>
-                      <span style={{fontSize:'11px',color:'#7c4a14',marginLeft:'6px'}}>— {nombre}</span>
-                    </div>
-                  </div>
-                )
-              })}
-            </div>
-          )}
+          {/* Panel de todos los eventos del mes (feriados + eventos + cumples) */}
+          {(() => {
+            // Todos los eventos del mes ordenados por fecha
+            const eventosMesOrdenados = [
+              ...feriadosDelMes.map(([date, nombre]) => ({
+                _feriado: true, fecha: date, titulo: nombre,
+                tipo: 'feriado', id: `feriado-${date}`
+              })),
+              ...todosEventosMes,
+            ].sort((a, b) => a.fecha.localeCompare(b.fecha))
 
-          {/* Días de la semana */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'2px',marginBottom:'4px'}}>
+            if (eventosMesOrdenados.length === 0) return null
+            return (
+              <div style={{marginBottom:'12px',display:'flex',flexDirection:'column',gap:'4px'}}>
+                {eventosMesOrdenados.map(ev => {
+                  const tipo = TIPOS.find(t => t.value === ev.tipo) || TIPOS[7]
+                  const esFer = !!(ev as any)._feriado
+                  const diaSemana = new Date(ev.fecha+'T12:00').toLocaleDateString('es-AR',{weekday:'short',day:'numeric',month:'short'})
+                  return (
+                    <div key={ev.id}
+                      onClick={() => !esFer && handleDiaClick(ev.fecha, eventosDia(parseInt(ev.fecha.split('-')[2])))}
+                      style={{display:'flex',alignItems:'center',gap:'8px',padding:'7px 10px',
+                        background: esFer ? '#fef3cd' : tipo.bg,
+                        border: `1px solid ${esFer ? '#b45309' : tipo.color}`,
+                        borderRadius:'8px',cursor:esFer?'default':'pointer'}}>
+                      <span style={{fontSize:'13px',flexShrink:0}}>{tipo.emoji}</span>
+                      <div style={{flex:1,minWidth:0,overflow:'hidden'}}>
+                        <span style={{fontSize:'12px',fontWeight:700,color: esFer ? '#633806' : tipo.color,
+                          textTransform:'capitalize',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis',display:'block'}}>
+                          {ev.titulo}
+                        </span>
+                      </div>
+                      <span style={{fontSize:'11px',color: esFer ? '#7c4a14' : tipo.color,flexShrink:0,opacity:.8,textTransform:'capitalize'}}>
+                        {diaSemana}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })()}
+
+          {/* Días de la semana — compacto */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'1px',marginBottom:'2px'}}>
             {DIAS_SEMANA.map(d => (
-              <div key={d} style={{textAlign:'center',fontSize:'10px',fontWeight:700,color:'var(--text3)',padding:'4px 0'}}>{d}</div>
+              <div key={d} style={{textAlign:'center',fontSize:'9px',fontWeight:700,color:'var(--text3)',padding:'3px 0'}}>{d}</div>
             ))}
           </div>
 
-          {/* Celdas */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'2px'}}>
+          {/* Celdas compactas — mes entero visible */}
+          <div style={{display:'grid',gridTemplateColumns:'repeat(7,1fr)',gap:'1px'}}>
             {celdas.map((dia, idx) => {
-              if (!dia) return <div key={idx} />
+              if (!dia) return <div key={idx} style={{height:'32px'}} />
               const dateStr = `${anioActual}-${String(mesActual+1).padStart(2,'0')}-${String(dia).padStart(2,'0')}`
               const evsDia = eventosDia(dia)
               const esFeriado = !!feriados[dateStr]
@@ -455,18 +479,18 @@ export default function Agenda() {
               return (
                 <div key={idx}
                   onClick={() => handleDiaClick(dateStr, evsDia)}
-                  style={{aspectRatio:'1',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
-                    borderRadius:'8px',background:cellBg,
+                  style={{height:'32px',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',
+                    borderRadius:'6px',background:cellBg,
                     cursor: tieneAlgo || esCoord ? 'pointer' : 'default',
                     border: seleccionado ? '2px solid var(--v)' : '2px solid transparent',
-                    transition:'all .12s',position:'relative'}}>
-                  <div style={{fontSize:'13px',fontWeight:esHoy||tieneAlgo?700:400,color:numColor}}>{dia}</div>
+                    transition:'all .12s',position:'relative',gap:'1px'}}>
+                  <div style={{fontSize:'11px',fontWeight:esHoy||tieneAlgo?700:400,color:numColor,lineHeight:1}}>{dia}</div>
                   {tieneAlgo && (
-                    <div style={{display:'flex',gap:'2px',position:'absolute',bottom:'3px',flexWrap:'wrap',justifyContent:'center',maxWidth:'90%'}}>
-                      {esFeriado && <div style={{width:'4px',height:'4px',borderRadius:'50%',background:seleccionado?'rgba(255,255,255,.7)':'#b45309'}} />}
-                      {evsDia.slice(0,3).map((ev: any, i: number) => {
+                    <div style={{display:'flex',gap:'2px',justifyContent:'center'}}>
+                      {esFeriado && <div style={{width:'3px',height:'3px',borderRadius:'50%',background:seleccionado?'rgba(255,255,255,.7)':'#b45309'}} />}
+                      {evsDia.slice(0,2).map((ev: any, i: number) => {
                         const t = TIPOS.find(t => t.value === ev.tipo) || TIPOS[7]
-                        return <div key={i} style={{width:'4px',height:'4px',borderRadius:'50%',background:seleccionado?'rgba(255,255,255,.7)':t.color}} />
+                        return <div key={i} style={{width:'3px',height:'3px',borderRadius:'50%',background:seleccionado?'rgba(255,255,255,.7)':t.color}} />
                       })}
                     </div>
                   )}
