@@ -2117,6 +2117,44 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas, profesoraId, c
 
   useEffect(() => { cargar() }, [cursoId])
 
+  // Backfill: al cargar, detectar unidades dictadas sin alertas y crearlas
+  useEffect(() => {
+    if (!profesoraId || unidades.length === 0) return
+    const backfill = async () => {
+      const dictadas = [...unidades]
+        .filter(u => u.estado === 'dictada')
+        .sort((a: any, b: any) => (a.orden ?? 0) - (b.orden ?? 0))
+      if (dictadas.length < 2) return
+
+      // Ver cuántas alertas ya existen para este curso
+      const sb = createClient()
+      const { data: alertasExistentes } = await sb
+        .from('alertas_test_unidades')
+        .select('id, unidades')
+        .eq('curso_id', cursoId)
+
+      const cubiertasCount = (alertasExistentes || []).length * 2
+      const nuevasDictadas = dictadas.slice(cubiertasCount)
+
+      // Crear alertas en pares para las que no tienen alerta
+      for (let i = 0; i + 1 < nuevasDictadas.length; i += 2) {
+        const par = nuevasDictadas.slice(i, i + 2)
+        await fetch('/api/alertas-test', {
+          method: 'POST',
+          headers: apiHeaders(),
+          body: JSON.stringify({
+            curso_id:         cursoId,
+            profesora_id:     profesoraId,
+            curso_nombre:     cursoNombre || cursoId,
+            profesora_nombre: profesoraNombre || '',
+            unidades:         par.map((u: any) => u.titulo),
+          }),
+        })
+      }
+    }
+    backfill()
+  }, [unidades.length > 0 ? unidades.map(u => u.estado).join(',') : ''])
+
   const cargar = async () => {
     setLoading(true)
     const sb = createClient()
