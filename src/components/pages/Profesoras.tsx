@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect, useRef } from 'react'
-import { useProfesoras, useHorasHistorial, useLiquidaciones, apiHeaders } from '@/lib/hooks'
+import { useProfesoras, useHorasHistorial, useLiquidaciones, useCursos, apiHeaders } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 
@@ -15,6 +15,8 @@ type Vista = 'lista' | 'detalle' | 'form'
 
 export default function Profesoras() {
   const { profesoras, loading, actualizar, agregar, recargar } = useProfesoras()
+  const { cursos } = useCursos()
+  const [modalInforme, setModalInforme] = useState(false)
   const { usuario } = useAuth()
   const [vista, setVista] = useState<Vista>('lista')
   const [selId, setSelId] = useState<string|null>(null)
@@ -157,6 +159,12 @@ export default function Profesoras() {
         <SL>{profesoras.length} colaboradores</SL>
         <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
           {soloLectura && <Badge cls="b-purple">Solo lectura</Badge>}
+          <button
+            onClick={() => setModalInforme(true)}
+            style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'12.5px',fontWeight:600,cursor:'pointer'}}>
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 17H5a2 2 0 01-2-2V5a2 2 0 012-2h10a2 2 0 012 2v5M13 17h4m0 0v-4m0 4l-5-5"/></svg>
+            Informe del equipo
+          </button>
           {puedeEditar && (
             <button
               onClick={() => window.dispatchEvent(new CustomEvent('navigate-to', { detail: { page: 'permisos' } }))}
@@ -167,6 +175,170 @@ export default function Profesoras() {
           )}
         </div>
       </div>
+      {/* ── Modal Informe del Equipo ── */}
+      {modalInforme && (() => {
+        const fmt$ = (n: number) => `$${n.toLocaleString('es-AR')}`
+        const fmtF = (s: string) => s ? new Date(s+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit',year:'numeric'}) : '—'
+        const edad = (fn: string) => fn ? Math.floor((Date.now()-new Date(fn+'T12:00:00').getTime())/(365.25*24*3600*1000)) : null
+        const antiguedad = (p: any) => {
+          if (!p.created_at) return '—'
+          const meses = Math.floor((Date.now()-new Date(p.created_at).getTime())/(30.44*24*3600*1000))
+          if (meses < 1) return 'Menos de 1 mes'
+          if (meses < 12) return `${meses} mes${meses!==1?'es':''}`
+          const anios = Math.floor(meses/12); const rem = meses%12
+          return `${anios} año${anios!==1?'s':''}${rem>0?` ${rem}m`:''}`
+        }
+        const cursosPorProf = (profId: string) =>
+          cursos.filter((c: any) => c.profesora_id === profId && c.activo !== false).map((c: any) => c.nombre)
+
+        const exportarPDF = () => {
+          const win = window.open('','_blank')
+          if (!win) return
+          win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Informe del Equipo</title>
+          <style>
+            body{font-family:sans-serif;padding:24px;font-size:12px;color:#222}
+            h1{color:#652f8d;font-size:18px;margin-bottom:4px}
+            .sub{color:#9b8eaa;font-size:11px;margin-bottom:24px}
+            .logo{font-size:18px;font-weight:700;color:#652f8d}
+            .fecha{font-size:11px;color:#9b8eaa;text-align:right}
+            .card{border:1px solid #e8e0f0;border-radius:10px;padding:14px 16px;margin-bottom:12px;break-inside:avoid}
+            .nombre{font-size:15px;font-weight:700;color:#652f8d;margin-bottom:6px}
+            .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px}
+            .field label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9b8eaa;display:block;margin-bottom:2px}
+            .field span{font-size:12px;color:#333}
+            .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+            .chip{background:#f2e8f9;color:#652f8d;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
+            .rol{background:#e8f0fe;color:#1a73e8;padding:1px 7px;border-radius:8px;font-size:10px;font-weight:600;margin-left:8px}
+            @media print{body{padding:16px}}
+          </style></head><body>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #652f8d;padding-bottom:12px;margin-bottom:16px">
+            <div class="logo">Next Ezeiza</div>
+            <div class="fecha">Generado: ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
+          </div>
+          <h1>Informe del Equipo</h1>
+          <div class="sub">${profesoras.length} colaboradores activos</div>
+          ${profesoras.map(p => {
+            const cs = cursosPorProf(p.id)
+            const e = edad(p.fecha_nacimiento)
+            const liq = p.tipo_contrato === 'fijo' ? (p.sueldo_fijo||0) : Math.round((p.horas_semana||0)*4*(p.tarifa_hora||0))
+            return `<div class="card">
+              <div class="nombre">${p.nombre} ${p.apellido}${p.tipo_colaborador&&p.tipo_colaborador!=='docente'?`<span class="rol">${p.tipo_colaborador}</span>`:''}</div>
+              <div class="grid">
+                <div class="field"><label>Horas/semana</label><span>${p.horas_semana||0}hs</span></div>
+                <div class="field"><label>Tarifa</label><span>${p.tipo_contrato==='fijo'?`$${(p.sueldo_fijo||0).toLocaleString('es-AR')} fijo`:`$${(p.tarifa_hora||0).toLocaleString('es-AR')}/h`}</span></div>
+                <div class="field"><label>Liq. estimada</label><span>$${liq.toLocaleString('es-AR')}</span></div>
+                <div class="field"><label>Fecha de nac.</label><span>${fmtF(p.fecha_nacimiento)}${e?` (${e} años)`:''}</span></div>
+                <div class="field"><label>Antigüedad</label><span>${antiguedad(p)}</span></div>
+                <div class="field"><label>Email</label><span>${p.email||'—'}</span></div>
+              </div>
+              ${cs.length>0?`<div class="chips">${cs.map((c:string)=>`<span class="chip">${c}</span>`).join('')}</div>`:'<div style="font-size:11px;color:#aaa;margin-top:6px">Sin cursos asignados</div>'}
+            </div>`
+          }).join('')}
+          <script>window.onload=()=>window.print()<\/script></body></html>`)
+          win.document.close()
+        }
+
+        const docentes = profesoras.filter((p:any) => !p.tipo_colaborador || p.tipo_colaborador === 'docente')
+        const admins   = profesoras.filter((p:any) => p.tipo_colaborador && p.tipo_colaborador !== 'docente')
+        const totalLiq = profesoras.reduce((s:number,p:any) => {
+          const liq = p.tipo_contrato === 'fijo' ? (p.sueldo_fijo||0) : Math.round((p.horas_semana||0)*4*(p.tarifa_hora||0))
+          return s + liq
+        }, 0)
+
+        return (
+          <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.45)',zIndex:1000,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'20px',overflowY:'auto'}}
+            onClick={e => { if(e.target===e.currentTarget) setModalInforme(false) }}>
+            <div style={{background:'var(--white)',borderRadius:'16px',width:'100%',maxWidth:'680px',padding:'20px',marginBottom:'20px'}}>
+              {/* Header */}
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px'}}>
+                <div>
+                  <div style={{fontSize:'17px',fontWeight:700}}>Informe del equipo</div>
+                  <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'2px'}}>{profesoras.length} colaboradores activos</div>
+                </div>
+                <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+                  <button onClick={exportarPDF}
+                    style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
+                    <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 16v1a1 1 0 001 1h10a1 1 0 001-1v-1M7 10l3 3 3-3M10 3v10"/></svg>
+                    Exportar PDF
+                  </button>
+                  <button onClick={() => setModalInforme(false)}
+                    style={{width:32,height:32,borderRadius:'8px',background:'var(--bg)',border:'1px solid var(--border)',cursor:'pointer',fontSize:'18px',color:'var(--text2)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              {/* KPIs resumen */}
+              <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px',marginBottom:'16px'}}>
+                {[
+                  {label:'Docentes',     val:docentes.length, color:'var(--v)',   bg:'var(--vl)'},
+                  {label:'Administrativos', val:admins.length, color:'#1a73e8', bg:'#e8f0fe'},
+                  {label:'Liq. total est.', val:`$${Math.round(totalLiq/1000)}k`, color:'var(--green)', bg:'var(--greenl)'},
+                ].map(k => (
+                  <div key={k.label} style={{background:k.bg,borderRadius:'10px',padding:'10px 12px',textAlign:'center'}}>
+                    <div style={{fontSize:'20px',fontWeight:800,color:k.color}}>{k.val}</div>
+                    <div style={{fontSize:'10px',fontWeight:600,color:k.color,opacity:.8,marginTop:'2px'}}>{k.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Cards por colaborador */}
+              <div style={{display:'flex',flexDirection:'column',gap:'10px'}}>
+                {profesoras.map((p:any) => {
+                  const cs = cursosPorProf(p.id)
+                  const e = edad(p.fecha_nacimiento)
+                  const liq = p.tipo_contrato === 'fijo' ? (p.sueldo_fijo||0) : Math.round((p.horas_semana||0)*4*(p.tarifa_hora||0))
+                  const esAdmin = p.tipo_colaborador && p.tipo_colaborador !== 'docente'
+                  return (
+                    <div key={p.id} style={{border:'1.5px solid var(--border)',borderRadius:'12px',padding:'14px 16px',background:'var(--white)'}}>
+                      {/* Nombre + rol */}
+                      <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'10px'}}>
+                        <Av color={p.color} size={38}>{p.initials||`${p.nombre[0]}${p.apellido[0]}`}</Av>
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:'14px',fontWeight:700}}>
+                            {p.nombre} {p.apellido}
+                            {esAdmin && <span style={{fontSize:'10px',fontWeight:600,padding:'1px 7px',borderRadius:'8px',background:'#e8f0fe',color:'#1a73e8',marginLeft:'7px'}}>{p.tipo_colaborador}</span>}
+                          </div>
+                          {p.email && <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'1px'}}>{p.email}</div>}
+                        </div>
+                      </div>
+
+                      {/* Grid de datos */}
+                      <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px',marginBottom:'10px'}}>
+                        {[
+                          {label:'Hs/semana',      val:`${p.horas_semana||0}hs`},
+                          {label:'Tarifa',          val:p.tipo_contrato==='fijo'?`${fmt$(p.sueldo_fijo||0)} fijo`:`${fmt$(p.tarifa_hora||0)}/h`},
+                          {label:'Liq. estimada',   val:fmt$(liq)},
+                          {label:'Nacimiento',      val:p.fecha_nacimiento ? `${fmtF(p.fecha_nacimiento)}${e?` (${e}a)`:'' }` : '—'},
+                          {label:'Antigüedad',      val:antiguedad(p)},
+                          {label:'Teléfono',        val:p.telefono||'—'},
+                        ].map(f => (
+                          <div key={f.label} style={{background:'var(--bg)',borderRadius:'8px',padding:'7px 9px'}}>
+                            <div style={{fontSize:'9.5px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'2px'}}>{f.label}</div>
+                            <div style={{fontSize:'12px',color:'var(--text)',fontWeight:500}}>{f.val}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Cursos */}
+                      {cs.length > 0 ? (
+                        <div style={{display:'flex',flexWrap:'wrap',gap:'5px'}}>
+                          {cs.map((c:string) => (
+                            <span key={c} style={{background:'var(--vl)',color:'var(--v)',padding:'2px 9px',borderRadius:'20px',fontSize:'11px',fontWeight:600}}>{c}</span>
+                          ))}
+                        </div>
+                      ) : (
+                        <div style={{fontSize:'11px',color:'var(--text3)'}}>Sin cursos asignados</div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        )
+      })()}
+
       {profesoras.map(p => (
         <ListItem key={p.id} onClick={() => irADetalle(p.id)}>
           <Av color={p.color} size={44}>{p.initials||`${p.nombre[0]}${p.apellido[0]}`}</Av>
