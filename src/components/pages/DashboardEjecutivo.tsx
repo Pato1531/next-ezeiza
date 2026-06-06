@@ -61,7 +61,7 @@ export default function DashboardEjecutivo() {
           .eq('mes', mesNombre).eq('anio', anio)
           .eq('instituto_id', usuario?.instituto_id || ''),
         sb.from('pagos_alumnos')
-          .select('monto, alumno_id')
+          .select('monto, alumno_id, fecha_pago')
           .eq('mes', mesAntNombre).eq('anio', anioAnt)
           .eq('instituto_id', usuario?.instituto_id || ''),
         // Liquidaciones directas — useLiquidaciones() requiere profesora_id, no aplica aquí
@@ -355,6 +355,16 @@ export default function DashboardEjecutivo() {
     .sort((a, b) => b.cant - a.cant)
   const maxDiaCant = diasSorted[0]?.cant || 1
   const diasTop5 = diasSorted.slice(0, 5)
+
+  // ── Días con más pagos — mes anterior (para comparativo) ─────────────────
+  const diasConteoAnt: Record<number, number> = {}
+  pagosMesAnt.forEach((p: any) => {
+    if (!p.fecha_pago) return
+    const dia = new Date(p.fecha_pago + 'T12:00:00').getDate()
+    diasConteoAnt[dia] = (diasConteoAnt[dia] || 0) + 1
+  })
+  const totalPagosMes    = pagos.length
+  const totalPagosMesAnt = pagosMesAnt.length
 
   // ── Proyecciones ─────────────────────────────────────────────────────────
 
@@ -1331,42 +1341,88 @@ export default function DashboardEjecutivo() {
           {/* ── Días con más pagos ── */}
           {erTab === 'resumen' && (
             <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
-              <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'12px'}}>
-                Días con más pagos — {mesNombre}
+              {/* Header con totales comparativos */}
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'12px',flexWrap:'wrap',gap:'8px'}}>
+                <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em'}}>
+                  Días con más pagos — {mesNombre}
+                </div>
+                <div style={{display:'flex',gap:'8px'}}>
+                  <div style={{background:'var(--vl)',borderRadius:'8px',padding:'4px 10px',textAlign:'center'}}>
+                    <div style={{fontSize:'14px',fontWeight:800,color:'var(--v)'}}>{totalPagosMes}</div>
+                    <div style={{fontSize:'9px',fontWeight:600,color:'var(--v)',opacity:.7}}>{mesNombre}</div>
+                  </div>
+                  <div style={{background:'var(--bg)',borderRadius:'8px',padding:'4px 10px',textAlign:'center'}}>
+                    <div style={{fontSize:'14px',fontWeight:800,color:'var(--text3)'}}>{totalPagosMesAnt}</div>
+                    <div style={{fontSize:'9px',fontWeight:600,color:'var(--text3)',opacity:.7}}>{mesAntNombre}</div>
+                  </div>
+                </div>
               </div>
+
+              {/* Mapa de calor por día */}
+              <div style={{display:'flex',flexWrap:'wrap',gap:'4px',marginBottom:'14px'}}>
+                {Array.from({length:31},(_,i)=>i+1).map(dia => {
+                  const cant = diasConteo[dia] || 0
+                  const cantAnt = diasConteoAnt[dia] || 0
+                  const intensidad = cant === 0 ? 0 : Math.max(0.12, cant / maxDiaCant)
+                  const esPico = diasTop5.some(d => d.dia === dia)
+                  const delta = cant - cantAnt
+                  return (
+                    <div key={dia} title={`Día ${dia}: ${cant} pagos este mes / ${cantAnt} mes anterior`}
+                      style={{width:26,height:26,borderRadius:6,
+                        background: cant===0?'var(--border)':`rgba(101,47,141,${intensidad})`,
+                        display:'flex',alignItems:'center',justifyContent:'center',
+                        fontSize:'10px',fontWeight:esPico?800:500,
+                        color:cant===0?'var(--text3)':intensidad>0.5?'#fff':'var(--v)',
+                        border:esPico?'1.5px solid var(--v)':'1.5px solid transparent',cursor:'default',
+                        position:'relative'}}>
+                      {dia}
+                      {cant > 0 && cantAnt > 0 && delta !== 0 && (
+                        <div style={{position:'absolute',top:-4,right:-4,width:8,height:8,borderRadius:'50%',
+                          background:delta>0?'#2d7a4f':'#c0392b',border:'1.5px solid var(--white)'}} />
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* Leyenda */}
+              <div style={{display:'flex',gap:'12px',marginBottom:'12px',fontSize:'10px',color:'var(--text3)',flexWrap:'wrap'}}>
+                <span style={{display:'flex',alignItems:'center',gap:'4px'}}>
+                  <span style={{width:8,height:8,borderRadius:'50%',background:'#2d7a4f',display:'inline-block'}} />subió vs {mesAntNombre}
+                </span>
+                <span style={{display:'flex',alignItems:'center',gap:'4px'}}>
+                  <span style={{width:8,height:8,borderRadius:'50%',background:'#c0392b',display:'inline-block'}} />bajó vs {mesAntNombre}
+                </span>
+              </div>
+
+              {/* Top 5 días con delta */}
               {diasSorted.length === 0 ? (
-                <div style={{textAlign:'center',padding:'16px',color:'var(--text3)',fontSize:'13px'}}>Sin datos de fecha de pago</div>
+                <div style={{textAlign:'center',padding:'12px',color:'var(--text3)',fontSize:'13px'}}>Sin datos de fecha de pago</div>
               ) : (
                 <>
-                  <div style={{display:'flex',flexWrap:'wrap',gap:'4px',marginBottom:'14px'}}>
-                    {Array.from({length:31},(_,i)=>i+1).map(dia => {
-                      const cant = diasConteo[dia] || 0
-                      const intensidad = cant === 0 ? 0 : Math.max(0.12, cant / maxDiaCant)
-                      const esPico = diasTop5.some(d => d.dia === dia)
+                  <div style={{fontSize:'10.5px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'8px'}}>Picos de cobranza</div>
+                  <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                    {diasTop5.map(({dia,cant}) => {
+                      const cantAnt = diasConteoAnt[dia] || 0
+                      const delta = cant - cantAnt
+                      const deltaStr = delta > 0 ? `↑ +${delta}` : delta < 0 ? `↓ ${delta}` : '= igual'
+                      const deltaColor = delta > 0 ? '#2d7a4f' : delta < 0 ? '#c0392b' : 'var(--text3)'
                       return (
-                        <div key={dia} title={`Día ${dia}: ${cant} pago${cant!==1?'s':''}`}
-                          style={{width:26,height:26,borderRadius:6,
-                            background: cant===0?'var(--border)':`rgba(101,47,141,${intensidad})`,
-                            display:'flex',alignItems:'center',justifyContent:'center',
-                            fontSize:'10px',fontWeight:esPico?800:500,
-                            color:cant===0?'var(--text3)':intensidad>0.5?'#fff':'var(--v)',
-                            border:esPico?'1.5px solid var(--v)':'1.5px solid transparent',cursor:'default'}}>
-                          {dia}
+                        <div key={dia} style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                          <div style={{width:28,fontSize:'12px',fontWeight:700,color:'var(--v)',textAlign:'right',flexShrink:0}}>{dia}</div>
+                          <div style={{flex:1,height:'8px',background:'var(--border)',borderRadius:'10px',overflow:'hidden',position:'relative'}}>
+                            <div style={{height:'100%',width:`${(cant/maxDiaCant)*100}%`,background:'var(--v)',borderRadius:'10px',transition:'width .4s'}} />
+                            {cantAnt > 0 && (
+                              <div style={{position:'absolute',top:0,left:0,height:'100%',width:`${(cantAnt/maxDiaCant)*100}%`,
+                                borderRight:'2px dashed rgba(136,135,128,.6)',borderRadius:0,background:'transparent'}} />
+                            )}
+                          </div>
+                          <div style={{fontSize:'12px',fontWeight:600,color:'var(--text2)',flexShrink:0,minWidth:52}}>{cant} pago{cant!==1?'s':''}</div>
+                          <div style={{fontSize:'11px',fontWeight:700,color:deltaColor,flexShrink:0,minWidth:48,textAlign:'right'}}>{deltaStr}</div>
+                          <div style={{fontSize:'10px',color:'var(--text3)',flexShrink:0,minWidth:40,textAlign:'right',opacity:.7}}>/{cantAnt}</div>
                         </div>
                       )
                     })}
-                  </div>
-                  <div style={{fontSize:'10.5px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'8px'}}>Picos de cobranza</div>
-                  <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
-                    {diasTop5.map(({dia,cant}) => (
-                      <div key={dia} style={{display:'flex',alignItems:'center',gap:'8px'}}>
-                        <div style={{width:28,fontSize:'12px',fontWeight:700,color:'var(--v)',textAlign:'right',flexShrink:0}}>{dia}</div>
-                        <div style={{flex:1,height:'8px',background:'var(--border)',borderRadius:'10px',overflow:'hidden'}}>
-                          <div style={{height:'100%',width:`${(cant/maxDiaCant)*100}%`,background:'var(--v)',borderRadius:'10px',transition:'width .4s'}} />
-                        </div>
-                        <div style={{fontSize:'12px',fontWeight:600,color:'var(--text2)',flexShrink:0,minWidth:60}}>{cant} pago{cant!==1?'s':''}</div>
-                      </div>
-                    ))}
                   </div>
                 </>
               )}
