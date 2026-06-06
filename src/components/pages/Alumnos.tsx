@@ -1173,8 +1173,33 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
     ;(async () => {
       try {
         const sb2 = createClient()
+        // Obtener el curso actual ANTES de borrarlo (para limpiar asistencias)
+        const { data: cursoAnteriorData } = await sb2
+          .from('cursos_alumnos')
+          .select('curso_id')
+          .eq('alumno_id', a.id)
+          .limit(1)
+          .single()
+        const cursoAnteriorId = cursoAnteriorData?.curso_id
+
         const { error: delErr } = await sb2.from('cursos_alumnos').delete().eq('alumno_id', a.id)
         if (delErr) { console.error('[asignarCurso] delete:', delErr.message); return }
+
+        // Limpiar asistencias del curso anterior para que el contador vuelva a cero
+        if (cursoAnteriorId && cursoAnteriorId !== cursoId) {
+          const { data: clasesAnteriores } = await sb2
+            .from('clases')
+            .select('id')
+            .eq('curso_id', cursoAnteriorId)
+          if (clasesAnteriores?.length) {
+            const claseIds = clasesAnteriores.map((c: any) => c.id)
+            await sb2.from('asistencia_clases')
+              .delete()
+              .eq('alumno_id', a.id)
+              .in('clase_id', claseIds)
+          }
+        }
+
         const { error: insErr } = await sb2.from('cursos_alumnos').insert({
           curso_id: cursoId,
           alumno_id: a.id,
