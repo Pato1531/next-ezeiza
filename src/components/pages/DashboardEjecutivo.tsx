@@ -88,8 +88,8 @@ export default function DashboardEjecutivo() {
       setBajasMes(bajasRes.data || [])
 
       // Bajas del mes anterior para comparativo movimientos
-      const inicioMesAnt = new Date(anioAnt, mesAnt, 1).toISOString().split('T')[0]
-      const finMesAnt    = new Date(anioAnt, mesAnt + 1, 0).toISOString().split('T')[0]
+      const inicioMesAnt = new Date(anioAnt, mesAntIdx, 1).toISOString().split('T')[0]
+      const finMesAnt    = new Date(anioAnt, mesAntIdx + 1, 0).toISOString().split('T')[0]
       const { data: bajasAntData } = await sb
         .from('bajas_alumnos')
         .select('alumno_nombre, alumno_apellido')
