@@ -22,6 +22,8 @@ export default function DashboardEjecutivo() {
   // ── Datos financieros ─────────────────────────────────────────────────────
   const [pagos,         setPagos]         = useState<any[]>([])
   const [pagosMesAnt,   setPagosMesAnt]   = useState<any[]>([])
+  const [bajasAnt,      setBajasAnt]      = useState<any[]>([])
+  const [altasAntCount, setAltasAntCount] = useState<number>(0)
   const [liquidaciones,    setLiquidaciones]    = useState<any[]>([])
   const [liquidacionesAnt, setLiquidacionesAnt] = useState<any[]>([])
   const [bajasMes,      setBajasMes]      = useState<any[]>([])
@@ -84,6 +86,22 @@ export default function DashboardEjecutivo() {
       setLiquidacionesAnt(liqAntRes.data || [])
       // altasMes se deriva del hook useAlumnos() — reactivo a nuevos alumnos sin re-fetch
       setBajasMes(bajasRes.data || [])
+
+      // Bajas del mes anterior para comparativo movimientos
+      const inicioMesAnt = new Date(anioAnt, mesAnt, 1).toISOString().split('T')[0]
+      const finMesAnt    = new Date(anioAnt, mesAnt + 1, 0).toISOString().split('T')[0]
+      const { data: bajasAntData } = await sb
+        .from('bajas_alumnos')
+        .select('alumno_nombre, alumno_apellido')
+        .gte('fecha_baja', inicioMesAnt).lte('fecha_baja', finMesAnt)
+      setBajasAnt(bajasAntData || [])
+      // Altas del mes anterior: alumnos con fecha_alta en el mes anterior
+      const { count: altasAntCnt } = await sb
+        .from('alumnos')
+        .select('id', { count: 'exact', head: true })
+        .eq('instituto_id', usuario?.instituto_id || '')
+        .gte('fecha_alta', inicioMesAnt).lte('fecha_alta', finMesAnt)
+      setAltasAntCount(altasAntCnt || 0)
 
       // Retención: IDs del mes anterior
       const idsAnt = new Set<string>((pagosAntRes.data || []).map((p: any) => p.alumno_id))
@@ -1303,11 +1321,44 @@ export default function DashboardEjecutivo() {
               <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'12px'}}>
                 Movimientos del mes
               </div>
+
+              {/* Comparativo numérico arriba */}
+              <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'14px'}}>
+                {/* ALTAS */}
+                <div style={{background:'var(--greenl)',borderRadius:'10px',padding:'10px 12px'}}>
+                  <div style={{fontSize:'11px',fontWeight:600,color:'var(--green)',marginBottom:'4px',opacity:.8}}>↑ Altas</div>
+                  <div style={{display:'flex',alignItems:'baseline',gap:'8px'}}>
+                    <div style={{fontSize:'22px',fontWeight:800,color:'var(--green)'}}>{altasMes.length}</div>
+                    {altasAntCount > 0 && (() => {
+                      const delta = altasMes.length - altasAntCount
+                      const dc = delta > 0 ? '#2d7a4f' : delta < 0 ? '#c0392b' : 'var(--text3)'
+                      return <div style={{fontSize:'12px',fontWeight:700,color:dc}}>{delta > 0 ? `↑ +${delta}` : delta < 0 ? `↓ ${delta}` : '= igual'}</div>
+                    })()}
+                  </div>
+                  {altasAntCount > 0 && (
+                    <div style={{fontSize:'10px',color:'var(--green)',opacity:.7,marginTop:'2px'}}>{mesAntNombre}: {altasAntCount}</div>
+                  )}
+                </div>
+                {/* BAJAS */}
+                <div style={{background:'var(--redl)',borderRadius:'10px',padding:'10px 12px'}}>
+                  <div style={{fontSize:'11px',fontWeight:600,color:'var(--red)',marginBottom:'4px',opacity:.8}}>↓ Bajas</div>
+                  <div style={{display:'flex',alignItems:'baseline',gap:'8px'}}>
+                    <div style={{fontSize:'22px',fontWeight:800,color:'var(--red)'}}>{bajasMes.length}</div>
+                    {bajasAnt.length > 0 && (() => {
+                      const delta = bajasMes.length - bajasAnt.length
+                      const dc = delta > 0 ? '#c0392b' : delta < 0 ? '#2d7a4f' : 'var(--text3)'
+                      return <div style={{fontSize:'12px',fontWeight:700,color:dc}}>{delta > 0 ? `↑ +${delta}` : delta < 0 ? `↓ ${delta}` : '= igual'}</div>
+                    })()}
+                  </div>
+                  {bajasAnt.length > 0 && (
+                    <div style={{fontSize:'10px',color:'var(--red)',opacity:.7,marginTop:'2px'}}>{mesAntNombre}: {bajasAnt.length}</div>
+                  )}
+                </div>
+              </div>
+
+              {/* Listas detalle */}
               <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'12px'}}>
                 <div>
-                  <div style={{fontSize:'12px',fontWeight:700,color:'var(--green)',marginBottom:'6px'}}>
-                    ↑ Altas ({altasMes.length})
-                  </div>
                   {altasMes.length === 0
                     ? <div style={{fontSize:'12px',color:'var(--text3)'}}>Sin altas este mes</div>
                     : altasMes.slice(0, 4).map((a: any) => (
@@ -1320,9 +1371,6 @@ export default function DashboardEjecutivo() {
                   {altasMes.length > 4 && <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'4px'}}>+{altasMes.length - 4} más</div>}
                 </div>
                 <div>
-                  <div style={{fontSize:'12px',fontWeight:700,color:'var(--red)',marginBottom:'6px'}}>
-                    ↓ Bajas ({bajasMes.length})
-                  </div>
                   {bajasMes.length === 0
                     ? <div style={{fontSize:'12px',color:'var(--text3)'}}>Sin bajas este mes</div>
                     : bajasMes.slice(0, 4).map((b: any, i: number) => (
