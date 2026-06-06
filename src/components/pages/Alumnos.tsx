@@ -844,88 +844,223 @@ export default function Alumnos() {
   }
 
   // ── VISTA BAJAS HISTÓRICAS ──
-  if (vista === 'bajas_historicas') return (
-    <div className="fade-in">
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'20px',flexWrap:'wrap',gap:'8px'}}>
-        <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
-          <BtnG sm onClick={irALista}>← Volver</BtnG>
-          <div style={{fontSize:'18px',fontWeight:700}}>Bajas históricas</div>
+  if (vista === 'bajas_historicas') {
+    const MOTIVOS_COLORES: Record<string,{bg:string,color:string}> = {
+      'Motivos personales':       {bg:'#f2e8f9',color:'#652f8d'},
+      'Inasistencias reiteradas': {bg:'#fdeaea',color:'#c0392b'},
+      'Razones económicas':       {bg:'#fff7ed',color:'#c2610f'},
+      'Problemas de horario':     {bg:'#e8f4fe',color:'#1a73e8'},
+      'Finalización del curso':   {bg:'#e6f4ec',color:'#2d7a4f'},
+      'Cambio de institución':    {bg:'#fef3cd',color:'#b45309'},
+      'Mudanza':                  {bg:'#f0f0ff',color:'#6366f1'},
+      'No obtuvimos respuesta':   {bg:'#fdeaea',color:'#c0392b'},
+    }
+    const MOTIVO_DEFAULT = {bg:'var(--bg)',color:'var(--text2)'}
+
+    // Años disponibles
+    const aniosDisponibles = [...new Set(bajas.map(b => b.fecha_baja?.split('-')[0]).filter(Boolean))].sort().reverse() as string[]
+    const [filtroAnio, setFiltroAnio] = useState<string>(new Date().getFullYear().toString())
+    const [filtroMes, setFiltroMes]   = useState<string>('todos')
+    const [filtroMotivo, setFiltroMotivo] = useState<string>('todos')
+
+    const MESES_NOMBRES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+
+    const bajasFiltradas = bajas.filter(b => {
+      if (!b.fecha_baja) return false
+      const [a, m] = b.fecha_baja.split('-')
+      if (filtroAnio !== 'todos' && a !== filtroAnio) return false
+      if (filtroMes !== 'todos' && m !== filtroMes) return false
+      if (filtroMotivo !== 'todos' && b.motivo !== filtroMotivo) return false
+      return true
+    })
+
+    // Resumen por motivo
+    const porMotivo: Record<string,number> = {}
+    bajasFiltradas.forEach(b => { porMotivo[b.motivo||'Sin motivo'] = (porMotivo[b.motivo||'Sin motivo'] || 0) + 1 })
+
+    // Agrupar por mes para el resumen anual
+    const porMes: Record<string, number> = {}
+    bajasFiltradas.forEach(b => {
+      const m = b.fecha_baja?.split('-')[1]
+      if (m) porMes[m] = (porMes[m] || 0) + 1
+    })
+
+    const motivosUnicos = [...new Set(bajas.map(b => b.motivo).filter(Boolean))] as string[]
+
+    const exportarPDF = () => {
+      const win = window.open('','_blank')
+      if (!win) return
+      const titulo = filtroMes !== 'todos'
+        ? `Bajas — ${MESES_NOMBRES[parseInt(filtroMes)-1]} ${filtroAnio}`
+        : filtroAnio !== 'todos' ? `Bajas — ${filtroAnio}` : 'Bajas Históricas'
+      win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${titulo}</title>
+        <style>body{font-family:sans-serif;padding:24px;font-size:13px}h1{color:#652f8d;font-size:18px;margin-bottom:4px}
+        .sub{color:#9b8eaa;font-size:12px;margin-bottom:20px}
+        table{width:100%;border-collapse:collapse}th{border-bottom:2px solid #652f8d;padding:8px;text-align:left;font-size:10px;text-transform:uppercase;color:#652f8d;letter-spacing:.05em}
+        td{padding:10px 8px;border-bottom:1px solid #f0edf5;font-size:13px}
+        .logo{font-size:18px;font-weight:700;margin-bottom:4px}.logo span{color:#652f8d}
+        .fecha{color:#9b8eaa;font-size:12px;text-align:right}
+        </style></head><body>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #652f8d;padding-bottom:14px;margin-bottom:20px">
+          <div class="logo"><span>Next</span> Ezeiza</div>
+          <div class="fecha">Generado: ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
         </div>
-        {bajas.length > 0 && (
-          <button onClick={() => {
-            const win = window.open('','_blank')
-            if (!win) return
-            win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Bajas Históricas</title>
-            <style>body{font-family:sans-serif;padding:24px;font-size:13px}h1{color:#652f8d;font-size:18px;margin-bottom:4px}
-            .sub{color:#9b8eaa;font-size:12px;margin-bottom:20px}
-            table{width:100%;border-collapse:collapse}th{border-bottom:2px solid #652f8d;padding:8px;text-align:left;font-size:10px;text-transform:uppercase;color:#652f8d;letter-spacing:.05em}
-            td{padding:10px 8px;border-bottom:1px solid #f0edf5;font-size:13px}
-            .logo{font-size:18px;font-weight:700;margin-bottom:4px}.logo span{color:#652f8d}
-            .fecha{color:#9b8eaa;font-size:12px;margin-bottom:20px;text-align:right}
-            </style></head><body>
-            <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #652f8d;padding-bottom:14px;margin-bottom:20px">
-              <div class="logo"><span>Next</span> Ezeiza</div>
-              <div class="fecha">Generado: ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
-            </div>
-            <h1>Bajas Históricas</h1>
-            <div class="sub">${bajas.length} baja${bajas.length!==1?'s':''} registrada${bajas.length!==1?'s':''}</div>
-            <table>
-              <tr><th>Fecha de baja</th><th>Alumno</th><th>Curso</th><th>Nivel</th><th>Cuota</th><th>Motivo</th></tr>
-              ${bajas.map(b=>`<tr>
-                <td>${b.fecha_baja ? b.fecha_baja.split("-").reverse().join("/") : "—"}</td>
-                <td>${b.alumno_nombre} ${b.alumno_apellido}</td>
-                <td>${b.curso_nombre||'—'}</td>
-                <td>${b.nivel||'—'}</td>
-                ${!ocultarMontos ? `<td>$${b.cuota_mensual?.toLocaleString('es-AR')||'—'}</td>` : ''}
-                <td>${b.motivo}</td>
-              </tr>`).join('')}
-            </table>
-            <script>window.onload=()=>window.print()<\/script></body></html>`)
-            win.document.close()
-          }} style={{display:'flex',alignItems:'center',gap:'6px',padding:'9px 16px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
-            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 16v1a1 1 0 001 1h10a1 1 0 001-1v-1M7 10l3 3 3-3M10 3v10"/></svg>
-            Exportar PDF
-          </button>
-        )}
-      </div>
+        <h1>${titulo}</h1>
+        <div class="sub">${bajasFiltradas.length} baja${bajasFiltradas.length!==1?'s':''} registrada${bajasFiltradas.length!==1?'s':''}</div>
+        <table>
+          <tr><th>Fecha</th><th>Alumno</th><th>Curso</th><th>Nivel</th>${!ocultarMontos?'<th>Cuota</th>':''}<th>Motivo</th></tr>
+          ${bajasFiltradas.map(b=>`<tr>
+            <td>${b.fecha_baja?b.fecha_baja.split('-').reverse().join('/'):'—'}</td>
+            <td>${b.alumno_nombre} ${b.alumno_apellido}</td>
+            <td>${b.curso_nombre||'—'}</td>
+            <td>${b.nivel||'—'}</td>
+            ${!ocultarMontos?`<td>$${b.cuota_mensual?.toLocaleString('es-AR')||'—'}</td>`:''}
+            <td>${b.motivo||'—'}</td>
+          </tr>`).join('')}
+        </table>
+        <script>window.onload=()=>window.print()<\/script></body></html>`)
+      win.document.close()
+    }
 
-      {loadingBajas && <Loader />}
+    const IS2 = {padding:'8px 10px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'12px',fontFamily:'Inter,sans-serif',outline:'none',color:'var(--text)',background:'var(--white)',cursor:'pointer'} as const
 
-      {!loadingBajas && bajas.length === 0 && (
-        <div style={{textAlign:'center',padding:'48px 24px',color:'var(--text3)',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px'}}>
-          <div style={{fontSize:'36px',marginBottom:'10px'}}>📋</div>
-          <div style={{fontSize:'15px',fontWeight:600,color:'var(--text2)',marginBottom:'4px'}}>Sin bajas registradas</div>
-          <div style={{fontSize:'13px'}}>Cuando se registre la baja de un alumno va a aparecer acá.</div>
-        </div>
-      )}
-
-      {!loadingBajas && bajas.map(b => (
-        <div key={b.id} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px',marginBottom:'10px'}}>
-          <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between',marginBottom:'10px'}}>
+    return (
+      <div className="fade-in">
+        {/* Header */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'16px',flexWrap:'wrap',gap:'8px'}}>
+          <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+            <BtnG sm onClick={irALista}>← Volver</BtnG>
             <div>
-              <div style={{fontSize:'15px',fontWeight:700}}>{b.alumno_nombre} {b.alumno_apellido}</div>
-              <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'2px'}}>{b.curso_nombre||'—'} · {b.nivel||'—'}</div>
+              <div style={{fontSize:'18px',fontWeight:700}}>Bajas históricas</div>
+              <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'1px'}}>{bajas.length} bajas en total</div>
             </div>
-            <div style={{textAlign:'right',flexShrink:0}}>
-              <div style={{fontSize:'12px',fontWeight:600,color:'var(--red)',padding:'3px 10px',background:'var(--redl)',borderRadius:'20px',border:'1px solid #f5c5c5'}}>
-                Baja {fmtFecha(b.fecha_baja)}
+          </div>
+          {bajasFiltradas.length > 0 && (
+            <button onClick={exportarPDF}
+              style={{display:'flex',alignItems:'center',gap:'6px',padding:'9px 16px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 16v1a1 1 0 001 1h10a1 1 0 001-1v-1M7 10l3 3 3-3M10 3v10"/></svg>
+              Exportar PDF
+            </button>
+          )}
+        </div>
+
+        {/* Filtros */}
+        <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'12px 16px',marginBottom:'16px',display:'flex',flexWrap:'wrap',gap:'10px',alignItems:'center'}}>
+          <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',flexShrink:0}}>Filtrar por</div>
+          <select value={filtroAnio} onChange={e=>setFiltroAnio(e.target.value)} style={IS2}>
+            <option value="todos">Todos los años</option>
+            {aniosDisponibles.map(a => <option key={a} value={a}>{a}</option>)}
+          </select>
+          <select value={filtroMes} onChange={e=>setFiltroMes(e.target.value)} style={IS2}>
+            <option value="todos">Todos los meses</option>
+            {MESES_NOMBRES.map((m,i) => <option key={i} value={String(i+1).padStart(2,'0')}>{m}</option>)}
+          </select>
+          <select value={filtroMotivo} onChange={e=>setFiltroMotivo(e.target.value)} style={IS2}>
+            <option value="todos">Todos los motivos</option>
+            {motivosUnicos.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+          {(filtroAnio !== new Date().getFullYear().toString() || filtroMes !== 'todos' || filtroMotivo !== 'todos') && (
+            <button onClick={() => { setFiltroAnio(new Date().getFullYear().toString()); setFiltroMes('todos'); setFiltroMotivo('todos') }}
+              style={{...IS2,color:'var(--v)',borderColor:'var(--v)',fontWeight:600}}>
+              Limpiar
+            </button>
+          )}
+          <div style={{marginLeft:'auto',fontSize:'12px',fontWeight:700,color:'var(--text2)'}}>
+            {bajasFiltradas.length} resultado{bajasFiltradas.length !== 1 ? 's' : ''}
+          </div>
+        </div>
+
+        {/* Resumen estadístico */}
+        {bajasFiltradas.length > 0 && (
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'16px'}}>
+            {/* Por motivo */}
+            <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'14px'}}>
+              <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'10px'}}>Por motivo</div>
+              <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                {Object.entries(porMotivo).sort((a,b)=>b[1]-a[1]).map(([motivo, cant]) => {
+                  const mc = MOTIVOS_COLORES[motivo] || MOTIVO_DEFAULT
+                  const pct = Math.round((cant / bajasFiltradas.length) * 100)
+                  return (
+                    <div key={motivo}>
+                      <div style={{display:'flex',justifyContent:'space-between',marginBottom:'2px'}}>
+                        <span style={{fontSize:'11px',color:mc.color,fontWeight:600}}>{motivo}</span>
+                        <span style={{fontSize:'11px',color:'var(--text3)',fontWeight:700}}>{cant} ({pct}%)</span>
+                      </div>
+                      <div style={{height:'4px',borderRadius:'4px',background:'var(--border)',overflow:'hidden'}}>
+                        <div style={{width:`${pct}%`,height:'100%',background:mc.color,borderRadius:'4px'}} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+            {/* Por mes */}
+            <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'14px'}}>
+              <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'10px'}}>Por mes</div>
+              <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                {Object.entries(porMes).sort((a,b)=>a[0].localeCompare(b[0])).map(([mes, cant]) => {
+                  const pct = Math.round((cant / bajasFiltradas.length) * 100)
+                  return (
+                    <div key={mes}>
+                      <div style={{display:'flex',justifyContent:'space-between',marginBottom:'2px'}}>
+                        <span style={{fontSize:'11px',color:'var(--text2)',fontWeight:600}}>{MESES_NOMBRES[parseInt(mes)-1]}</span>
+                        <span style={{fontSize:'11px',color:'var(--text3)',fontWeight:700}}>{cant}</span>
+                      </div>
+                      <div style={{height:'4px',borderRadius:'4px',background:'var(--border)',overflow:'hidden'}}>
+                        <div style={{width:`${pct}%`,height:'100%',background:'var(--v)',borderRadius:'4px',opacity:.6}} />
+                      </div>
+                    </div>
+                  )
+                })}
               </div>
             </div>
           </div>
-          <div style={{display:'grid',gridTemplateColumns: ocultarMontos ? '1fr' : '1fr 1fr',gap:'8px',marginTop:'8px'}}>
-            <div style={{padding:'8px 10px',background:'var(--bg)',borderRadius:'8px'}}>
-              <div style={{fontSize:'10px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'2px'}}>Motivo</div>
-              <div style={{fontSize:'13px',color:'var(--text)'}}>{b.motivo}</div>
-            </div>
-            {!ocultarMontos && <div style={{padding:'8px 10px',background:'var(--bg)',borderRadius:'8px'}}>
-              <div style={{fontSize:'10px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'2px'}}>Cuota al momento</div>
-              <div style={{fontSize:'13px',color:'var(--text)',fontWeight:600}}>${b.cuota_mensual?.toLocaleString('es-AR')||'—'}</div>
-            </div>}
+        )}
+
+        {loadingBajas && <Loader />}
+
+        {!loadingBajas && bajasFiltradas.length === 0 && (
+          <div style={{textAlign:'center',padding:'48px 24px',color:'var(--text3)',background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px'}}>
+            <div style={{fontSize:'36px',marginBottom:'10px'}}>📋</div>
+            <div style={{fontSize:'15px',fontWeight:600,color:'var(--text2)',marginBottom:'4px'}}>Sin bajas para este filtro</div>
+            <div style={{fontSize:'13px'}}>Probá cambiando el período o el motivo.</div>
           </div>
-        </div>
-      ))}
-    </div>
-  )
+        )}
+
+        {/* Lista de bajas */}
+        {!loadingBajas && bajasFiltradas.length > 0 && (
+          <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',overflow:'hidden'}}>
+            {bajasFiltradas.map((b, i) => {
+              const mc = MOTIVOS_COLORES[b.motivo] || MOTIVO_DEFAULT
+              return (
+                <div key={b.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'12px 16px',
+                  borderBottom:i<bajasFiltradas.length-1?'1px solid var(--border)':'none'}}>
+                  <div style={{flexShrink:0,width:'38px',textAlign:'center'}}>
+                    <div style={{fontSize:'11px',fontWeight:800,color:'var(--red)'}}>
+                      {b.fecha_baja ? new Date(b.fecha_baja+'T12:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'}) : '—'}
+                    </div>
+                    <div style={{fontSize:'10px',color:'var(--text3)'}}>
+                      {b.fecha_baja ? b.fecha_baja.split('-')[0] : ''}
+                    </div>
+                  </div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:'13px',fontWeight:700,color:'var(--text)'}}>{b.alumno_nombre} {b.alumno_apellido}</div>
+                    <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}}>
+                      {b.curso_nombre||'—'} · {b.nivel||'—'}
+                      {!ocultarMontos && b.cuota_mensual ? ` · $${b.cuota_mensual.toLocaleString('es-AR')}/mes` : ''}
+                    </div>
+                  </div>
+                  <div style={{padding:'3px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:600,background:mc.bg,color:mc.color,flexShrink:0,maxWidth:'160px',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                    {b.motivo||'Sin motivo'}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
 
   // ── VISTA RENOVACIÓN DE MATRÍCULA ──
   if (vista === 'renovacion_matricula') {
