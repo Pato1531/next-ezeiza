@@ -139,6 +139,10 @@ export default function Alumnos() {
   const [guardandoBaja, setGuardandoBaja] = useState(false)
   const [bajas, setBajas] = useState<any[]>([])
   const [loadingBajas, setLoadingBajas] = useState(false)
+  // Filtros para vista bajas_historicas (deben estar al nivel del componente — regla de hooks)
+  const [filtroAnio, setFiltroAnio] = useState<string>(new Date().getFullYear().toString())
+  const [filtroMes, setFiltroMes]   = useState<string>('todos')
+  const [filtroMotivo, setFiltroMotivo] = useState<string>('todos')
   const [pago, setPago] = useState({ mes: MESES[new Date().getMonth()], anio: new Date().getFullYear(), monto: 0, metodo:'Efectivo', fecha_pago: new Date().toISOString().split('T')[0], observaciones:'' })
 
   const [renovacionMes, setRenovacionMes] = useState(new Date().getMonth())
@@ -859,10 +863,6 @@ export default function Alumnos() {
 
     // Años disponibles
     const aniosDisponibles = [...new Set(bajas.map(b => b.fecha_baja?.split('-')[0]).filter(Boolean))].sort().reverse() as string[]
-    const [filtroAnio, setFiltroAnio] = useState<string>(new Date().getFullYear().toString())
-    const [filtroMes, setFiltroMes]   = useState<string>('todos')
-    const [filtroMotivo, setFiltroMotivo] = useState<string>('todos')
-
     const MESES_NOMBRES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
     const bajasFiltradas = bajas.filter(b => {
