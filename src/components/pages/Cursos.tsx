@@ -1043,9 +1043,15 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, puedeEditarPl
         if (!data) return
         const map: Record<string,Record<string,string>> = {}
         data.forEach((a:any) => { if (!map[a.clase_id]) map[a.clase_id]={}; map[a.clase_id][a.alumno_id]=a.estado })
-        store[asistCacheKey] = map
-        storeTs[asistCacheKey] = Date.now()
-        setAsistencias(map)
+        // Solo actualizar si el cache no fue modificado en los últimos 5 segundos
+        // (evita pisar cambios optimistas del toggleAsist)
+        const tsCache = storeTs[asistCacheKey] || 0
+        const ahoraNow = Date.now()
+        if (ahoraNow - tsCache > 5000) {
+          store[asistCacheKey] = map
+          storeTs[asistCacheKey] = ahoraNow
+          setAsistencias(map)
+        }
       })
   }, [clases.length])
 
@@ -1093,14 +1099,26 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, puedeEditarPl
     const sb = createClient()
     const actual = asistencias[claseId]?.[alumnoId]
     const nuevo = actual === est ? '' : est
+    // Optimistic update inmediato
     const nuevaAsist = { ...asistencias, [claseId]: { ...asistencias[claseId], [alumnoId]: nuevo } }
     store[asistCacheKey] = nuevaAsist as any
     storeTs[asistCacheKey] = Date.now()
     setAsistencias(nuevaAsist)
-    if (nuevo) {
-      await sb.from('asistencia_clases').upsert({ clase_id: claseId, alumno_id: alumnoId, estado: nuevo }, { onConflict: 'clase_id,alumno_id' })
-    } else {
-      await sb.from('asistencia_clases').delete().eq('clase_id', claseId).eq('alumno_id', alumnoId)
+    try {
+      if (nuevo) {
+        const { error } = await sb.from('asistencia_clases')
+          .upsert({ clase_id: claseId, alumno_id: alumnoId, estado: nuevo }, { onConflict: 'clase_id,alumno_id' })
+        if (error) throw error
+      } else {
+        const { error } = await sb.from('asistencia_clases')
+          .delete().eq('clase_id', claseId).eq('alumno_id', alumnoId)
+        if (error) throw error
+      }
+    } catch (e: any) {
+      // Revertir si falla
+      store[asistCacheKey] = asistencias as any
+      setAsistencias(asistencias)
+      showToast('Error al guardar asistencia: ' + (e?.message || 'Error desconocido'), 'error')
     }
   }
 
