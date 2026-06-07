@@ -17,7 +17,32 @@ export default function Profesoras() {
   const { profesoras, loading, actualizar, agregar, recargar } = useProfesoras()
   const { cursos } = useCursos()
   const [modalInforme, setModalInforme] = useState(false)
+  const [liqsInforme, setLiqsInforme] = useState<Record<string, number>>({})
   const { usuario } = useAuth()
+
+  // Al abrir el informe, cargar la última liquidación confirmada de los admins
+  useEffect(() => {
+    if (!modalInforme || profesoras.length === 0) return
+    const sb = createClient()
+    const admins = profesoras.filter((p: any) => p.tipo_colaborador && p.tipo_colaborador !== 'docente')
+    if (admins.length === 0) return
+    Promise.all(admins.map(async (p: any) => {
+      const { data } = await sb
+        .from('liquidaciones')
+        .select('total')
+        .eq('profesora_id', p.id)
+        .in('estado', ['confirmada', 'pagada'])
+        .order('anio', { ascending: false })
+        .order('mes', { ascending: false })
+        .limit(1)
+        .single()
+      return { id: p.id, total: data?.total ?? null }
+    })).then(results => {
+      const map: Record<string, number> = {}
+      results.forEach(r => { if (r.total !== null) map[r.id] = r.total })
+      setLiqsInforme(map)
+    })
+  }, [modalInforme])
   const [vista, setVista] = useState<Vista>('lista')
   const [selId, setSelId] = useState<string|null>(null)
   const [tab, setTab] = useState<'datos'|'licencias'|'liquidacion'>('datos')
@@ -66,8 +91,25 @@ export default function Profesoras() {
       form.nombre = partes[0]
       form.apellido = partes.length > 1 ? partes.slice(1).join(' ') : partes[0]
     }
+    // Si está en modo automático, calcular horas desde cursos antes de guardar
+    if (form?.id && form?._horasManual !== true && form?.tipo_contrato !== 'fijo') {
+      const cursosDocente = cursos.filter((c: any) => c.profesora_id === form.id && c.activo !== false)
+      const horasAuto = cursosDocente.reduce((sum: number, c: any) => {
+        if (c.hora_inicio && c.hora_fin) {
+          const [h1, m1] = c.hora_inicio.split(':').map(Number)
+          const [h2, m2] = c.hora_fin.split(':').map(Number)
+          const diff = (h2 * 60 + m2) - (h1 * 60 + m1)
+          if (diff > 0) {
+            const diasCount = Array.isArray(c.dias) ? c.dias.length : 1
+            return sum + Math.round(diff / 60 * 10) / 10 * diasCount
+          }
+        }
+        return sum + 1.5
+      }, 0)
+      form.horas_semana = Math.round(horasAuto * 2) / 2
+    }
     const initials = `${form.nombre?.[0]||''}${form.apellido?.[0]||''}`.toUpperCase()
-    const { id, activo, activa, ...datos } = form
+    const { id, activo, activa, _horasManual, ...datos } = form
     const t = setTimeout(() => { setGuardando(false); if (id) irADetalle(id); else irALista() }, 6000)
     try {
       if (!id) {
@@ -220,13 +262,16 @@ export default function Profesoras() {
           ${profesoras.map(p => {
             const cs = cursosPorProf(p.id)
             const e = edad(p.fecha_nacimiento)
-            const liq = p.tipo_contrato === 'fijo' ? (p.sueldo_fijo||0) : Math.round((p.horas_semana||0)*4*(p.tarifa_hora||0))
+            const esAdmin = (p as any).tipo_colaborador && (p as any).tipo_colaborador !== 'docente'
+            const liqAdmin = esAdmin ? (liqsInforme[p.id] ?? (p as any).sueldo_fijo ?? 0) : 0
+            const liq = esAdmin ? liqAdmin : (p as any).tipo_contrato === 'fijo' ? ((p as any).sueldo_fijo||0) : Math.round(((p as any).horas_semana||0)*4*((p as any).tarifa_hora||0))
+            const liqLabel = esAdmin && liqsInforme[p.id] !== undefined ? 'Última liq. confirmada' : 'Liq. estimada'
             return `<div class="card">
               <div class="nombre">${p.nombre} ${p.apellido}${p.tipo_colaborador&&p.tipo_colaborador!=='docente'?`<span class="rol">${p.tipo_colaborador}</span>`:''}</div>
               <div class="grid">
-                <div class="field"><label>Horas/semana</label><span>${p.horas_semana||0}hs</span></div>
-                <div class="field"><label>Tarifa</label><span>${p.tipo_contrato==='fijo'?`$${(p.sueldo_fijo||0).toLocaleString('es-AR')} fijo`:`$${(p.tarifa_hora||0).toLocaleString('es-AR')}/h`}</span></div>
-                <div class="field"><label>Liq. estimada</label><span>$${liq.toLocaleString('es-AR')}</span></div>
+                <div class="field"><label>Horas/semana</label><span>${(p as any).horas_semana||0}hs</span></div>
+                <div class="field"><label>Tarifa</label><span>${(p as any).tipo_contrato==='fijo'?`$${((p as any).sueldo_fijo||0).toLocaleString('es-AR')} fijo`:`$${((p as any).tarifa_hora||0).toLocaleString('es-AR')}/h`}</span></div>
+                <div class="field"><label>${liqLabel}</label><span>$${liq.toLocaleString('es-AR')}</span></div>
                 <div class="field"><label>Fecha de nac.</label><span>${fmtF(p.fecha_nacimiento)}${e?` (${e} años)`:''}</span></div>
                 <div class="field"><label>Antigüedad</label><span>${antiguedad(p)}</span></div>
                 <div class="field"><label>Email</label><span>${p.email||'—'}</span></div>
@@ -287,8 +332,13 @@ export default function Profesoras() {
                 {profesoras.map((p:any) => {
                   const cs = cursosPorProf(p.id)
                   const e = edad(p.fecha_nacimiento)
-                  const liq = p.tipo_contrato === 'fijo' ? (p.sueldo_fijo||0) : Math.round((p.horas_semana||0)*4*(p.tarifa_hora||0))
                   const esAdmin = p.tipo_colaborador && p.tipo_colaborador !== 'docente'
+                  // Para admins: usar última liq confirmada, fallback sueldo_fijo
+                  // Para docentes: cálculo estándar
+                  const liqAdmin = esAdmin ? (liqsInforme[p.id] ?? p.sueldo_fijo ?? null) : null
+                  const liq = esAdmin
+                    ? (liqAdmin ?? 0)
+                    : p.tipo_contrato === 'fijo' ? (p.sueldo_fijo||0) : Math.round((p.horas_semana||0)*4*(p.tarifa_hora||0))
                   return (
                     <div key={p.id} style={{border:'1.5px solid var(--border)',borderRadius:'12px',padding:'14px 16px',background:'var(--white)'}}>
                       {/* Nombre + rol */}
@@ -306,16 +356,19 @@ export default function Profesoras() {
                       {/* Grid de datos */}
                       <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'8px',marginBottom:'10px'}}>
                         {[
-                          {label:'Hs/semana',      val:`${p.horas_semana||0}hs`},
-                          {label:'Tarifa',          val:p.tipo_contrato==='fijo'?`${fmt$(p.sueldo_fijo||0)} fijo`:`${fmt$(p.tarifa_hora||0)}/h`},
-                          {label:'Liq. estimada',   val:fmt$(liq)},
+                          {label:'Hs/semana',      val: esAdmin ? '—' : `${p.horas_semana||0}hs`},
+                          {label:'Tarifa',          val: esAdmin ? (p.tipo_contrato==='fijo'?`${fmt$(p.sueldo_fijo||0)} fijo`:'—') : `${fmt$(p.tarifa_hora||0)}/h`},
+                          {label: esAdmin ? (liqsInforme[p.id] !== undefined ? 'Última liq.' : 'Liq. estimada') : 'Liq. estimada',
+                           val: liq > 0 ? fmt$(liq) : '—',
+                           sub: esAdmin && liqsInforme[p.id] !== undefined ? 'confirmada' : esAdmin && p.sueldo_fijo ? 'sueldo base' : undefined},
                           {label:'Nacimiento',      val:p.fecha_nacimiento ? `${fmtF(p.fecha_nacimiento)}${e?` (${e}a)`:'' }` : '—'},
                           {label:'Antigüedad',      val:antiguedad(p)},
                           {label:'Teléfono',        val:p.telefono||'—'},
-                        ].map(f => (
+                        ].map((f:any) => (
                           <div key={f.label} style={{background:'var(--bg)',borderRadius:'8px',padding:'7px 9px'}}>
                             <div style={{fontSize:'9.5px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'2px'}}>{f.label}</div>
                             <div style={{fontSize:'12px',color:'var(--text)',fontWeight:500}}>{f.val}</div>
+                            {f.sub && <div style={{fontSize:'9px',color:'var(--text3)',marginTop:'1px'}}>{f.sub}</div>}
                           </div>
                         ))}
                       </div>
@@ -393,12 +446,82 @@ export default function Profesoras() {
             </select>
           </Field2>
         </Row2>
-        {(form?.tipo_contrato||'hora') === 'hora' ? (
-          <Row2>
-            <Field2 label="Tarifa/hora ($)"><Input type="number" value={form?.tarifa_hora||''} onChange={(v:string)=>setForm({...form,tarifa_hora:+v})} /></Field2>
-            <Field2 label="Horas por semana"><input type="number" step="0.5" min="0" value={form?.horas_semana||''} onChange={e=>setForm({...form,horas_semana:parseFloat(e.target.value)||0})} style={IS} /></Field2>
-          </Row2>
-        ) : (
+        {(form?.tipo_contrato||'hora') === 'hora' ? (() => {
+          // Calcular horas automáticas desde cursos activos del docente
+          const cursosDocente = form?.id
+            ? cursos.filter((c: any) => c.profesora_id === form.id && c.activo !== false)
+            : []
+          const horasAuto = cursosDocente.reduce((sum: number, c: any) => {
+            if (c.hora_inicio && c.hora_fin) {
+              const [h1, m1] = c.hora_inicio.split(':').map(Number)
+              const [h2, m2] = c.hora_fin.split(':').map(Number)
+              const diff = (h2 * 60 + m2) - (h1 * 60 + m1)
+              if (diff > 0) {
+                const diasCount = Array.isArray(c.dias) ? c.dias.length : 1
+                return sum + Math.round(diff / 60 * 10) / 10 * diasCount
+              }
+            }
+            return sum + 1.5
+          }, 0)
+          const horasAutoRedondeado = Math.round(horasAuto * 2) / 2
+          const modoManual = form?._horasManual === true
+
+          return (
+            <Row2>
+              <Field2 label="Tarifa/hora ($)">
+                <Input type="number" value={form?.tarifa_hora||''} onChange={(v:string)=>setForm({...form,tarifa_hora:+v})} />
+              </Field2>
+              <Field2 label="Horas por semana">
+                {form?.id ? (
+                  <div>
+                    {!modoManual ? (
+                      <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                        <div style={{
+                          flex:1, padding:'10px 12px', border:'1.5px solid var(--border)',
+                          borderRadius:'10px', fontSize:'14px', background:'var(--bg)',
+                          color:'var(--v)', fontWeight:600,
+                        }}>
+                          {horasAutoRedondeado}hs
+                          <span style={{fontSize:'11px',color:'var(--text3)',fontWeight:400,marginLeft:'6px'}}>auto</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setForm({...form, _horasManual:true, horas_semana: horasAutoRedondeado})}
+                          style={{padding:'6px 10px',background:'var(--bg)',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'11px',fontWeight:600,color:'var(--text2)',cursor:'pointer',whiteSpace:'nowrap'}}>
+                          ✏️ Manual
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
+                        <input
+                          type="number" step="0.5" min="0"
+                          value={form?.horas_semana||''}
+                          onChange={e=>setForm({...form,horas_semana:parseFloat(e.target.value)||0})}
+                          style={{...IS,flex:1}}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setForm({...form, _horasManual:false, horas_semana: horasAutoRedondeado})}
+                          style={{padding:'6px 10px',background:'var(--vl)',border:'1.5px solid var(--v)',borderRadius:'8px',fontSize:'11px',fontWeight:600,color:'var(--v)',cursor:'pointer',whiteSpace:'nowrap'}}>
+                          ↩ Auto
+                        </button>
+                      </div>
+                    )}
+                    <div style={{fontSize:'10.5px',color:'var(--text3)',marginTop:'4px'}}>
+                      {modoManual
+                        ? `Auto calculado: ${horasAutoRedondeado}hs desde ${cursosDocente.length} curso${cursosDocente.length!==1?'s':''}`
+                        : `Calculado desde ${cursosDocente.length} curso${cursosDocente.length!==1?'s':''} activo${cursosDocente.length!==1?'s':''}`
+                      }
+                    </div>
+                  </div>
+                ) : (
+                  // Nuevo colaborador: input manual simple
+                  <input type="number" step="0.5" min="0" value={form?.horas_semana||''} onChange={e=>setForm({...form,horas_semana:parseFloat(e.target.value)||0})} style={IS} />
+                )}
+              </Field2>
+            </Row2>
+          )
+        })() : (
           <Field2 label="Sueldo mensual ($)"><Input type="number" value={form?.sueldo_fijo||''} onChange={(v:string)=>setForm({...form,sueldo_fijo:+v})} /></Field2>
         )}
       </Card>
