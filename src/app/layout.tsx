@@ -10,7 +10,10 @@ const nombre = process.env.NEXT_PUBLIC_INSTITUTO_NOMBRE || 'EduGest'
 export const metadata: Metadata = {
   title: `${nombre} — Panel de gestión`,
   description: `Sistema de gestión del Instituto de Inglés ${nombre}`,
-  // manifest removido — el icon-192.png faltante causaba recargas del SW
+  icons: {
+    icon: '/favicon.svg',
+    apple: '/favicon.svg',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'default',
