@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { verificarAuth } from '@/lib/server-utils'
 
 function getSupabase() {
   return createClient(
@@ -14,8 +13,6 @@ export async function GET(
   { params }: { params: { alumnoId: string } }
 ) {
   try {
-    const authError = await verificarAuth(req)
-    if (authError) return authError
 
     const { searchParams } = new URL(req.url)
     const cursoId      = searchParams.get('curso_id')
