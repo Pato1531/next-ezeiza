@@ -209,13 +209,15 @@ export default function Pagos() {
         .eq('activo', true)
         .lte('fecha_alta', ultimoDia)
 
-      // 2. IDs de alumnos que ya pagaron su CUOTA ese mes (excluye matrículas y otros tipos)
+      // 2. IDs de alumnos que ya pagaron su CUOTA ese mes
+      // Tipos que cuentan: cuota, recargo, cuota_recargo, null
+      // Tipos que NO cuentan: matricula, proporcional, examen
       const { data: pagaron } = await sb
         .from('pagos_alumnos')
         .select('alumno_id')
         .eq('mes', deudMes)
         .eq('anio', deudAnio)
-        .or('tipo.eq.cuota,tipo.is.null')
+        .or('tipo.is.null,tipo.eq.cuota,tipo.eq.recargo,tipo.eq.cuota_recargo')
 
       const pagaronSet = new Set((pagaron || []).map((r: any) => r.alumno_id))
 
