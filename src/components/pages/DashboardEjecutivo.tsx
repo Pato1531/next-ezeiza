@@ -916,10 +916,10 @@ export default function DashboardEjecutivo() {
           {/* C) Proyección colaboradores */}
           <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
             <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'12px'}}>
-              Proyección colaboradores — {proxMesNombre} {proxAnio}
+              Proyección colaboradores — {mesNombre} {anio}
             </div>
             {(() => {
-              const totalColabProx = liqProxMes + totalLiqSecretarias
+              const totalColabProx = totalLiqDocentes + totalLiqSecretarias
               const delta = totalColabAnt > 0 ? totalColabProx - totalColabAnt : null
               const deltaSign = delta !== null ? (delta >= 0 ? '+' : '') : ''
               return (
@@ -929,14 +929,14 @@ export default function DashboardEjecutivo() {
                     <div>
                       <div style={{fontSize:'13px',fontWeight:700,color:'var(--red)'}}>Liquidaciones docentes</div>
                       <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}}>
-                        {rentabilidadCursos.length} curso{rentabilidadCursos.length!==1?'s':''} · {new Set(rentabilidadCursos.map((c:any)=>c.profesora)).size} docente{new Set(rentabilidadCursos.map((c:any)=>c.profesora)).size!==1?'s':''}
+                        {liqsDocentes.length} curso{liqsDocentes.length!==1?'s':''} · {new Set(liqsDocentes.map((l:any)=>l.profesora_id)).size} docente{new Set(liqsDocentes.map((l:any)=>l.profesora_id)).size!==1?'s':''}
                       </div>
                     </div>
                     <div style={{textAlign:'right'}}>
-                      <div style={{fontSize:'22px',fontWeight:800,color:'var(--red)'}}>{fmt$(liqProxMes)}</div>
+                      <div style={{fontSize:'22px',fontWeight:800,color:'var(--red)'}}>{fmt$(totalLiqDocentes)}</div>
                       {totalLiqDocentesAnt > 0 && (
                         <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>
-                          vs {mesAntNombre}: {liqProxMes - totalLiqDocentesAnt >= 0 ? '+' : ''}{fmt$(liqProxMes - totalLiqDocentesAnt)}
+                          vs {mesAntNombre}: {totalLiqDocentes - totalLiqDocentesAnt >= 0 ? '+' : ''}{fmt$(totalLiqDocentes - totalLiqDocentesAnt)}
                         </div>
                       )}
                     </div>
@@ -984,7 +984,7 @@ export default function DashboardEjecutivo() {
               const ingCuotas  = proyeccionMes?.objetivo || proyeccion || 0
               const ingExtra   = totalIngresosExtra
               const totalIng   = ingCuotas + ingExtra
-              const costoDoc        = liqProxMes           // docentes: proyectado por calendario
+              const costoDoc        = totalLiqDocentes       // docentes: liquidaciones reales del mes
               const sueldosAdminEst = totalLiqSecretarias  // secretarias: liquidaciones reales del mes
               // totalEgresosConceptos: egresos manuales (sin Sueldos Admin — ya viene de liq)
               const otrosEgr   = totalEgresosConceptos
@@ -1036,7 +1036,7 @@ export default function DashboardEjecutivo() {
                     {/* — Egresos — */}
                     <div style={{fontSize:'10px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.06em',padding:'6px 0 4px'}}>Egresos</div>
                     <div style={{display:'flex',justifyContent:'space-between',padding:'7px 10px',background:'var(--redl)',borderRadius:'8px 8px 0 0',fontSize:'13px',marginBottom:'1px'}}>
-                      <span style={{color:'var(--text2)'}}>Liquidaciones docentes (proyectado)</span>
+                      <span style={{color:'var(--text2)'}}>Liquidaciones docentes</span>
                       <span style={{fontWeight:600,color:'var(--red)'}}>{fmt$(costoDoc)}</span>
                     </div>
                     <div style={{display:'flex',justifyContent:'space-between',padding:'7px 10px',background:'var(--amberl)',borderRadius:'0',fontSize:'13px',marginBottom:'1px'}}>
