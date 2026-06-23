@@ -151,67 +151,103 @@ export default function Reportes() {
     setLoadingAusentes(true)
     const sb = createClient()
     try {
-    // Traer últimas 2 clases por curso junto con asistencia
-    const { data, error } = await sb
-      .from('asistencia_clases')
-      .select('alumno_id, estado, alumnos(nombre, apellido, color, activo), clases(fecha, curso_id, cursos(nombre))')
-      .limit(1000)
-    if (!data || error) { setLoadingAusentes(false); return }
+      // 1. Traer todos los cursos con sus alumnos activos
+      const { data: cursosAlumnos } = await sb
+        .from('cursos_alumnos')
+        .select('curso_id, alumno_id, alumnos(nombre, apellido, color, activo)')
+      if (!cursosAlumnos) { setLoadingAusentes(false); return }
 
-    // Filtrar alumnos dados de baja
-    const dataActivos = data.filter((a:any) => a.alumnos?.activo !== false)
+      // Filtrar alumnos dados de baja
+      const caActivos = cursosAlumnos.filter((ca: any) => ca.alumnos?.activo !== false)
 
-    // Agrupar por alumno+curso: obtener las últimas 2 clases
-    const porAlumnoCurso: Record<string,any[]> = {}
-    dataActivos.forEach((a:any) => {
-      const key = `${a.alumno_id}_${a.clases?.curso_id}`
-      if (!porAlumnoCurso[key]) porAlumnoCurso[key] = []
-      porAlumnoCurso[key].push(a)
-    })
+      // Agrupar alumnos por curso
+      const porCurso: Record<string, string[]> = {}
+      caActivos.forEach((ca: any) => {
+        if (!porCurso[ca.curso_id]) porCurso[ca.curso_id] = []
+        porCurso[ca.curso_id].push(ca.alumno_id)
+      })
 
-    // Para cada alumno+curso, ordenar por fecha y evaluar las últimas 2
-    const porAlumno: Record<string,any> = {}
-    Object.values(porAlumnoCurso).forEach((registros: any[]) => {
-      const sorted = registros.sort((a,b) => (b.clases?.fecha||'').localeCompare(a.clases?.fecha||''))
-      const ultima = sorted[0]
-      const anteultima = sorted[1]
-      const alumnoId = ultima.alumno_id
-      const alumnoNombre = ultima.alumnos?.nombre
-      const alumnoApellido = ultima.alumnos?.apellido
-      const color = ultima.alumnos?.color || '#652f8d'
-      const cursoNombre = ultima.clases?.cursos?.nombre || '—'
-      const cursoId = ultima.clases?.curso_id
-
-      // Si la ÚLTIMA clase el alumno asistió, no mostrar (eliminarlo del reporte)
-      if (ultima.estado === 'P' || ultima.estado === 'T') return
-
-      // Si la última fue ausente, mostrarlo
-      if (ultima.estado === 'A') {
-        if (!porAlumno[alumnoId]) porAlumno[alumnoId] = {
-          alumno_id: alumnoId, nombre: alumnoNombre, apellido: alumnoApellido, color, ausencias: []
-        }
-        porAlumno[alumnoId].ausencias.push({ fecha: ultima.clases?.fecha, curso: cursoNombre, curso_id: cursoId })
-
-        // Si la anteúltima también fue ausente, agregar segunda falta
-        if (anteultima && anteultima.estado === 'A') {
-          porAlumno[alumnoId].ausencias.push({ fecha: anteultima.clases?.fecha, curso: cursoNombre, curso_id: cursoId })
-        }
-      }
-    })
-    const alertas: any[] = []
-    Object.values(porAlumno).forEach((al:any) => {
-      const porCurso: Record<string,any[]> = {}
-      al.ausencias.forEach((a:any) => { if(!porCurso[a.curso_id])porCurso[a.curso_id]=[]; porCurso[a.curso_id].push(a) })
-      Object.entries(porCurso).forEach(([, aus]) => {
-        const sorted = [...(aus as any[])].sort((a,b)=>a.fecha?.localeCompare(b.fecha))
-        if (sorted.length >= 2) {
-          alertas.push({ alumno_id:al.alumno_id, nombre:al.nombre, apellido:al.apellido, color:al.color, curso:sorted[0].curso, fechas:sorted.slice(-2).map((u:any)=>u.fecha), total:sorted.length })
+      // Mapa alumno_id -> datos
+      const alumnosDatos: Record<string, { nombre: string; apellido: string; color: string }> = {}
+      caActivos.forEach((ca: any) => {
+        if (ca.alumnos && !alumnosDatos[ca.alumno_id]) {
+          alumnosDatos[ca.alumno_id] = {
+            nombre: ca.alumnos.nombre || '—',
+            apellido: ca.alumnos.apellido || '',
+            color: ca.alumnos.color || '#652f8d',
+          }
         }
       })
-    })
-    setAusentes(Object.values(porAlumno))
-    setAlertas2Cons(alertas)
-    } catch { } finally { setLoadingAusentes(false) }
+
+      // Mapa curso_id -> nombre (desde hook useCursos)
+      const cursoNombres: Record<string, string> = {}
+      cursos.forEach((c: any) => { cursoNombres[c.id] = c.nombre })
+
+      // 2. Por cada curso: ultimas 10 clases + asistencia (identico al Dashboard)
+      const alertasMap: Record<string, { nombre: string; apellido: string; color: string; consecutivas: number; curso: string; fechas: string[] }> = {}
+      const ausentesMap: Record<string, { alumno_id: string; nombre: string; apellido: string; color: string; ausencias: { fecha: string; curso: string; curso_id: string }[] }> = {}
+
+      await Promise.all(Object.entries(porCurso).map(async ([curso_id, alumnoIds]) => {
+        const { data: clases } = await sb.from('clases')
+          .select('id, fecha').eq('curso_id', curso_id).order('fecha', { ascending: false }).limit(10)
+        if (!clases?.length) return
+
+        const claseIds = clases.map((c: any) => c.id)
+        const { data: asist } = await sb.from('asistencia_clases')
+          .select('alumno_id, clase_id, estado')
+          .in('clase_id', claseIds)
+          .in('alumno_id', alumnoIds)
+
+        const porAlumno: Record<string, Record<string, string>> = {}
+        asist?.forEach((a: any) => {
+          if (!porAlumno[a.alumno_id]) porAlumno[a.alumno_id] = {}
+          porAlumno[a.alumno_id][a.clase_id] = a.estado
+        })
+
+        alumnoIds.forEach(alumno_id => {
+          const reg = porAlumno[alumno_id] || {}
+          let consecutivas = 0
+          const fechasAusentes: string[] = []
+
+          for (const clase of clases) { // mas reciente primero
+            const estado = reg[clase.id]
+            if (estado === 'A') {
+              consecutivas++
+              fechasAusentes.push(clase.fecha)
+            } else if (estado === 'P' || estado === 'T') {
+              break
+            }
+          }
+
+          const datos = alumnosDatos[alumno_id]
+          if (!datos) return
+          const cursoNombre = cursoNombres[curso_id] || '—'
+
+          if (consecutivas >= 1) {
+            if (!ausentesMap[alumno_id]) {
+              ausentesMap[alumno_id] = { alumno_id, nombre: datos.nombre, apellido: datos.apellido, color: datos.color, ausencias: [] }
+            }
+            fechasAusentes.forEach(f => ausentesMap[alumno_id].ausencias.push({ fecha: f, curso: cursoNombre, curso_id }))
+          }
+
+          if (consecutivas >= 2 && !alertasMap[alumno_id]) {
+            alertasMap[alumno_id] = {
+              nombre: datos.nombre, apellido: datos.apellido,
+              color: datos.color, consecutivas,
+              curso: cursoNombre,
+              fechas: [...fechasAusentes].reverse().slice(-2),
+            }
+          }
+        })
+      }))
+
+      setAusentes(Object.values(ausentesMap))
+      setAlertas2Cons(Object.entries(alertasMap).map(([alumno_id, v]) => ({ alumno_id, ...v, total: v.consecutivas })))
+    } catch (e) {
+      console.error('[cargarAusentes]', e)
+    } finally {
+      setLoadingAusentes(false)
+    }
   }
 
   const exportAusentesPDF = () => {
