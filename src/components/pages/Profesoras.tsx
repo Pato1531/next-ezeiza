@@ -20,6 +20,22 @@ export default function Profesoras() {
   const [liqsInforme, setLiqsInforme] = useState<Record<string, number>>({})
   const { usuario } = useAuth()
 
+  // ── Resumen de liquidaciones (todas las colaboradoras, un mes a la vez) ──
+  const MESES_RESUMEN = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+  const [modalResumenLiq, setModalResumenLiq] = useState(false)
+  const [resumenMes, setResumenMes] = useState(MESES_RESUMEN[new Date().getMonth()])
+  const [resumenAnio, setResumenAnio] = useState(new Date().getFullYear())
+  const [resumenLiqs, setResumenLiqs] = useState<any[]>([])
+  const [resumenLoading, setResumenLoading] = useState(false)
+
+  useEffect(() => {
+    if (!modalResumenLiq) return
+    setResumenLoading(true)
+    const sb = createClient()
+    sb.from('liquidaciones').select('*').eq('mes', resumenMes).eq('anio', resumenAnio)
+      .then(({ data }) => { setResumenLiqs(data || []); setResumenLoading(false) })
+  }, [modalResumenLiq, resumenMes, resumenAnio])
+
   // Al abrir el informe, cargar la última liquidación confirmada de los admins
   useEffect(() => {
     if (!modalInforme || profesoras.length === 0) return
@@ -202,6 +218,12 @@ export default function Profesoras() {
         <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
           {soloLectura && <Badge cls="b-purple">Solo lectura</Badge>}
           <button
+            onClick={() => setModalResumenLiq(true)}
+            style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'12.5px',fontWeight:600,cursor:'pointer'}}>
+            <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M3 8h14M7 12h2M11 12h2M7 15h2"/></svg>
+            Resumen de liquidaciones
+          </button>
+          <button
             onClick={() => setModalInforme(true)}
             style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'12.5px',fontWeight:600,cursor:'pointer'}}>
             <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 17H5a2 2 0 01-2-2V5a2 2 0 012-2h10a2 2 0 012 2v5M13 17h4m0 0v-4m0 4l-5-5"/></svg>
@@ -217,6 +239,146 @@ export default function Profesoras() {
           )}
         </div>
       </div>
+      {/* ── Modal Resumen de Liquidaciones (todas las colaboradoras, un mes) ── */}
+      {modalResumenLiq && (() => {
+        const fmt$ = (n: number) => `$${(n||0).toLocaleString('es-AR')}`
+        const filasOrdenadas = profesoras.map((p:any) => {
+          const liq = resumenLiqs.find((l:any) => l.profesora_id === p.id)
+          return { p, liq }
+        }).sort((a:any,b:any) => {
+          // sin generar primero, después por nombre
+          const rango = (l:any) => !l ? 0 : l.estado === 'borrador' ? 1 : l.estado === 'confirmada' ? 2 : l.estado === 'pagada' ? 3 : l.estado === 'cerrada' ? 4 : 0
+          return rango(a.liq) - rango(b.liq) || a.p.nombre.localeCompare(b.p.nombre)
+        })
+        const totalPeriodo = resumenLiqs.reduce((s:number,l:any) => s + (l.total||0), 0)
+        const pagadas = resumenLiqs.filter((l:any) => l.estado === 'pagada').length
+        const cerradas = resumenLiqs.filter((l:any) => l.estado === 'cerrada').length
+        const confirmadas = resumenLiqs.filter((l:any) => l.estado === 'confirmada').length
+        const sinGenerar = profesoras.length - resumenLiqs.length
+        const estadoEstilo = (estado: string | undefined) => {
+          if (!estado) return { bg:'var(--bg)', c:'var(--text3)', label:'Sin generar' }
+          if (estado === 'pagada') return { bg:'var(--greenl)', c:'var(--green)', label:'Pagada' }
+          if (estado === 'cerrada') return { bg:'#e8e4f5', c:'#5a4d8a', label:'🔒 Cerrada' }
+          if (estado === 'confirmada') return { bg:'var(--vl)', c:'var(--v)', label:'Confirmada' }
+          return { bg:'var(--amberl)', c:'var(--amber)', label:'Borrador' }
+        }
+        const irALiqDe = (profId: string) => {
+          setModalResumenLiq(false)
+          setSelId(profId)
+          setVista('detalle')
+          setTab('liquidacion')
+        }
+        const exportarPDF = () => {
+          const win = window.open('', '_blank')
+          if (!win) return
+          win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Resumen de liquidaciones ${resumenMes} ${resumenAnio}</title><style>
+            body{font-family:sans-serif;padding:24px;font-size:12px;color:#222}
+            h1{color:#652f8d;font-size:18px;margin-bottom:4px}
+            .sub{color:#9b8eaa;font-size:11px;margin-bottom:20px}
+            .logo{font-size:18px;font-weight:700;color:#652f8d}
+            .fecha{font-size:11px;color:#9b8eaa;text-align:right}
+            table{width:100%;border-collapse:collapse;margin-top:12px}
+            th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#9b8eaa;padding:6px 8px;border-bottom:2px solid #e8e0f0}
+            td{padding:8px;border-bottom:1px solid #f0ecf7;font-size:12.5px}
+            .pill{padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700}
+            @media print{body{padding:16px}}
+          </style></head><body>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #652f8d;padding-bottom:12px;margin-bottom:16px">
+            <div class="logo">Next Ezeiza</div>
+            <div class="fecha">Generado: ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
+          </div>
+          <h1>Resumen de liquidaciones — ${resumenMes} ${resumenAnio}</h1>
+          <div class="sub">${profesoras.length} colaboradores · Total del período: $${totalPeriodo.toLocaleString('es-AR')}</div>
+          <table><thead><tr><th>Colaborador/a</th><th>Estado</th><th>Total</th></tr></thead><tbody>
+          ${filasOrdenadas.map((f:any) => {
+            const e = estadoEstilo(f.liq?.estado)
+            return `<tr><td>${f.p.nombre} ${f.p.apellido}</td><td><span class="pill" style="background:${e.bg};color:${e.c}">${e.label}</span></td><td>${f.liq?.total!=null?'$'+f.liq.total.toLocaleString('es-AR'):'—'}</td></tr>`
+          }).join('')}
+          </tbody></table>
+          <script>window.onload=()=>window.print()<\/script></body></html>`)
+          win.document.close()
+        }
+
+        return (
+          <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.45)',zIndex:1000,display:'flex',alignItems:'flex-start',justifyContent:'center',padding:'20px',overflowY:'auto'}}
+            onClick={e => { if(e.target===e.currentTarget) setModalResumenLiq(false) }}>
+            <div style={{background:'var(--white)',borderRadius:'16px',width:'100%',maxWidth:'680px',padding:'20px',marginBottom:'20px'}}>
+              {/* Header */}
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'14px',flexWrap:'wrap',gap:'10px'}}>
+                <div>
+                  <div style={{fontSize:'17px',fontWeight:700}}>Resumen de liquidaciones</div>
+                  <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'2px'}}>{profesoras.length} colaboradores</div>
+                </div>
+                <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
+                  <button onClick={exportarPDF}
+                    style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'12px',fontWeight:600,cursor:'pointer'}}>
+                    <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 16v1a1 1 0 001 1h10a1 1 0 001-1v-1M7 10l3 3 3-3M10 3v10"/></svg>
+                    Exportar PDF
+                  </button>
+                  <button onClick={() => setModalResumenLiq(false)}
+                    style={{width:32,height:32,borderRadius:'8px',background:'var(--bg)',border:'1px solid var(--border)',cursor:'pointer',fontSize:'18px',color:'var(--text2)',display:'flex',alignItems:'center',justifyContent:'center'}}>
+                    ×
+                  </button>
+                </div>
+              </div>
+
+              {/* Selector de período */}
+              <div style={{display:'flex',gap:'8px',marginBottom:'16px'}}>
+                <select style={{...IS,flex:2}} value={resumenMes} onChange={e => setResumenMes(e.target.value)}>
+                  {MESES_RESUMEN.map(m => <option key={m}>{m}</option>)}
+                </select>
+                <select style={{...IS,flex:1}} value={resumenAnio} onChange={e => setResumenAnio(+e.target.value)}>
+                  {[0,1,2].map(d => { const a = new Date().getFullYear()-d; return <option key={a} value={a}>{a}</option> })}
+                </select>
+              </div>
+
+              {resumenLoading ? (
+                <div style={{textAlign:'center',padding:'32px',color:'var(--text3)'}}>Cargando...</div>
+              ) : (
+                <>
+                  {/* KPIs resumen */}
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px',marginBottom:'16px'}}>
+                    {[
+                      {label:'Total período', val: fmt$(totalPeriodo), color:'var(--v)', bg:'var(--vl)'},
+                      {label:'Pagadas',       val: pagadas,  color:'var(--green)', bg:'var(--greenl)'},
+                      {label:'Confirmadas',   val: confirmadas, color:'var(--v)', bg:'var(--vl)'},
+                      {label:'Sin generar',   val: sinGenerar, color: sinGenerar>0 ? 'var(--amber)' : 'var(--text3)', bg: sinGenerar>0 ? 'var(--amberl)' : 'var(--bg)'},
+                    ].map(k => (
+                      <div key={k.label} style={{background:k.bg,borderRadius:'10px',padding:'10px 8px',textAlign:'center'}}>
+                        <div style={{fontSize:'16px',fontWeight:800,color:k.color}}>{k.val}</div>
+                        <div style={{fontSize:'9.5px',fontWeight:600,color:k.color,opacity:.85,marginTop:'2px'}}>{k.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Lista por colaborador */}
+                  <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                    {filasOrdenadas.map((f:any) => {
+                      const e = estadoEstilo(f.liq?.estado)
+                      return (
+                        <div key={f.p.id} onClick={() => irALiqDe(f.p.id)}
+                          style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',border:'1.5px solid var(--border)',borderRadius:'12px',cursor:'pointer'}}
+                          onMouseEnter={ev=>(ev.currentTarget.style.borderColor='var(--v)')}
+                          onMouseLeave={ev=>(ev.currentTarget.style.borderColor='var(--border)')}>
+                          <Av color={f.p.color} size={32}>{f.p.initials||`${f.p.nombre[0]}${f.p.apellido[0]}`}</Av>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontSize:'13.5px',fontWeight:600}}>{f.p.nombre} {f.p.apellido}</div>
+                          </div>
+                          <span style={{fontSize:'10px',fontWeight:700,padding:'2px 9px',borderRadius:'8px',background:e.bg,color:e.c,whiteSpace:'nowrap'}}>{e.label}</span>
+                          <div style={{fontSize:'14px',fontWeight:700,color:'var(--v)',minWidth:'70px',textAlign:'right'}}>
+                            {f.liq?.total!=null ? fmt$(f.liq.total) : '—'}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )
+      })()}
+
       {/* ── Modal Informe del Equipo ── */}
       {modalInforme && (() => {
         const fmt$ = (n: number) => `$${n.toLocaleString('es-AR')}`
