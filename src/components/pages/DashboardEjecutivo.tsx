@@ -47,8 +47,7 @@ export default function DashboardEjecutivo() {
   const anioAnt      = mes === 0 ? anio - 1 : anio
   const mesAntNombre = MESES[mesAntIdx]
 
-  useEffect(() => {
-    const cargar = async () => {
+  const cargar = useCallback(async () => {
       setLoading(true)
       const sb = createClient()
       // finMes: construido sin toISOString() para evitar bug de timezone UTC-3
@@ -155,11 +154,10 @@ export default function DashboardEjecutivo() {
       setAsistenciaRiesgo((riesgoData || []).filter((r: any) => r.clases?.cursos?.activo !== false))
 
       setLoading(false)
-    }
-    cargar()
+  }, [mes, anio, usuario?.instituto_id])
 
-    // Cargar estado de resultado (conceptos editables)
-    const cargarER = async () => {
+  // Cargar estado de resultado (conceptos editables)
+  const cargarER = useCallback(async () => {
       try {
         const res = await fetch(`/api/estado-resultado?mes=${MESES[mes]}&anio=${anio}`, {
           headers: apiHeaders()
@@ -179,12 +177,31 @@ export default function DashboardEjecutivo() {
           setPreCargadoDesde(null)
         }
       } catch (e) { console.warn('[DashEjecutivo] estado-resultado error:', e) }
-    }
+  }, [mes, anio])
+
+  useEffect(() => {
+    cargar()
     // Delay para que apiHeaders() tenga el instituto_id seteado
     // Intentar a los 800ms y de nuevo a los 2500ms como fallback
     setTimeout(cargarER, 800)
     setTimeout(cargarER, 2500)
-  }, [mes, anio, usuario?.instituto_id])
+  }, [cargar, cargarER])
+
+  // ── Refrescar al volver a esta pantalla ────────────────────────────────
+  // Esta pantalla carga sus datos una sola vez al montarse. Si el usuario crea
+  // o edita algo en otra pestaña/pantalla (ej: una liquidación en Profesoras) y
+  // vuelve sin recargar la página entera, acá seguía viendo los datos viejos.
+  // Recargamos apenas la pestaña/ventana recupera el foco, sin esperar F5.
+  useEffect(() => {
+    const onFocus = () => { cargar(); cargarER() }
+    const onVisible = () => { if (document.visibilityState === 'visible') onFocus() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [cargar, cargarER])
 
   // Sincronizar erIngresos con pagos reales cuando estos cargan
   // Esto garantiza que el EERR siempre muestre el total correcto
