@@ -5,8 +5,20 @@ import { useAlumnos, useProfesoras, useCursos, useMiProfesora, store } from '@/l
 import { createClient } from '@/lib/supabase'
 import { showToast } from '../Toast'
 import { apiHeaders } from '@/lib/hooks'
+import { calcularEstadoUnidad } from '@/lib/planificacion'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+
+// Fecha local (no UTC) — mismo criterio que el resto del archivo, evita mismatch de timezone
+function hoyISOLocal() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+function en14DiasLocal() {
+  const d = new Date()
+  d.setDate(d.getDate() + 14)
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
 
 // Normalizar teléfono al formato wa.me (+54 9 11 XXXXXXXX)
 function normalizarTelDash(tel?: string) {
@@ -64,6 +76,7 @@ export default function Dashboard() {
   const [resMesProfAnio, setResMesProfAnio] = useState(new Date().getFullYear())
   const [resumenProfesoras, setResumenProfesoras] = useState<any[]>([])
   const [loadingResumenProf, setLoadingResumenProf] = useState(false)
+  const [alertasPlanificacion, setAlertasPlanificacion] = useState<any[]>([])
   const [proximosEventos, setProximosEventos] = useState<any[]>([])
   const [cumpleanos, setCumpleanos] = useState<any[]>([])
   const [asistModal, setAsistModal] = useState<{curso: any; alumnos: any[]} | null>(null)
@@ -331,6 +344,67 @@ export default function Dashboard() {
     }
     cargar()
   }, [usuario?.rol, usuario?.instituto_id, profesoras.length, resMesProfIdx, resMesProfAnio])
+
+  // ── Alerta de atraso de planificación por profesora ──────────────────────
+  // Cruza planificacion_cursos (fecha_cierre vs hoy) con agenda_eventos tipo
+  // Examen para escalar a "crítico" cuando hay un examen a menos de 14 días
+  // y todavía queda contenido sin dictar.
+  useEffect(() => {
+    if (!usuario?.rol || !['director','coordinadora'].includes(usuario.rol)) return
+    if (!cursos.length || !profesoras.length) return
+    if (!usuario?.instituto_id) return
+    const cargar = async () => {
+      const sb = createClient()
+      const cursoIds = cursos.map((c: any) => c.id)
+
+      const [planifRes, examsRes] = await Promise.all([
+        sb.from('planificacion_cursos')
+          .select('id,curso_id,estado,fecha_inicio,fecha_cierre')
+          .in('curso_id', cursoIds),
+        sb.from('agenda_eventos')
+          .select('id,tipo,fecha,docente_id')
+          .eq('instituto_id', usuario.instituto_id)
+          .eq('tipo', 'Examen')
+          .gte('fecha', hoyISOLocal())
+          .lte('fecha', en14DiasLocal()),
+      ])
+      const unidades = planifRes.data || []
+      const examenes = examsRes.data || []
+
+      // Unidades realmente atrasadas (calculado, no el campo manual)
+      const atrasadasPorCurso: Record<string, number> = {}
+      unidades.forEach((u: any) => {
+        if (calcularEstadoUnidad(u) === 'atrasada') {
+          atrasadasPorCurso[u.curso_id] = (atrasadasPorCurso[u.curso_id] || 0) + 1
+        }
+      })
+
+      // Hay examen general (sin docente asociado) o para un docente puntual
+      const hayExamenGeneral = examenes.some((e: any) => !e.docente_id)
+      const docentesConExamen = new Set(examenes.filter((e: any) => e.docente_id).map((e: any) => e.docente_id))
+
+      const porProfesora: Record<string, { profesora_id: string; nombre: string; apellido: string; color: string; atrasadas: number; cursos: string[]; critico: boolean }> = {}
+      cursos.forEach((c: any) => {
+        const atrasadas = atrasadasPorCurso[c.id] || 0
+        if (atrasadas === 0 || !c.profesora_id) return
+        const prof = profesoras.find((p: any) => p.id === c.profesora_id)
+        if (!prof) return
+        const examenProximo = hayExamenGeneral || docentesConExamen.has(c.profesora_id)
+        if (!porProfesora[c.profesora_id]) {
+          porProfesora[c.profesora_id] = {
+            profesora_id: c.profesora_id, nombre: prof.nombre, apellido: prof.apellido,
+            color: prof.color || '#652f8d', atrasadas: 0, cursos: [], critico: false,
+          }
+        }
+        porProfesora[c.profesora_id].atrasadas += atrasadas
+        porProfesora[c.profesora_id].cursos.push(`${c.nombre} (${atrasadas})`)
+        if (atrasadas >= 2 || examenProximo) porProfesora[c.profesora_id].critico = true
+      })
+
+      setAlertasPlanificacion(Object.values(porProfesora).sort((a, b) => b.atrasadas - a.atrasadas))
+    }
+    cargar()
+  }, [usuario?.rol, usuario?.instituto_id, cursos.length, profesoras.length])
 
   const abrirAsistencia = async (curso: any) => {
     const sb = createClient()
@@ -756,7 +830,7 @@ export default function Dashboard() {
   const alertasTestDocente = alertasTest.filter((a: any) => a.profesora_id === miProfesora?.id)
   const alertasTestGestion = alertasTest // director, coordinadora y secretaria ven todas
 
-  const alertasUrgentes = alertasAusencia.length > 0 || alumnosSinCurso > 0 || cuotasPendientes > 0 || cumpleanos.some((c:any) => c.diasParaCumple === 0) || alertasTest.length > 0
+  const alertasUrgentes = alertasAusencia.length > 0 || alumnosSinCurso > 0 || cuotasPendientes > 0 || cumpleanos.some((c:any) => c.diasParaCumple === 0) || alertasTest.length > 0 || alertasPlanificacion.length > 0
 
   return (
     <div className="fade-in">
@@ -774,7 +848,7 @@ export default function Dashboard() {
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
             <SL>Alertas</SL>
             <span style={{padding:'2px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:700,background:'var(--redl)',color:'var(--red)'}}>
-              {[alertasAusencia.length>0,alumnosSinCurso>0,cuotasPendientes>0].filter(Boolean).length + cumpleanos.filter((c:any)=>c.diasParaCumple===0).length + alertasTest.length} pendiente{[alertasAusencia.length>0,alumnosSinCurso>0,cuotasPendientes>0].filter(Boolean).length + cumpleanos.filter((c:any)=>c.diasParaCumple===0).length + alertasTest.length !== 1 ? 's' : ''}
+              {[alertasAusencia.length>0,alumnosSinCurso>0,cuotasPendientes>0].filter(Boolean).length + cumpleanos.filter((c:any)=>c.diasParaCumple===0).length + alertasTest.length + alertasPlanificacion.length} pendiente{[alertasAusencia.length>0,alumnosSinCurso>0,cuotasPendientes>0].filter(Boolean).length + cumpleanos.filter((c:any)=>c.diasParaCumple===0).length + alertasTest.length + alertasPlanificacion.length !== 1 ? 's' : ''}
             </span>
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
@@ -807,6 +881,31 @@ export default function Dashboard() {
               <Alerta tipo="amber" icono="📋">
                 <strong>{alumnosSinCurso} alumno{alumnosSinCurso!==1?'s':''}</strong> sin curso asignado
               </Alerta>
+            )}
+
+            {/* ── Atraso de planificación — cruzado con fechas de Agenda ── */}
+            {alertasPlanificacion.length > 0 && (
+              <Alerta tipo={alertasPlanificacion.some((a:any)=>a.critico) ? 'red' : 'amber'} icono="📚">
+                <strong>{alertasPlanificacion.length} profesora{alertasPlanificacion.length!==1?'s':''}</strong> con atraso de planificación
+              </Alerta>
+            )}
+            {alertasPlanificacion.length > 0 && (
+              <div style={{display:'flex',flexDirection:'column',gap:'6px',marginTop:'2px'}}>
+                {alertasPlanificacion.map((a:any, i:number) => (
+                  <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 14px',background:'var(--white)',border:`1.5px solid ${a.critico?'#f5c5c5':'#e8d080'}`,borderRadius:'14px'}}>
+                    <Av color={a.color} nombre={a.nombre} apellido={a.apellido} size={36} />
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:'13.5px',fontWeight:600}}>{a.nombre} {a.apellido}</div>
+                      <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'1px'}}>
+                        {a.cursos.join(' · ')}
+                      </div>
+                    </div>
+                    <span style={{padding:'3px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:a.critico?'var(--redl)':'var(--amberl)',color:a.critico?'var(--red)':'var(--amber)',flexShrink:0}}>
+                      {a.atrasadas} unid.{a.critico?' ⚠':''}
+                    </span>
+                  </div>
+                ))}
+              </div>
             )}
             {(usuario?.rol === 'director' || usuario?.rol === 'secretaria') && cuotasPendientes > 0 && (
               <Alerta tipo="amber" icono="💰">
