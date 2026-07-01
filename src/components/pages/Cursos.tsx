@@ -4,25 +4,10 @@ import { useCursos, useProfesoras, useAlumnos, useCursoAlumnos, useClases, useMi
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 import { showToast } from '../Toast'
+import { calcularEstadoUnidad } from '@/lib/planificacion'
 
 function hoy() { return new Date().toISOString().split('T')[0] }
 function fmtFecha(f: string) { if(!f)return'—'; const [y,m,d]=f.split('-'); return `${d}/${m}/${y}` }
-
-// ── Estado efectivo de una unidad de planificación ──────────────────────────
-// Única fuente de verdad, usada por la tab Planificación y por la tab Progreso.
-// Lo único manual es "dictada" (el tap del checkbox). Todo lo demás — pendiente,
-// en_curso, atrasada — se calcula SIEMPRE comparando fechas contra hoy, nunca
-// queda un valor viejo guardado en la base sin actualizarse.
-type EstadoUnidadCalc = 'pendiente' | 'en_curso' | 'atrasada' | 'dictada'
-function calcularEstadoUnidad(u: { estado?: string; fecha_inicio?: string | null; fecha_cierre?: string | null }): EstadoUnidadCalc {
-  if (u.estado === 'dictada') return 'dictada'
-  const hoyStr = hoy()
-  const fc = u.fecha_cierre || null
-  const fi = u.fecha_inicio || null
-  if (fc && fc < hoyStr) return 'atrasada'
-  if (fi && fi <= hoyStr && (!fc || fc >= hoyStr)) return 'en_curso'
-  return 'pendiente'
-}
 
 const NIVELES = ['Básico','Intermedio','Advanced','Cambridge']
 const NIVEL_COL: Record<string,{bg:string,text:string}> = {
@@ -720,6 +705,19 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, puedeEditarPl
   }
   const [nuevaClase, setNuevaClase] = useState({ fecha: hoy(), tema:'', descripcion:'' })
   const [guardando, setGuardando] = useState(false)
+  // ── Puente Planilla → Planificación ──────────────────────────────────────
+  // Tras guardar una clase, según cómo esté la unidad en curso respecto a esa fecha:
+  // - Ya venció el cierre → pregunta si la terminó ('unidad')
+  // - Es la primera clase dentro del rango de la unidad → aviso neutro ('recordatorio', tono 'inicio')
+  // - Faltan 7 días o menos para el cierre → aviso más urgente ('recordatorio', tono 'cierre')
+  // - Cualquier otro caso (clase del medio) → no interrumpe, cierra normal
+  const [pasoModalClase, setPasoModalClase] = useState<'form'|'unidad'|'recordatorio'>('form')
+  const [tonoRecordatorio, setTonoRecordatorio] = useState<'inicio'|'cierre'>('inicio')
+  const [diasParaCierre, setDiasParaCierre] = useState(0)
+  const [unidadSugerida, setUnidadSugerida] = useState<any>(null)
+  const [unidadesPendientes, setUnidadesPendientes] = useState<any[]>([])
+  const [eligiendoUnidad, setEligiendoUnidad] = useState(false)
+  const [marcandoUnidad, setMarcandoUnidad] = useState(false)
   const asistCacheKey = `asistencias_${c.id}`
   const [asistencias, setAsistencias] = useState<Record<string,Record<string,string>>>(
     store[asistCacheKey] ?? {}
@@ -1098,17 +1096,106 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, puedeEditarPl
       if (resultado) {
         // Agregar inmediatamente a la lista local (optimistic confirmado por DB)
         setClasesLocal(prev => [resultado, ...prev])
-        setModalClase(false)
+        const fechaClaseGuardada = nuevaClase.fecha
         setNuevaClase({ fecha: hoy(), tema:'', descripcion:'' })
         showToast('Clase registrada')
+        await _buscarUnidadParaSugerir(fechaClaseGuardada)
       } else {
         showToast('No se pudo registrar la clase. Revisá la conexión e intentá de nuevo.', 'error')
+        setModalClase(false)
       }
     } catch (e) {
       console.error('[guardarClase]', e)
       showToast('Error inesperado al guardar la clase.', 'error')
+      setModalClase(false)
     }
     setGuardando(false)
+  }
+
+  // Busca unidades cuya fecha de cierre ya llegó (respecto a la fecha de ESTA clase,
+  // no la de hoy) y que todavía no fueron marcadas dictada. Nunca sugiere una unidad
+  // que recién está arrancando — una unidad dura varias clases, no una sola.
+  const _buscarUnidadParaSugerir = async (fechaClase: string) => {
+    try {
+      const sb = createClient()
+      const { data } = await sb.from('planificacion_cursos')
+        .select('*').eq('curso_id', c.id).order('orden').order('created_at')
+      const unidades = data || []
+
+      // 1) ¿Alguna unidad ya venció su cierre? → pedir confirmación de cierre
+      const vencidas = unidades.filter((u:any) =>
+        u.estado !== 'dictada' && u.fecha_cierre && u.fecha_cierre <= fechaClase
+      )
+      if (vencidas.length) {
+        setUnidadSugerida(vencidas[0])
+        setUnidadesPendientes(vencidas)
+        setPasoModalClase('unidad')
+        return
+      }
+
+      // 2) ¿Hay una unidad en curso para la fecha de esta clase?
+      const enCurso = unidades.find((u:any) =>
+        u.estado !== 'dictada' && u.fecha_inicio && u.fecha_cierre &&
+        u.fecha_inicio <= fechaClase && u.fecha_cierre >= fechaClase
+      )
+      if (enCurso) {
+        // ¿Es la primera clase dentro del rango de esta unidad?
+        const esPrimeraClase = !clasesLocal.some((cl:any) =>
+          cl.fecha >= enCurso.fecha_inicio && cl.fecha < fechaClase
+        )
+        const dias = _diasEntre(enCurso.fecha_cierre, fechaClase)
+        if (esPrimeraClase) {
+          setUnidadSugerida(enCurso)
+          setTonoRecordatorio('inicio')
+          setPasoModalClase('recordatorio')
+          return
+        }
+        if (dias <= 7) {
+          setUnidadSugerida(enCurso)
+          setDiasParaCierre(dias)
+          setTonoRecordatorio('cierre')
+          setPasoModalClase('recordatorio')
+          return
+        }
+      }
+
+      // 3) Clase del medio de una unidad, o sin planificación cargada — no interrumpir
+      setModalClase(false)
+    } catch {
+      setModalClase(false)
+    }
+  }
+
+  const _diasEntre = (fechaA: string, fechaB: string) => {
+    const a = new Date(fechaA + 'T12:00:00')
+    const b = new Date(fechaB + 'T12:00:00')
+    return Math.round((a.getTime() - b.getTime()) / 86400000)
+  }
+
+  const _cerrarModalClase = () => {
+    setModalClase(false)
+    setPasoModalClase('form')
+    setUnidadSugerida(null)
+    setUnidadesPendientes([])
+    setEligiendoUnidad(false)
+    setTonoRecordatorio('inicio')
+    setDiasParaCierre(0)
+  }
+
+  const marcarUnidadDictada = async (unidad: any) => {
+    setMarcandoUnidad(true)
+    try {
+      await fetch('/api/planificacion', {
+        method: 'PUT',
+        headers: apiHeaders(),
+        body: JSON.stringify({ id: unidad.id, estado: 'dictada' }),
+      })
+      showToast(`✓ ${unidad.titulo} marcada como dictada`)
+    } catch {
+      showToast('No se pudo actualizar la planificación', 'error')
+    }
+    setMarcandoUnidad(false)
+    _cerrarModalClase()
   }
 
   const toggleAsist = async (claseId: string, alumnoId: string, est: 'P'|'A'|'T') => {
@@ -1423,28 +1510,97 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, puedeEditarPl
         </div>
       </ModalSheet>}
 
-      {modalClase && <ModalSheet title="Nueva clase" onClose={() => setModalClase(false)}>
-        <Field2 label="Fecha"><input style={IS} type="date" value={nuevaClase.fecha} onChange={e=>setNuevaClase({...nuevaClase,fecha:e.target.value})} /></Field2>
-        <Field2 label="Tema"><Input value={nuevaClase.tema} onChange={(v:string)=>setNuevaClase({...nuevaClase,tema:v})} placeholder="Ej: Unit 5 — Reading comprehension" /></Field2>
-        <Field2 label="Descripción de los temas vistos">
-          <textarea
-            value={nuevaClase.descripcion}
-            onChange={e=>setNuevaClase({...nuevaClase,descripcion:e.target.value})}
-            placeholder="Describí los temas trabajados en la clase..."
-            rows={4}
-            style={{...IS, resize:'none', lineHeight:1.5}}
-          />
-          {!nuevaClase.descripcion.trim() && (
-            <div style={{display:'flex',alignItems:'center',gap:'5px',marginTop:'5px',fontSize:'12px',color:'var(--amber)'}}>
-              <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="10" cy="10" r="8"/><path d="M10 6v4M10 14h.01"/></svg>
-              Recomendado completar antes de guardar
+      {modalClase && <ModalSheet title={pasoModalClase==='form' ? 'Nueva clase' : 'Clase registrada'} onClose={_cerrarModalClase}>
+        {pasoModalClase === 'form' ? (
+          <>
+            <Field2 label="Fecha"><input style={IS} type="date" value={nuevaClase.fecha} onChange={e=>setNuevaClase({...nuevaClase,fecha:e.target.value})} /></Field2>
+            <Field2 label="Tema"><Input value={nuevaClase.tema} onChange={(v:string)=>setNuevaClase({...nuevaClase,tema:v})} placeholder="Ej: Unit 5 — Reading comprehension" /></Field2>
+            <Field2 label="Descripción de los temas vistos">
+              <textarea
+                value={nuevaClase.descripcion}
+                onChange={e=>setNuevaClase({...nuevaClase,descripcion:e.target.value})}
+                placeholder="Describí los temas trabajados en la clase..."
+                rows={4}
+                style={{...IS, resize:'none', lineHeight:1.5}}
+              />
+              {!nuevaClase.descripcion.trim() && (
+                <div style={{display:'flex',alignItems:'center',gap:'5px',marginTop:'5px',fontSize:'12px',color:'var(--amber)'}}>
+                  <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="10" cy="10" r="8"/><path d="M10 6v4M10 14h.01"/></svg>
+                  Recomendado completar antes de guardar
+                </div>
+              )}
+            </Field2>
+            <div style={{display:'flex',gap:'10px',marginTop:'8px'}}>
+              <BtnG style={{flex:1}} onClick={_cerrarModalClase}>Cancelar</BtnG>
+              <BtnP style={{flex:2}} onClick={guardarClase} disabled={guardando}>{guardando?'Guardando...':'Crear clase'}</BtnP>
             </div>
-          )}
-        </Field2>
-        <div style={{display:'flex',gap:'10px',marginTop:'8px'}}>
-          <BtnG style={{flex:1}} onClick={() => setModalClase(false)}>Cancelar</BtnG>
-          <BtnP style={{flex:2}} onClick={guardarClase} disabled={guardando}>{guardando?'Guardando...':'Crear clase'}</BtnP>
-        </div>
+          </>
+        ) : pasoModalClase === 'unidad' ? (
+          <>
+            <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'4px',color:'var(--green)',fontSize:'13px',fontWeight:600}}>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="10" cy="10" r="8"/><path d="M6.5 10.5l2.5 2.5 4.5-5"/></svg>
+              Clase guardada
+            </div>
+            {!eligiendoUnidad ? (
+              <>
+                <div style={{fontSize:'14px',color:'var(--text)',lineHeight:1.5,marginBottom:'4px'}}>
+                  Según la planificación, <strong>{unidadSugerida?.titulo}</strong> ya debería estar cerrada
+                  {unidadSugerida?.fecha_cierre ? ` (cierre: ${fmtFecha(unidadSugerida.fecha_cierre)})` : ''}.
+                </div>
+                <div style={{fontSize:'13px',color:'var(--text2)',marginBottom:'14px'}}>¿La terminaste con esta clase?</div>
+                <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+                  <BtnP onClick={() => marcarUnidadDictada(unidadSugerida)} disabled={marcandoUnidad}>
+                    {marcandoUnidad ? 'Guardando...' : '✓ Sí, ya la terminé'}
+                  </BtnP>
+                  {unidadesPendientes.length > 1 && (
+                    <BtnG onClick={() => setEligiendoUnidad(true)}>Fue otra unidad</BtnG>
+                  )}
+                  <button onClick={_cerrarModalClase} style={{padding:'10px',background:'transparent',border:'none',color:'var(--text3)',fontSize:'13px',cursor:'pointer'}}>Todavía no</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{fontSize:'13px',color:'var(--text2)',marginBottom:'10px'}}>Elegí qué unidad terminaste:</div>
+                <div style={{display:'flex',flexDirection:'column',gap:'6px',maxHeight:'260px',overflowY:'auto'}}>
+                  {unidadesPendientes.map((u:any) => (
+                    <button
+                      key={u.id}
+                      onClick={() => marcarUnidadDictada(u)}
+                      disabled={marcandoUnidad}
+                      style={{textAlign:'left',padding:'11px 14px',background:'var(--bg)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'13.5px',fontWeight:600,cursor:'pointer',color:'var(--text)'}}
+                    >
+                      {u.titulo}{u.fecha_cierre ? <span style={{fontWeight:400,color:'var(--text3)'}}> — cierre {fmtFecha(u.fecha_cierre)}</span> : null}
+                    </button>
+                  ))}
+                </div>
+                <button onClick={_cerrarModalClase} style={{marginTop:'10px',padding:'10px',background:'transparent',border:'none',color:'var(--text3)',fontSize:'13px',cursor:'pointer',width:'100%'}}>Todavía no</button>
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'14px',color:'var(--green)',fontSize:'13px',fontWeight:600}}>
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="10" cy="10" r="8"/><path d="M6.5 10.5l2.5 2.5 4.5-5"/></svg>
+              Clase guardada
+            </div>
+            <div style={{display:'flex',gap:'10px',padding:'12px 14px',background: tonoRecordatorio==='cierre' ? 'var(--amberl)' : '#f4eefb',border: tonoRecordatorio==='cierre' ? '1px solid #e8d080' : '1px solid #e4d6f2',borderRadius:'12px',marginBottom:'16px'}}>
+              <span style={{fontSize:'16px',flexShrink:0}}>📚</span>
+              <div style={{fontSize:'13.5px',color:'var(--text)',lineHeight:1.5}}>
+                {tonoRecordatorio === 'inicio' ? (
+                  <>Según la planificación, <strong style={{color:'#652f8d'}}>{unidadSugerida?.titulo}</strong> está en curso. Recordá cerrar el contenido antes del <strong>{fmtFecha(unidadSugerida?.fecha_cierre)}</strong>.</>
+                ) : (
+                  <><strong style={{color:'var(--amber)'}}>{unidadSugerida?.titulo}</strong> cierra en <strong>{diasParaCierre} día{diasParaCierre!==1?'s':''}</strong> ({fmtFecha(unidadSugerida?.fecha_cierre)}) y todavía no está marcada como dictada.</>
+                )}
+              </div>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
+              <BtnP onClick={_cerrarModalClase}>Entendido</BtnP>
+              <button onClick={() => marcarUnidadDictada(unidadSugerida)} disabled={marcandoUnidad} style={{padding:'10px',background:'transparent',border:'none',color:'var(--v)',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
+                {marcandoUnidad ? 'Guardando...' : 'Ya la terminé'}
+              </button>
+            </div>
+          </>
+        )}
       </ModalSheet>}
 
       {modalAlumno && <ModalSheet title="Agregar alumno al curso" onClose={() => setModalAlumno(false)}>
