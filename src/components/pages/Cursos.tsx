@@ -8,6 +8,22 @@ import { showToast } from '../Toast'
 function hoy() { return new Date().toISOString().split('T')[0] }
 function fmtFecha(f: string) { if(!f)return'—'; const [y,m,d]=f.split('-'); return `${d}/${m}/${y}` }
 
+// ── Estado efectivo de una unidad de planificación ──────────────────────────
+// Única fuente de verdad, usada por la tab Planificación y por la tab Progreso.
+// Lo único manual es "dictada" (el tap del checkbox). Todo lo demás — pendiente,
+// en_curso, atrasada — se calcula SIEMPRE comparando fechas contra hoy, nunca
+// queda un valor viejo guardado en la base sin actualizarse.
+type EstadoUnidadCalc = 'pendiente' | 'en_curso' | 'atrasada' | 'dictada'
+function calcularEstadoUnidad(u: { estado?: string; fecha_inicio?: string | null; fecha_cierre?: string | null }): EstadoUnidadCalc {
+  if (u.estado === 'dictada') return 'dictada'
+  const hoyStr = hoy()
+  const fc = u.fecha_cierre || null
+  const fi = u.fecha_inicio || null
+  if (fc && fc < hoyStr) return 'atrasada'
+  if (fi && fi <= hoyStr && (!fc || fc >= hoyStr)) return 'en_curso'
+  return 'pendiente'
+}
+
 const NIVELES = ['Básico','Intermedio','Advanced','Cambridge']
 const NIVEL_COL: Record<string,{bg:string,text:string}> = {
   'Básico':     {bg:'#FEF3CD',text:'#b45309'},
@@ -2379,9 +2395,11 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas, profesoraId, c
     atrasada:   { label:'Atrasada',  bg:'var(--redl)',   color:'var(--red)',   next:'pendiente' },
   }
 
-  const dictadas  = unidades.filter(u => u.estado === 'dictada').length
-  const enCurso   = unidades.filter(u => u.estado === 'en_curso').length
-  const pendientes = unidades.filter(u => u.estado === 'pendiente').length
+  const estadosCalc = unidades.map(u => calcularEstadoUnidad(u))
+  const dictadas   = estadosCalc.filter(e => e === 'dictada').length
+  const enCurso    = estadosCalc.filter(e => e === 'en_curso').length
+  const atrasadas  = estadosCalc.filter(e => e === 'atrasada').length
+  const pendientes = estadosCalc.filter(e => e === 'pendiente').length
   const pct = unidades.length > 0 ? Math.round((dictadas / unidades.length) * 100) : 0
 
   const IS2 = { width:'100%', padding:'10px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'14px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
@@ -2391,11 +2409,12 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas, profesoraId, c
   return (
     <div>
       {/* KPIs de avance */}
-      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:'8px',marginBottom:'14px'}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(5,1fr)',gap:'8px',marginBottom:'14px'}}>
         {[
           { label:'Unidades', val: unidades.length, color:'var(--text)' },
           { label:'Dictadas',  val: dictadas,  color:'var(--green)' },
           { label:'Al día',    val: enCurso,   color:'#652f8d'      },
+          { label:'Atrasadas', val: atrasadas, color:'var(--red)'   },
           { label:'Avance',    val: `${pct}%`,  color: pct >= 75 ? 'var(--green)' : pct >= 40 ? '#652f8d' : 'var(--amber)' },
         ].map(k => (
           <div key={k.label} style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'10px',textAlign:'center'}}>
@@ -2440,8 +2459,9 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas, profesoraId, c
       ) : (
         <div>
           {unidades.map((u, idx) => {
-            const cfg = ESTADO_CFG[u.estado] || ESTADO_CFG.pendiente
-            const isDictada = u.estado === 'dictada'
+            const estadoCalc = calcularEstadoUnidad(u)
+            const cfg = ESTADO_CFG[estadoCalc] || ESTADO_CFG.pendiente
+            const isDictada = estadoCalc === 'dictada'
             return (
               <div key={u.id} style={{background:'var(--white)',border:`1.5px solid ${u.estado==='en_curso'?'#652f8d':isDictada?'var(--green)':'var(--border)'}`,borderRadius:'14px',padding:'14px 16px',marginBottom:'10px',opacity: isDictada ? 0.75 : 1,transition:'opacity .15s'}}>
                 <div style={{display:'flex',alignItems:'flex-start',gap:'12px'}}>
@@ -2462,8 +2482,7 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas, profesoraId, c
                       <div style={{fontSize:'14px',fontWeight:700,color:'var(--text)',textDecoration: isDictada ? 'line-through' : 'none'}}>{u.titulo}</div>
                       {!isDictada && (
                         <span
-                          onClick={() => { if(puedeEditar) { const estados = Object.keys(ESTADO_CFG); const idx2=estados.indexOf(u.estado); cambiarEstado(u.id, estados[(idx2+1)%estados.length]) } }}
-                          style={{display:'inline-block',padding:'2px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:600,background:cfg.bg,color:cfg.color,border:`1px solid ${cfg.color}33`,cursor:puedeEditar?'pointer':'default',userSelect:'none'}}
+                          style={{display:'inline-block',padding:'2px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:600,background:cfg.bg,color:cfg.color,border:`1px solid ${cfg.color}33`,userSelect:'none'}}
                         >
                           {cfg.label}
                         </span>
@@ -2546,7 +2565,7 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas, profesoraId, c
             </div>
 
             <div style={{fontSize:'12px',color:'var(--text3)',marginBottom:'14px'}}>
-              💡 Las unidades se agregarán al final de la planificación existente. El estado inicial será "Atrasada" — podés cambiarlo después.
+              💡 Las unidades se agregarán al final de la planificación existente. El estado (Pendiente / Al día / Atrasada) se calcula solo según las fechas — marcá "Dictada" cuando la completes.
             </div>
 
             <div style={{display:'flex',gap:'10px'}}>
@@ -2686,33 +2705,12 @@ function ProgresoTab({ cursoId, clasesDictadas }: { cursoId: string; clasesDicta
     </div>
   )
 
-  const hoy = new Date()
-  hoy.setHours(0, 0, 0, 0)
-
-  // Calcular estado efectivo cruzando fechas con el estado manual
-  // Si fecha_cierre < hoy → completada automáticamente
-  // Si fecha_inicio <= hoy <= fecha_cierre → en curso automáticamente
-  // El estado manual 'dictada' o 'completado' siempre se respeta
+  // Estado efectivo por unidad — misma función que usa la tab Planificación.
+  // Una unidad vencida sin marcar "Dictada" es Atrasada, nunca Completada.
   const unidadesConEstado = unidades.map(u => {
-    const estadoManual = u.estado
-    // Estados manuales que siempre se respetan — no los sobreescribe la automatización
-    if (estadoManual === 'dictada' || estadoManual === 'completado') {
-      return { ...u, estadoEfectivo: 'completado' }
-    }
-    if (estadoManual === 'atrasada') {
-      return { ...u, estadoEfectivo: 'atrasada' }  // marcado manualmente como atrasado
-    }
-    // Calcular por fechas automáticamente
-    const fechaCierre = u.fecha_cierre ? new Date(u.fecha_cierre + 'T23:59:00') : null
-    const fechaInicio = u.fecha_inicio ? new Date(u.fecha_inicio + 'T00:00:00') : null
-    if (fechaCierre && fechaCierre < hoy) {
-      return { ...u, estadoEfectivo: 'completado' }
-    }
-    if (fechaInicio && fechaInicio <= hoy && (!fechaCierre || fechaCierre >= hoy)) {
-      return { ...u, estadoEfectivo: 'en_curso' }
-    }
-    if (estadoManual === 'en_curso') return { ...u, estadoEfectivo: 'en_curso' }
-    return { ...u, estadoEfectivo: 'pendiente' }
+    const calc = calcularEstadoUnidad(u)
+    const estadoEfectivo = calc === 'dictada' ? 'completado' : calc
+    return { ...u, estadoEfectivo }
   })
 
   const total = unidadesConEstado.length
