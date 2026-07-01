@@ -77,6 +77,8 @@ export default function Dashboard() {
   const [resumenProfesoras, setResumenProfesoras] = useState<any[]>([])
   const [loadingResumenProf, setLoadingResumenProf] = useState(false)
   const [alertasPlanificacion, setAlertasPlanificacion] = useState<any[]>([])
+  const [grupoAbierto, setGrupoAbierto] = useState<Record<string, boolean>>({})
+  const toggleGrupo = (key: string) => setGrupoAbierto(prev => ({ ...prev, [key]: !prev[key] }))
   const [proximosEventos, setProximosEventos] = useState<any[]>([])
   const [cumpleanos, setCumpleanos] = useState<any[]>([])
   const [asistModal, setAsistModal] = useState<{curso: any; alumnos: any[]} | null>(null)
@@ -853,15 +855,13 @@ export default function Dashboard() {
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
             {alertasAusencia.length > 0 && (
-              <Alerta tipo="red" icono="⚠">
-                <strong>{alertasAusencia.length} alumno{alertasAusencia.length!==1?'s':''}</strong> con ausencias consecutivas
-              </Alerta>
-            )}
-
-            {/* Detalle expandido de ausencias — visible para director, secretaria, coordinadora */}
-            {alertasAusencia.length > 0 && (usuario?.rol === 'director' || usuario?.rol === 'secretaria' || usuario?.rol === 'coordinadora') && (
-              <div style={{display:'flex',flexDirection:'column',gap:'6px',marginTop:'2px'}}>
-                {alertasAusencia.map((al:any, i:number) => (
+              <GrupoAlerta
+                tipo="red" icono="⚠"
+                resumen={<><strong>{alertasAusencia.length} alumno{alertasAusencia.length!==1?'s':''}</strong> con ausencias consecutivas</>}
+                abierto={!!grupoAbierto.ausencias}
+                onToggle={() => toggleGrupo('ausencias')}
+              >
+                {(usuario?.rol === 'director' || usuario?.rol === 'secretaria' || usuario?.rol === 'coordinadora') && alertasAusencia.map((al:any, i:number) => (
                   <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 14px',background:'var(--white)',border:'1.5px solid #f5c5c5',borderRadius:'14px'}}>
                     <Av color={al.color} nombre={al.nombre} apellido={al.apellido} size={36} />
                     <div style={{flex:1,minWidth:0}}>
@@ -875,7 +875,7 @@ export default function Dashboard() {
                     </span>
                   </div>
                 ))}
-              </div>
+              </GrupoAlerta>
             )}
             {alumnosSinCurso > 0 && (
               <Alerta tipo="amber" icono="📋">
@@ -885,12 +885,12 @@ export default function Dashboard() {
 
             {/* ── Atraso de planificación — cruzado con fechas de Agenda ── */}
             {alertasPlanificacion.length > 0 && (
-              <Alerta tipo={alertasPlanificacion.some((a:any)=>a.critico) ? 'red' : 'amber'} icono="📚">
-                <strong>{alertasPlanificacion.length} profesora{alertasPlanificacion.length!==1?'s':''}</strong> con atraso de planificación
-              </Alerta>
-            )}
-            {alertasPlanificacion.length > 0 && (
-              <div style={{display:'flex',flexDirection:'column',gap:'6px',marginTop:'2px'}}>
+              <GrupoAlerta
+                tipo={alertasPlanificacion.some((a:any)=>a.critico) ? 'red' : 'amber'} icono="📚"
+                resumen={<><strong>{alertasPlanificacion.length} profesora{alertasPlanificacion.length!==1?'s':''}</strong> con atraso de planificación</>}
+                abierto={!!grupoAbierto.planificacion}
+                onToggle={() => toggleGrupo('planificacion')}
+              >
                 {alertasPlanificacion.map((a:any, i:number) => (
                   <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 14px',background:'var(--white)',border:`1.5px solid ${a.critico?'#f5c5c5':'#e8d080'}`,borderRadius:'14px'}}>
                     <Av color={a.color} nombre={a.nombre} apellido={a.apellido} size={36} />
@@ -905,7 +905,7 @@ export default function Dashboard() {
                     </span>
                   </div>
                 ))}
-              </div>
+              </GrupoAlerta>
             )}
             {(usuario?.rol === 'director' || usuario?.rol === 'secretaria') && cuotasPendientes > 0 && (
               <Alerta tipo="amber" icono="💰">
@@ -926,68 +926,86 @@ export default function Dashboard() {
             ))}
 
             {/* ── Alertas test de unidades — docente ve sus propios cursos ── */}
-            {usuario?.rol === 'profesora' && alertasTestDocente.map((a: any) => (
-              <div key={a.id} style={{
-                display:'flex',alignItems:'flex-start',gap:'12px',padding:'12px 14px',
-                background:'var(--white)',border:'1.5px solid #c4b5fd',borderRadius:'14px'
-              }}>
-                <span style={{fontSize:'20px',flexShrink:0}}>📝</span>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:'13.5px',fontWeight:700,color:'#5b21b6',marginBottom:'2px'}}>
-                    Evaluación pendiente — {a.curso_nombre}
+            {usuario?.rol === 'profesora' && alertasTestDocente.length > 0 && (
+              <GrupoAlerta
+                tipo="amber" icono="📝"
+                resumen={<><strong>{alertasTestDocente.length} evaluaci{alertasTestDocente.length!==1?'ones':'ón'} pendiente{alertasTestDocente.length!==1?'s':''}</strong></>}
+                abierto={!!grupoAbierto.testDocente}
+                onToggle={() => toggleGrupo('testDocente')}
+              >
+                {alertasTestDocente.map((a: any) => (
+                  <div key={a.id} style={{
+                    display:'flex',alignItems:'flex-start',gap:'12px',padding:'12px 14px',
+                    background:'var(--white)',border:'1.5px solid #c4b5fd',borderRadius:'14px'
+                  }}>
+                    <span style={{fontSize:'20px',flexShrink:0}}>📝</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:'13.5px',fontWeight:700,color:'#5b21b6',marginBottom:'2px'}}>
+                        Evaluación pendiente — {a.curso_nombre}
+                      </div>
+                      <div style={{fontSize:'12px',color:'var(--text2)'}}>
+                        {a.unidades?.join(' · ')}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => marcarTestTomado(a.id)}
+                      disabled={resolviendoTest === a.id}
+                      style={{
+                        padding:'5px 12px',borderRadius:'20px',border:'none',cursor:'pointer',
+                        background: confirmandoTest === a.id ? '#fef3c7' : '#ede9fe',
+                        color: confirmandoTest === a.id ? '#b45309' : '#5b21b6',
+                        fontSize:'11px',fontWeight:700,
+                        flexShrink:0,opacity: resolviendoTest === a.id ? 0.5 : 1,
+                        transition:'all .2s'
+                      }}
+                    >
+                      {resolviendoTest === a.id ? 'Guardando...' : confirmandoTest === a.id ? '¿Confirmás? Tocá de nuevo' : 'Marcar como tomado'}
+                    </button>
                   </div>
-                  <div style={{fontSize:'12px',color:'var(--text2)'}}>
-                    {a.unidades?.join(' · ')}
-                  </div>
-                </div>
-                <button
-                  onClick={() => marcarTestTomado(a.id)}
-                  disabled={resolviendoTest === a.id}
-                  style={{
-                    padding:'5px 12px',borderRadius:'20px',border:'none',cursor:'pointer',
-                    background: confirmandoTest === a.id ? '#fef3c7' : '#ede9fe',
-                    color: confirmandoTest === a.id ? '#b45309' : '#5b21b6',
-                    fontSize:'11px',fontWeight:700,
-                    flexShrink:0,opacity: resolviendoTest === a.id ? 0.5 : 1,
-                    transition:'all .2s'
-                  }}
-                >
-                  {resolviendoTest === a.id ? 'Guardando...' : confirmandoTest === a.id ? '¿Confirmás? Tocá de nuevo' : 'Marcar como tomado'}
-                </button>
-              </div>
-            ))}
+                ))}
+              </GrupoAlerta>
+            )}
 
             {/* ── Alertas test de unidades — director y coordinadora ven todas ── */}
-            {(usuario?.rol === 'director' || usuario?.rol === 'coordinadora' || usuario?.rol === 'secretaria') && alertasTestGestion.map((a: any) => (
-              <div key={a.id} style={{
-                display:'flex',alignItems:'flex-start',gap:'12px',padding:'12px 14px',
-                background:'var(--white)',border:'1.5px solid #c4b5fd',borderRadius:'14px'
-              }}>
-                <span style={{fontSize:'20px',flexShrink:0}}>📝</span>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:'13.5px',fontWeight:700,color:'#5b21b6',marginBottom:'2px'}}>
-                    {a.profesora_nombre} tiene evaluación pendiente — {a.curso_nombre}
+            {(usuario?.rol === 'director' || usuario?.rol === 'coordinadora' || usuario?.rol === 'secretaria') && alertasTestGestion.length > 0 && (
+              <GrupoAlerta
+                tipo="amber" icono="📝"
+                resumen={<><strong>{alertasTestGestion.length} evaluaci{alertasTestGestion.length!==1?'ones':'ón'} pendiente{alertasTestGestion.length!==1?'s':''}</strong> del equipo</>}
+                abierto={!!grupoAbierto.testGestion}
+                onToggle={() => toggleGrupo('testGestion')}
+              >
+                {alertasTestGestion.map((a: any) => (
+                  <div key={a.id} style={{
+                    display:'flex',alignItems:'flex-start',gap:'12px',padding:'12px 14px',
+                    background:'var(--white)',border:'1.5px solid #c4b5fd',borderRadius:'14px'
+                  }}>
+                    <span style={{fontSize:'20px',flexShrink:0}}>📝</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:'13.5px',fontWeight:700,color:'#5b21b6',marginBottom:'2px'}}>
+                        {a.profesora_nombre} tiene evaluación pendiente — {a.curso_nombre}
+                      </div>
+                      <div style={{fontSize:'12px',color:'var(--text2)'}}>
+                        {a.unidades?.join(' · ')}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => marcarTestTomado(a.id)}
+                      disabled={resolviendoTest === a.id}
+                      style={{
+                        padding:'5px 12px',borderRadius:'20px',border:'none',cursor:'pointer',
+                        background: confirmandoTest === a.id ? '#fef3c7' : '#ede9fe',
+                        color: confirmandoTest === a.id ? '#b45309' : '#5b21b6',
+                        fontSize:'11px',fontWeight:700,
+                        flexShrink:0,opacity: resolviendoTest === a.id ? 0.5 : 1,
+                        transition:'all .2s'
+                      }}
+                    >
+                      {resolviendoTest === a.id ? 'Guardando...' : confirmandoTest === a.id ? '¿Confirmás? Tocá de nuevo' : 'Marcar como tomado'}
+                    </button>
                   </div>
-                  <div style={{fontSize:'12px',color:'var(--text2)'}}>
-                    {a.unidades?.join(' · ')}
-                  </div>
-                </div>
-                <button
-                  onClick={() => marcarTestTomado(a.id)}
-                  disabled={resolviendoTest === a.id}
-                  style={{
-                    padding:'5px 12px',borderRadius:'20px',border:'none',cursor:'pointer',
-                    background: confirmandoTest === a.id ? '#fef3c7' : '#ede9fe',
-                    color: confirmandoTest === a.id ? '#b45309' : '#5b21b6',
-                    fontSize:'11px',fontWeight:700,
-                    flexShrink:0,opacity: resolviendoTest === a.id ? 0.5 : 1,
-                    transition:'all .2s'
-                  }}
-                >
-                  {resolviendoTest === a.id ? 'Guardando...' : confirmandoTest === a.id ? '¿Confirmás? Tocá de nuevo' : 'Marcar como tomado'}
-                </button>
-              </div>
-            ))}
+                ))}
+              </GrupoAlerta>
+            )}
           </div>
         </div>
       )}
@@ -1035,25 +1053,6 @@ export default function Dashboard() {
           <KpiCard val={alumnosSinCurso} label="Sin curso" color={alumnosSinCurso>0?'var(--amber)':'var(--green)'} />
         </>}
       </div>
-
-      {/* ── ZONA 3B: DETALLE AUSENCIAS ── */}
-      {alertasAusencia.length > 0 && (
-        <>
-          <SL style={{marginBottom:'10px'}}>Ausencias consecutivas</SL>
-          <div style={{marginBottom:'20px'}}>
-            {alertasAusencia.map((al:any,i:number) => (
-              <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'11px 14px',background:'var(--white)',border:'1.5px solid #f5c5c5',borderRadius:'14px',marginBottom:'8px'}}>
-                <Av color={al.color} nombre={al.nombre} apellido={al.apellido} size={36} />
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:'13.5px',fontWeight:600}}>{al.nombre} {al.apellido}</div>
-                  <div style={{fontSize:'11.5px',color:'var(--text2)',marginTop:'1px'}}>{al.curso} · {al.consecutivas} faltas seguidas</div>
-                </div>
-                <span style={{padding:'3px 8px',borderRadius:'10px',fontSize:'11px',fontWeight:600,background:'var(--redl)',color:'var(--red)',flexShrink:0}}>{al.consecutivas} ausencias</span>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
 
       {/* ── ZONA 4: CUMPLEAÑOS (menor peso) ── */}
       {cumpleanos.length > 0 && (
@@ -1233,6 +1232,29 @@ const Alerta = ({tipo,icono,children}:any) => {
     <div style={{display:'flex',alignItems:'center',gap:'10px',padding:'11px 14px',background:s.bg,border:`1.5px solid ${s.border}`,borderRadius:'12px',fontSize:'13px',color:s.color}}>
       <span style={{fontSize:'16px'}}>{icono}</span>
       <div>{children}</div>
+    </div>
+  )
+}
+
+// Igual que Alerta pero clickeable — colapsa el detalle debajo, cerrado por defecto.
+// Evita que el Dashboard se vuelva una pared de tarjetas cuando hay varias alertas a la vez.
+const GrupoAlerta = ({tipo,icono,resumen,abierto,onToggle,children}:any) => {
+  const s = tipo==='red' ? {bg:'var(--redl)',border:'#f5c5c5',color:'var(--red)'} : {bg:'var(--amberl)',border:'#e8d080',color:'var(--amber)'}
+  return (
+    <div>
+      <div
+        onClick={onToggle}
+        style={{display:'flex',alignItems:'center',gap:'10px',padding:'11px 14px',background:s.bg,border:`1.5px solid ${s.border}`,borderRadius:'12px',fontSize:'13px',color:s.color,cursor:'pointer',userSelect:'none'}}
+      >
+        <span style={{fontSize:'16px'}}>{icono}</span>
+        <div style={{flex:1}}>{resumen}</div>
+        <span style={{fontSize:'11px',transition:'transform .15s',transform: abierto?'rotate(180deg)':'none',flexShrink:0}}>▾</span>
+      </div>
+      {abierto && (
+        <div style={{display:'flex',flexDirection:'column',gap:'6px',marginTop:'6px'}}>
+          {children}
+        </div>
+      )}
     </div>
   )
 }
