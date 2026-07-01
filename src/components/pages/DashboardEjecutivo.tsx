@@ -574,7 +574,7 @@ export default function DashboardEjecutivo() {
     '__SUELDOS_ADMIN__','Sueldo Coordinadora','Gastos Limpieza','Redes Sociales',
     'Publicidad','Bonos'
   ]
-  const CONCEPTOS_EGRESO = [...CONCEPTOS_EGRESO_ANTES_LIQ, ...CONCEPTOS_EGRESO_DESPUES_LIQ]
+  const CONCEPTOS_EGRESO = [...CONCEPTOS_EGRESO_ANTES_LIQ, ...CONCEPTOS_EGRESO_DESPUES_LIQ, 'Egresos Adicionales']
   const CONCEPTOS_INGRESO_EXTRA = ['Ingresos por Exámenes','Ingresos por Matrículas']
 
   const getImporte = (concepto: string) => {
@@ -740,6 +740,46 @@ export default function DashboardEjecutivo() {
               <div style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderTop:'1px solid var(--border)',marginTop:'4px'}}>
                 <span style={{fontSize:'12px',fontWeight:700,color:'var(--red)'}}>Total Egresos</span>
                 <span style={{fontSize:'14px',fontWeight:800,color:'var(--red)'}}>{fmt$(totalEgresos)}</span>
+              </div>
+            </div>
+
+            {/* Egresos adicionales — campo manual, se suma a Total Egresos y fluye a Proyecciones */}
+            <div style={{padding:'10px 16px 4px',borderBottom:'1px solid var(--border)'}}>
+              <div style={{fontSize:'10px',fontWeight:700,color:'var(--red)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'8px'}}>Egresos Adicionales</div>
+              {(() => {
+                const concepto = 'Egresos Adicionales'
+                const val = getImporte(concepto)
+                const editVal = erEditing[concepto]
+                const guardando = erGuardando[concepto]
+                return (
+                  <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'8px',padding:'6px 10px',background:'var(--redl)',borderRadius:'8px'}}>
+                    <div style={{flex:1,fontSize:'13px',color:'var(--text)',fontWeight:600}}>Otros egresos del mes</div>
+                    <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
+                      <span style={{fontSize:'11px',color:'var(--text3)'}}>$</span>
+                      <input
+                        type="number" min="0" step="100"
+                        value={editVal !== undefined ? editVal : val}
+                        onChange={e => {
+                          const v = parseFloat(e.target.value) || 0
+                          setErEditing(prev => ({ ...prev, [concepto]: v }))
+                          if (erDebounceRef.current[concepto]) clearTimeout(erDebounceRef.current[concepto])
+                          erDebounceRef.current[concepto] = setTimeout(() => guardarConcepto(concepto, 'egreso', v), 800)
+                        }}
+                        onBlur={e => {
+                          const v = parseFloat(e.target.value) || 0
+                          if (erDebounceRef.current[concepto]) clearTimeout(erDebounceRef.current[concepto])
+                          guardarConcepto(concepto, 'egreso', v)
+                        }}
+                        style={{width:'110px',padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',fontFamily:'inherit',outline:'none',textAlign:'right',color:'var(--red)',fontWeight:700,background:'var(--white)'}}
+                      />
+                      {guardando && <span style={{fontSize:'10px',color:'var(--text3)'}}>...</span>}
+                    </div>
+                  </div>
+                )
+              })()}
+              <div style={{display:'flex',justifyContent:'space-between',padding:'8px 0',borderTop:'1px solid var(--border)',marginTop:'4px'}}>
+                <span style={{fontSize:'12px',fontWeight:700,color:'var(--red)'}}>Total Egresos Adicionales</span>
+                <span style={{fontSize:'14px',fontWeight:800,color:'var(--red)'}}>{fmt$(getImporte('Egresos Adicionales'))}</span>
               </div>
             </div>
 
