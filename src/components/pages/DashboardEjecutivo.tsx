@@ -36,7 +36,6 @@ export default function DashboardEjecutivo() {
   // ── Estado de resultado ───────────────────────────────────────────────────
   const [erData,    setErData]    = useState<any[]>([])
   const [preCargadoDesde, setPreCargadoDesde] = useState<string|null>(null)
-  const [erIngresos, setErIngresos] = useState(0)
   const [erEditing,  setErEditing]  = useState<Record<string,number>>({})
   const [erGuardando, setErGuardando] = useState<Record<string,boolean>>({})
   const [erTab, setErTab] = useState<'resumen'|'estado'|'cierre'|'proyecciones'>('resumen')
@@ -62,7 +61,7 @@ export default function DashboardEjecutivo() {
           .eq('mes', mesNombre).eq('anio', anio)
           .eq('instituto_id', usuario?.instituto_id || ''),
         sb.from('pagos_alumnos')
-          .select('monto, alumno_id, fecha_pago')
+          .select('monto, alumno_id, fecha_pago, tipo')
           .eq('mes', mesAntNombre).eq('anio', anioAnt)
           .eq('instituto_id', usuario?.instituto_id || ''),
         // Liquidaciones directas — useLiquidaciones() requiere profesora_id, no aplica aquí
@@ -167,9 +166,6 @@ export default function DashboardEjecutivo() {
           setErData(json.data)
           setErEditing({})
         }
-        if (json.ingresos_cuotas !== undefined && json.ingresos_cuotas > 0) {
-          setErIngresos(json.ingresos_cuotas)
-        }
         // Mostrar aviso si los datos fueron pre-cargados desde el mes anterior
         if (json.pre_cargado_desde) {
           setPreCargadoDesde(json.pre_cargado_desde)
@@ -203,31 +199,32 @@ export default function DashboardEjecutivo() {
     }
   }, [cargar, cargarER])
 
-  // Sincronizar erIngresos con pagos reales cuando estos cargan
-  // Esto garantiza que el EERR siempre muestre el total correcto
-  // independientemente del timing del API route
-  useEffect(() => {
-    if (pagos.length > 0) {
-      const total = pagos.reduce((s: number, p: any) => s + (p.monto || 0), 0)
-      setErIngresos(total)
-    }
-  }, [pagos])
-
   // ── Cálculos financieros ──────────────────────────────────────────────────
+  // totalCobrado = TODO el dinero que entró (cuotas + exámenes + matrículas).
+  // Se usa solo donde corresponde mostrar el movimiento total de caja
+  // (ej: desglose por método de pago). Para KPIs de "cobranza de cuotas"
+  // usar totalCobradoCuotas, que excluye los ingresos excepcionales.
   const totalCobrado    = pagos.reduce((s, p) => s + (p.monto || 0), 0)
   const totalExamenes   = pagos.filter((p: any) => p.tipo === 'examen').reduce((s: number, p: any) => s + (p.monto || 0), 0)
   const totalMatriculas = pagos.filter((p: any) => p.tipo === 'matricula').reduce((s: number, p: any) => s + (p.monto || 0), 0)
-  const totalAntCobrado = pagosMesAnt.reduce((s, p) => s + (p.monto || 0), 0)
-  const variacionCobrado = totalAntCobrado > 0
-    ? Math.round(((totalCobrado - totalAntCobrado) / totalAntCobrado) * 100)
+  // Solo cuotas — es la base real de "cobranza del mes" y la que se compara
+  // contra la proyección (suma de cuota_mensual), que tampoco incluye extras.
+  const totalCobradoCuotas = totalCobrado - totalExamenes - totalMatriculas
+  const totalAntCobradoCuotas = pagosMesAnt
+    .filter((p: any) => p.tipo === 'cuota' || !p.tipo)
+    .reduce((s: number, p: any) => s + (p.monto || 0), 0)
+  const variacionCobrado = totalAntCobradoCuotas > 0
+    ? Math.round(((totalCobradoCuotas - totalAntCobradoCuotas) / totalAntCobradoCuotas) * 100)
     : 0
 
   // Proyección: total esperado = suma de cuotas de todos los alumnos activos
   const proyeccion = alumnos.reduce((s, a) => s + (a.cuota_mensual || 0), 0)
-  const pctCobrado = pct(totalCobrado, proyeccion)
+  const pctCobrado = pct(totalCobradoCuotas, proyeccion)
 
-  // Alumnos que pagaron vs no pagaron
-  const alumnosPagaron = new Set(pagos.map((p: any) => p.alumno_id))
+  // Alumnos que pagaron su cuota vs no pagaron (exámenes/matrículas no cuentan como "cuota pagada")
+  const alumnosPagaron = new Set(
+    pagos.filter((p: any) => p.tipo === 'cuota' || !p.tipo).map((p: any) => p.alumno_id)
+  )
   const cobrados   = alumnosPagaron.size
   const sinPagar   = alumnos.length - cobrados
   const pctCobranza = pct(cobrados, alumnos.length)
@@ -250,7 +247,9 @@ export default function DashboardEjecutivo() {
   const totalLiqSecretariasAnt = liquidacionesAnt.filter((l: any) => idsSecretarias.has(l.profesora_id)).reduce((s: number, l: any) => s + (l.total || 0), 0)
   const totalColabAnt          = totalLiqDocentesAnt + totalLiqSecretariasAnt
 
-  // Resultado neto estimado
+  // Resultado neto estimado: usa el ingreso TOTAL real (cuotas + exámenes + matrículas)
+  // menos liquidaciones — a diferencia del KPI "Total cobrado" (que ahora es solo cuotas),
+  // acá sí queremos reflejar toda la plata que efectivamente entró a la caja.
   const neto = totalCobrado - totalLiq
 
   // ── Cuotas por método de pago ─────────────────────────────────────────────
@@ -430,11 +429,11 @@ export default function DashboardEjecutivo() {
   const esMesActual = mes === new Date().getMonth() && anio === new Date().getFullYear()
   const proyeccionMes = (() => {
     if (!esMesActual || hoyDia === 0) return null
-    // Ritmo actual: cobrado / días transcurridos
-    const ritmoDiario = hoyDia > 0 ? totalCobrado / hoyDia : 0
+    // Ritmo actual: cobrado (cuotas) / días transcurridos
+    const ritmoDiario = hoyDia > 0 ? totalCobradoCuotas / hoyDia : 0
     const proyectado = Math.round(ritmoDiario * diasEnMes)
     const objetivo = proyeccion // suma de cuotas activos
-    const pctAvance = pct(totalCobrado, objetivo)
+    const pctAvance = pct(totalCobradoCuotas, objetivo)
     const pctDias = pct(hoyDia, diasEnMes)
     // Optimista: si el ritmo se mantiene + 10%
     const optimista = Math.round(proyectado * 1.1)
@@ -543,7 +542,7 @@ export default function DashboardEjecutivo() {
       <div style="font-size:13px;color:#9b8eaa">Cierre mensual — ${mesNombre} ${anio}</div>
     </div>
     <div class="kpis">
-      <div class="kpi"><div class="kpi-val">${fmt$(totalCobrado)}</div><div class="kpi-lab">Cobrado</div></div>
+      <div class="kpi"><div class="kpi-val">${fmt$(totalCobradoCuotas)}</div><div class="kpi-lab">Cobrado</div></div>
       <div class="kpi"><div class="kpi-val">${pctCobrado}%</div><div class="kpi-lab">Cobranza</div></div>
       <div class="kpi"><div class="kpi-val">${alumnos.length}</div><div class="kpi-lab">Alumnos</div></div>
       <div class="kpi"><div class="kpi-val">${fmt$(totalLiqDocentes)}</div><div class="kpi-lab">Liq. docentes</div></div>
@@ -612,7 +611,7 @@ export default function DashboardEjecutivo() {
   // totalEgresos incluye: liq docentes (auto) + liq secretarias (auto) + conceptos manuales
   const totalEgresos = totalEgresosConceptos + totalLiqDocentes + totalLiqSecretarias
   const totalIngresosExtra = CONCEPTOS_INGRESO_EXTRA.reduce((s, c) => s + (getImporte(c) || 0), 0)
-  const totalMes = erIngresos + totalIngresosExtra - totalEgresos
+  const totalMes = totalCobradoCuotas + totalIngresosExtra - totalEgresos
 
   // ── Render ────────────────────────────────────────────────────────────────
   const IS = { padding:'9px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
@@ -666,7 +665,7 @@ export default function DashboardEjecutivo() {
                 <div style={{fontSize:'12px',fontWeight:700,color:'var(--green)',textTransform:'uppercase',letterSpacing:'.05em'}}>Ingresos Mensuales</div>
                 <div style={{fontSize:'11px',color:'var(--green)',marginTop:'2px'}}>Tomado automáticamente de pagos registrados</div>
               </div>
-              <div style={{fontSize:'22px',fontWeight:800,color:'var(--green)'}}>{fmt$(erIngresos)}</div>
+              <div style={{fontSize:'22px',fontWeight:800,color:'var(--green)'}}>{fmt$(totalCobradoCuotas)}</div>
             </div>
 
             {/* Egresos */}
@@ -812,7 +811,7 @@ export default function DashboardEjecutivo() {
               <div>
                 <div style={{fontSize:'13px',fontWeight:700,color:totalMes >= 0 ? 'var(--green)' : 'var(--red)',textTransform:'uppercase',letterSpacing:'.05em'}}>Total del Mes</div>
                 <div style={{fontSize:'11px',color:totalMes >= 0 ? 'var(--green)' : 'var(--red)',marginTop:'2px'}}>
-                  {fmt$(erIngresos)} + {fmt$(totalIngresosExtra)} − {fmt$(totalEgresos)}
+                  {fmt$(totalCobradoCuotas)} + {fmt$(totalIngresosExtra)} − {fmt$(totalEgresos)}
                 </div>
               </div>
               <div style={{fontSize:'28px',fontWeight:800,color:totalMes >= 0 ? 'var(--green)' : 'var(--red)'}}>{fmt$(totalMes)}</div>
@@ -820,7 +819,7 @@ export default function DashboardEjecutivo() {
 
             {/* MARGEN BRUTO */}
             {(() => {
-              const totalIngresos = erIngresos + totalIngresosExtra
+              const totalIngresos = totalCobradoCuotas + totalIngresosExtra
               const margenPct = totalIngresos > 0
                 ? Math.round((totalMes / totalIngresos) * 100)
                 : 0
@@ -918,7 +917,7 @@ export default function DashboardEjecutivo() {
                 <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'14px'}}>
                   <div style={{background:'var(--vl)',borderRadius:'12px',padding:'14px',textAlign:'center'}}>
                     <div style={{fontSize:'11px',color:'var(--v)',fontWeight:700,marginBottom:'4px'}}>Cobrado hoy (día {hoyDia})</div>
-                    <div style={{fontSize:'22px',fontWeight:800,color:'var(--v)'}}>{fmt$(totalCobrado)}</div>
+                    <div style={{fontSize:'22px',fontWeight:800,color:'var(--v)'}}>{fmt$(totalCobradoCuotas)}</div>
                     <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'3px'}}>{proyeccionMes.pctAvance}% del objetivo</div>
                   </div>
                   <div style={{background:'#f0f7ff',border:'1.5px solid #bdd7f5',borderRadius:'12px',padding:'14px',textAlign:'center'}}>
@@ -937,7 +936,7 @@ export default function DashboardEjecutivo() {
                     <div style={{height:'100%',width:`${proyeccionMes.pctDias}%`,background:'var(--text3)',borderRadius:'10px',opacity:.4}} />
                   </div>
                   <div style={{display:'flex',justifyContent:'space-between',fontSize:'11px',color:'var(--text3)',marginBottom:'4px'}}>
-                    <span>Cobranza: {fmt$(totalCobrado)} de {fmt$(proyeccionMes.objetivo)}</span>
+                    <span>Cobranza: {fmt$(totalCobradoCuotas)} de {fmt$(proyeccionMes.objetivo)}</span>
                     <span>{proyeccionMes.pctAvance}%</span>
                   </div>
                   <div style={{height:'8px',background:'var(--border)',borderRadius:'10px',overflow:'hidden'}}>
@@ -1220,7 +1219,8 @@ export default function DashboardEjecutivo() {
         <CierreDeMes
           mes={mesNombre}
           anio={anio}
-          totalCobrado={totalCobrado}
+          totalCobrado={totalCobradoCuotas}
+          totalIngresosTotal={totalCobrado}
           proyeccion={pagosEstimados => pagosEstimados}
           alumnos={alumnos}
           cursos={cursos}
@@ -1237,7 +1237,7 @@ export default function DashboardEjecutivo() {
           <div style={{display:'grid',gridTemplateColumns:'repeat(2,1fr)',gap:'10px',marginBottom:'14px'}}>
             <KpiCard
               label="Total cobrado"
-              val={fmt$(totalCobrado)}
+              val={fmt$(totalCobradoCuotas)}
               sub={`${pctCobrado}% de ${fmt$(proyeccion)} proyectado`}
               color="var(--v)"
               trend={variacionCobrado !== 0 ? { val: variacionCobrado, label: `vs ${mesAntNombre}` } : undefined}
@@ -1263,7 +1263,7 @@ export default function DashboardEjecutivo() {
             <KpiCard
               label="Resultado neto est."
               val={fmt$(neto)}
-              sub="Cobrado menos liquidaciones"
+              sub="Ingresos totales menos liquidaciones"
               color={neto >= 0 ? 'var(--green)' : 'var(--red)'}
             />
           </div>
@@ -1650,12 +1650,15 @@ function KpiCard({ label, val, sub, color, trend }: {
   )
 }
 
-function CierreDeMes({ mes, anio, totalCobrado, alumnos, cursos, profesoras, pagos, liquidaciones, altasMes, bajasMes, pagosMesAnt }: any) {
+function CierreDeMes({ mes, anio, totalCobrado, totalIngresosTotal, alumnos, cursos, profesoras, pagos, liquidaciones, altasMes, bajasMes, pagosMesAnt }: any) {
   const fmt$ = (n: number) => '$' + Math.round(n).toLocaleString('es-AR')
-  const totalAnt = (pagosMesAnt || []).reduce((s: number, p: any) => s + (p.monto || 0), 0)
+  const totalAnt = (pagosMesAnt || [])
+    .filter((p: any) => p.tipo === 'cuota' || !p.tipo)
+    .reduce((s: number, p: any) => s + (p.monto || 0), 0)
   const variacion = totalAnt > 0 ? Math.round(((totalCobrado - totalAnt) / totalAnt) * 100) : 0
   const totalLiq = (liquidaciones || []).reduce((s: number, l: any) => s + (l.total || 0), 0)
-  const margen = totalCobrado - totalLiq
+  // Margen usa el ingreso total real (cuotas + exámenes + matrículas), no solo cuotas
+  const margen = (totalIngresosTotal ?? totalCobrado) - totalLiq
 
   const descargarPDF = () => {
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
@@ -1718,7 +1721,7 @@ function CierreDeMes({ mes, anio, totalCobrado, alumnos, cursos, profesoras, pag
         <div style={{background:margen>=0?'var(--greenl)':'var(--redl)',border:`1.5px solid ${margen>=0?'#a3e0bc':'#f5c5c5'}`,borderRadius:'16px',padding:'16px'}}>
           <div style={{fontSize:'24px',fontWeight:700,color:margen>=0?'var(--green)':'var(--red)'}}>{fmt$(margen)}</div>
           <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'3px'}}>Margen estimado</div>
-          <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'4px'}}>Cobrado − liquidaciones</div>
+          <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'4px'}}>Ingresos totales − liquidaciones</div>
         </div>
         <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',padding:'16px'}}>
           <div style={{fontSize:'24px',fontWeight:700}}>{fmt$(totalLiq)}</div>
