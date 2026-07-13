@@ -1681,8 +1681,8 @@ function ExamenesTab({ cursoId, alumnosCurso, puedeEditar, puedeCrearExamen }: a
       <SL style={{marginBottom:'10px'}}>Exámenes oficiales</SL>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'20px'}}>
         {/* MIDTERM */}
-        <div style={{background:midterm?'var(--vl)':'var(--white)',border:`1.5px solid ${midterm?'var(--v)':'var(--border)'}`,borderRadius:'16px',padding:'16px',transition:'all .15s',cursor:midterm?'default':'pointer'}}
-          onClick={() => !midterm && puedeCrearExamen ? crearPredefinido('midterm') : undefined}>
+        <div style={{background:midterm?'var(--vl)':'var(--white)',border:`1.5px solid ${midterm?'var(--v)':'var(--border)'}`,borderRadius:'16px',padding:'16px',transition:'all .15s',cursor:'pointer'}}
+          onClick={() => midterm ? setSelExamen(midterm) : (puedeCrearExamen ? crearPredefinido('midterm') : undefined)}>
           <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between'}}>
             <div style={{fontSize:'24px',marginBottom:'6px'}}>📝</div>
             {midterm && puedeCrearExamen && (
@@ -1709,8 +1709,8 @@ function ExamenesTab({ cursoId, alumnosCurso, puedeEditar, puedeCrearExamen }: a
         </div>
 
         {/* FINAL */}
-        <div style={{background:final?'var(--vl)':'var(--white)',border:`1.5px solid ${final?'var(--v)':'var(--border)'}`,borderRadius:'16px',padding:'16px',transition:'all .15s',cursor:final?'default':'pointer'}}
-          onClick={() => !final && puedeCrearExamen ? crearPredefinido('final') : undefined}>
+        <div style={{background:final?'var(--vl)':'var(--white)',border:`1.5px solid ${final?'var(--v)':'var(--border)'}`,borderRadius:'16px',padding:'16px',transition:'all .15s',cursor:'pointer'}}
+          onClick={() => final ? setSelExamen(final) : (puedeCrearExamen ? crearPredefinido('final') : undefined)}>
           <div style={{display:'flex',alignItems:'flex-start',justifyContent:'space-between'}}>
             <div style={{fontSize:'24px',marginBottom:'6px'}}>🎓</div>
             {final && puedeCrearExamen && (
