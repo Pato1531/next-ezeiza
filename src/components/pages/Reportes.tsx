@@ -46,10 +46,17 @@ export default function Reportes() {
       if (alertaGuardRef.current) clearTimeout(alertaGuardRef.current)
       alertaGuardRef.current = setTimeout(() => {
         const estado = next[alumnoId]
+        // NOTA (jul-2026): Supabase-js NO rechaza la promesa cuando la
+        // operación falla a nivel de base de datos (constraint, RLS, etc.) —
+        // devuelve { error } dentro de un resultado resuelto. El .catch()
+        // que había acá solo atrapa errores de red, no errores lógicos de
+        // la escritura. Se agrega el chequeo para que al menos quede logueado.
         createClient().from('alertas_ausencias').upsert(
           { alumno_id: alumnoId, enviado: estado.enviado, obs: estado.obs },
           { onConflict: 'alumno_id' }
-        ).then().catch(() => {})
+        ).then(({ error }) => {
+          if (error) console.error('[alertas_ausencias upsert]', error.message)
+        }).catch((err) => console.error('[alertas_ausencias upsert] red', err))
       }, 800)
       return next
     })
