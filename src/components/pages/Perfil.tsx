@@ -282,7 +282,14 @@ function FirmaDigital({ institutoId }: { institutoId: string }) {
 
   const eliminarFirma = async () => {
     if (!confirm('¿Eliminar la firma digital?')) return
-    await sb.from('institutos').update({ firma_director_url: null }).eq('id', institutoId)
+    // BUGFIX (jul-2026): antes no se chequeaba el error del update() — el
+    // mensaje "Firma eliminada" se mostraba aunque el guardado hubiera
+    // fallado, y la firma vieja seguía apareciendo en recibos/boletines.
+    const { error } = await sb.from('institutos').update({ firma_director_url: null }).eq('id', institutoId)
+    if (error) {
+      setMsg({ tipo:'error', texto: 'No se pudo eliminar la firma: ' + error.message })
+      return
+    }
     setFirmaUrl('')
     setMsg({ tipo:'ok', texto:'Firma eliminada' })
   }
