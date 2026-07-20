@@ -95,11 +95,22 @@ export default function CuotasPorCurso() {
     if (isNaN(cuotaNueva) || cuotaNueva <= 0) return
     if (cuotaNueva === cuotaActual) return
     const sb = createClient()
-    await sb.from('cuotas_historial').insert({
+    // BUGFIX (jul-2026): antes no se chequeaba el error del update() — el
+    // input ya mostraba el valor nuevo aunque el guardado hubiera fallado
+    // en el backend. Mismo patrón que el bug de notas de examen.
+    const { error } = await sb.from('alumnos').update({ cuota_mensual: cuotaNueva }).eq('id', alumnoId)
+    if (error) {
+      alert(`❌ No se pudo actualizar la cuota. El cambio NO se guardó.\n\nMotivo: ${error.message}`)
+      return
+    }
+    // El registro en historial no es bloqueante — si falla no debe impedir
+    // que la cuota (ya confirmada arriba) se refleje en la UI.
+    sb.from('cuotas_historial').insert({
       alumno_id: alumnoId, cuota_anterior: cuotaActual,
       cuota_nueva: cuotaNueva, vigente_desde: new Date().toISOString().split('T')[0],
+    }).then(({ error: histErr }) => {
+      if (histErr) console.error('[aplicarIndividual] historial:', histErr.message)
     })
-    await sb.from('alumnos').update({ cuota_mensual: cuotaNueva }).eq('id', alumnoId)
     setAlumnosCurso(prev => prev.map(a => a.id === alumnoId ? { ...a, cuota_mensual: cuotaNueva } : a))
     // Invalidar cache global
     delete store['alumnos']
