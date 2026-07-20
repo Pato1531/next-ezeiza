@@ -1653,8 +1653,14 @@ function ExamenesTab({ cursoId, alumnosCurso, puedeEditar, puedeCrearExamen }: a
   const guardarEdicionTest = async () => {
     if (!formTest.nombre.trim() || modalTest?.modo !== 'editar') return
     setGuardandoTest(true)
-    await sb.from('examenes').update({ nombre: formTest.nombre.trim(), fecha: formTest.fecha || hoy() }).eq('id', modalTest.id)
+    const { error } = await sb.from('examenes').update({ nombre: formTest.nombre.trim(), fecha: formTest.fecha || hoy() }).eq('id', modalTest.id)
     setGuardandoTest(false)
+    // BUGFIX (jul-2026): antes no se chequeaba el error del update, el modal
+    // se cerraba igual dando la falsa impresión de que se guardó.
+    if (error) {
+      alert(`❌ No se pudieron guardar los cambios del examen.\n\nMotivo: ${error.message}`)
+      return
+    }
     setModalTest(null)
     recargar()
   }
@@ -1828,6 +1834,7 @@ function ExamenNotas({ examen, alumnosCurso, puedeEditar, onVolver, onEliminar }
   const [editando, setEditando] = useState<Record<string,{escrito:string,oral:string,listening:string,ausente:boolean,obs:string}>>({})
   const [guardando, setGuardando] = useState<Record<string,boolean>>({})
   const [saved, setSaved] = useState<Record<string,boolean>>({})
+  const [errorGuardado, setErrorGuardado] = useState<Record<string,string>>({})
   const [examenAnterior, setExamenAnterior] = useState<{examen:any, notas:any[]}|null>(null)
   const [mostrarAnterior, setMostrarAnterior] = useState(false)
 
@@ -1885,7 +1892,8 @@ function ExamenNotas({ examen, alumnosCurso, puedeEditar, onVolver, onEliminar }
     const e = getEdit(alumnoId)
     const promedio = calcPromedio(e)
     setGuardando(prev => ({ ...prev, [alumnoId]: true }))
-    await guardarNota(alumnoId, {
+    setErrorGuardado(prev => ({ ...prev, [alumnoId]: '' }))
+    const res = await guardarNota(alumnoId, {
       escrito: e.ausente ? null : parseFloat(e.escrito)||null,
       oral: e.ausente ? null : parseFloat(e.oral)||null,
       listening: e.ausente ? null : parseFloat(e.listening)||null,
@@ -1894,8 +1902,17 @@ function ExamenNotas({ examen, alumnosCurso, puedeEditar, onVolver, onEliminar }
       observacion: e.obs
     })
     setGuardando(prev => ({ ...prev, [alumnoId]: false }))
-    setSaved(prev => ({ ...prev, [alumnoId]: true }))
-    setTimeout(() => setSaved(prev => ({ ...prev, [alumnoId]: false })), 2000)
+    // BUGFIX (jul-2026): antes se mostraba el ✓ de "guardado" sin chequear
+    // si la escritura en Supabase realmente funcionó. Ahora solo se marca
+    // como guardado si guardarNota confirma éxito; si falla, se avisa y
+    // NO se borra lo que el usuario tipeó (queda en `editando` para reintentar).
+    if (res.ok) {
+      setSaved(prev => ({ ...prev, [alumnoId]: true }))
+      setTimeout(() => setSaved(prev => ({ ...prev, [alumnoId]: false })), 2000)
+    } else {
+      setErrorGuardado(prev => ({ ...prev, [alumnoId]: res.error || 'Error desconocido' }))
+      alert(`❌ No se pudo guardar la nota. El cambio NO se guardó en la base de datos.\n\nMotivo: ${res.error || 'error desconocido'}\n\nAvisá a soporte con este mensaje.`)
+    }
   }
 
   const promedioGeneral = () => {
@@ -2104,11 +2121,16 @@ function ExamenNotas({ examen, alumnosCurso, puedeEditar, onVolver, onEliminar }
               <input type="text" value={e.obs} onChange={ev => setEdit(al.id,'obs',ev.target.value)}
                 placeholder="Observación opcional..." style={{...IS,flex:1,fontSize:'12px'}} />
               <button onClick={() => guardar(al.id)} disabled={guardando[al.id]} style={{padding:'8px 16px',borderRadius:'8px',fontSize:'12px',fontWeight:600,cursor:guardando[al.id]?'not-allowed':'pointer',border:'none',flexShrink:0,
-                background:saved[al.id]?'var(--greenl)':guardando[al.id]?'#aaa':'var(--v)',
-                color:saved[al.id]?'var(--green)':'#fff',transition:'all .2s'}}>
-                {saved[al.id]?'✓':guardando[al.id]?'...':'Guardar'}
+                background:errorGuardado[al.id]?'var(--redl)':saved[al.id]?'var(--greenl)':guardando[al.id]?'#aaa':'var(--v)',
+                color:errorGuardado[al.id]?'var(--red)':saved[al.id]?'var(--green)':'#fff',transition:'all .2s'}}>
+                {errorGuardado[al.id]?'✗ Error':saved[al.id]?'✓':guardando[al.id]?'...':'Guardar'}
               </button>
             </div>
+            {errorGuardado[al.id] && (
+              <div style={{marginTop:'6px',fontSize:'11px',color:'var(--red)',fontWeight:500}}>
+                No se guardó: {errorGuardado[al.id]}
+              </div>
+            )}
           </div>
         )
       })}
