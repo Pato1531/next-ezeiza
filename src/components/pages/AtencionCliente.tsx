@@ -510,10 +510,17 @@ function ListaEspera() {
   const eliminar = async (id: string) => {
     const a = lista.find(x => x.id === id)
     const sb = createClient()
-    await sb.from('lista_espera').delete().eq('id', id)
+    // BUGFIX (jul-2026): antes no se chequeaba el error del delete() — la
+    // fila desaparecía de la lista aunque el borrado hubiera fallado en el
+    // backend, y volvía a aparecer al recargar.
+    const { error } = await sb.from('lista_espera').delete().eq('id', id)
+    setConfirmDel(null)
+    if (error) {
+      showToast('❌ No se pudo eliminar: ' + error.message, 'error')
+      return
+    }
     setLista(prev => prev.filter(x => x.id !== id))
     if (a) logActivity('Eliminó de lista de espera', 'Atención', `${a.nombre} ${a.apellido}`)
-    setConfirmDel(null)
   }
 
   const abrirInscribir = (a: any) => {
@@ -556,10 +563,15 @@ function ListaEspera() {
       const json = await res.json()
 
       if (json.data) {
+        let avisoExtra = ''
+        // BUGFIX (jul-2026): antes el error del insert de matrícula se
+        // descartaba con `.catch(()=>{})` (que no atrapa errores lógicos de
+        // Supabase, solo de red). El alumno quedaba creado pero el pago de
+        // matrícula podía no haberse registrado nunca, sin ningún aviso.
         if (payload.matricula > 0) {
           const sb = createClient()
           const hoyDate = new Date()
-          await sb.from('pagos_alumnos').insert({
+          const { error: matErr } = await sb.from('pagos_alumnos').insert({
             alumno_id: json.data.id,
             mes: MESES[hoyDate.getMonth()],
             anio: hoyDate.getFullYear(),
@@ -567,14 +579,19 @@ function ListaEspera() {
             metodo: 'Efectivo',
             fecha_pago: hoy(),
             observaciones: 'Matrícula de inscripción'
-          }).catch(() => {})
+          })
+          if (matErr) {
+            console.error('[inscribirAlumno] matrícula:', matErr.message)
+            avisoExtra = ' ⚠️ El alumno se creó pero la matrícula NO se pudo registrar — cargala manualmente en Pagos.'
+          }
         }
         const sb = createClient()
-        await sb.from('lista_espera').delete().eq('id', a.id)
+        const { error: delErr } = await sb.from('lista_espera').delete().eq('id', a.id)
+        if (delErr) console.error('[inscribirAlumno] borrar de lista_espera:', delErr.message)
         setLista(prev => prev.filter(x => x.id !== a.id))
         logActivity('Inscribió alumno desde lista de espera', 'Alumnos', `${a.nombre} ${a.apellido}`)
         setModalInscribir(null)
-        showToast(`✓ ${a.nombre} ${a.apellido} fue inscripto como alumno correctamente.`)
+        showToast(`✓ ${a.nombre} ${a.apellido} fue inscripto como alumno correctamente.${avisoExtra}`, avisoExtra ? 'warning' : 'success')
       } else {
         showToast('Error al crear el alumno. Intentá de nuevo.', 'error')
       }
@@ -587,7 +604,13 @@ function ListaEspera() {
 
   const cambiarEstado = async (id: string, nuevoEstado: string) => {
     const sb = createClient()
-    await sb.from('lista_espera').update({ estado_seguimiento: nuevoEstado }).eq('id', id)
+    // BUGFIX (jul-2026): antes no se chequeaba el error — el estado se
+    // actualizaba en pantalla aunque el guardado hubiera fallado.
+    const { error } = await sb.from('lista_espera').update({ estado_seguimiento: nuevoEstado }).eq('id', id)
+    if (error) {
+      showToast('❌ No se pudo actualizar el estado: ' + error.message, 'error')
+      return
+    }
     setLista(prev => prev.map(a => a.id === id ? { ...a, estado_seguimiento: nuevoEstado } : a))
   }
 
