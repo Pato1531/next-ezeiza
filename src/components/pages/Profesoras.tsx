@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useProfesoras, useHorasHistorial, useLiquidaciones, useCursos, apiHeaders } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
+import { showToast } from '@/components/Toast'
 
 function hoy() { return new Date().toISOString().split('T')[0] }
 const IS = { width:'100%', padding:'10px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'14px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)' } as const
@@ -150,7 +151,13 @@ export default function Profesoras() {
     const sb = createClient()
     const { error: inactErr } = await sb.from('profesoras').update({ activa: false }).eq('id', selId)
     if (!inactErr) recargar()
-    else console.error('[inactivar profesora]', inactErr.message)
+    else {
+      console.error('[inactivar profesora]', inactErr.message)
+      // BUGFIX (jul-2026): antes el error solo se logueaba en consola —
+      // el usuario ya estaba en la lista, creyendo que la baja se aplicó,
+      // sin ningún aviso de que en realidad falló.
+      showToast('❌ No se pudo dar de baja a la profesora: ' + inactErr.message, 'error')
+    }
   }
 
   const guardarLic = async () => {
@@ -182,9 +189,14 @@ export default function Profesoras() {
   const guardarEditLic = async () => {
     if (!licEditando) return
     setModalEditLic(false)
-    setLicencias(prev => prev.map(l => l.id === licEditando.id ? licEditando : l))
     const sb = createClient()
-    sb.from('licencias_profesoras').update({
+    // BUGFIX (jul-2026): antes se actualizaba el estado local ANTES de
+    // confirmar el guardado, y el error se descartaba con
+    // `.catch(e => console.error(...))` — que en Supabase-js NO atrapa
+    // errores lógicos de la escritura (constraint, RLS, etc.), solo errores
+    // de red. Resultado: la licencia se veía editada en pantalla pero podía
+    // no haberse guardado nunca. Mismo patrón que el bug de notas de examen.
+    const { error } = await sb.from('licencias_profesoras').update({
       tipo: licEditando.tipo,
       fecha_desde: licEditando.fecha_desde,
       fecha_hasta: licEditando.fecha_hasta,
@@ -193,7 +205,14 @@ export default function Profesoras() {
       reemplazo_horas: licEditando.reemplazo_horas,
       reemplazo_profesora_id: licEditando.reemplazo_profesora_id || null,
       observaciones: licEditando.observaciones,
-    }).eq('id', licEditando.id).catch(e => console.error('Error editando licencia:', e))
+    }).eq('id', licEditando.id)
+    if (error) {
+      console.error('Error editando licencia:', error.message)
+      showToast('❌ No se pudo guardar la edición de la licencia', 'error')
+      return
+    }
+    setLicencias(prev => prev.map(l => l.id === licEditando.id ? licEditando : l))
+    showToast('✓ Licencia actualizada')
   }
 
   const eliminarLic = async (id: string, profesoraId: string) => {
