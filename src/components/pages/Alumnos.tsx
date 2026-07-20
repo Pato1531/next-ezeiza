@@ -82,6 +82,7 @@ export default function Alumnos() {
   const [formStep, setFormStep] = useState(0)
   const [guardando, setGuardando] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [eliminando, setEliminando] = useState(false)
   const [importarModal, setImportarModal] = useState(false)
   const [busqueda, setBusqueda] = useState('')
   const [soloSinCurso, setSoloSinCurso] = useState(false)
@@ -398,10 +399,20 @@ export default function Alumnos() {
   const eliminar = async () => {
     if (!selId) return
     setConfirmDelete(false)
-    irALista()
+    setEliminando(true)
     const sb = createClient()
-    sb.from('alumnos').update({ activo: false }).eq('id', selId)
-      .then(() => { recargar().catch(() => {}) })
+    // BUGFIX (jul-2026): antes navegaba a la lista ANTES de confirmar el
+    // resultado del update, sin chequear error. Si la desactivación fallaba
+    // en el backend, el usuario ya estaba en la lista creyendo que el
+    // alumno fue eliminado, sin ningún aviso — el alumno seguía activo.
+    const { error } = await sb.from('alumnos').update({ activo: false }).eq('id', selId)
+    setEliminando(false)
+    if (error) {
+      showToast('❌ No se pudo eliminar el alumno: ' + error.message, 'error')
+      return
+    }
+    irALista()
+    recargar().catch(() => {})
   }
 
   const filtrados = alumnos.filter(a => {
