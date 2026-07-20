@@ -826,10 +826,23 @@ export function useNotasExamen(examenId: string) {
     { skip: !examenId }
   )
 
-  const guardarNota = async (alumnoId: string, campos: any) => {
-    const { data: row } = await createClient().from('notas_examenes')
+  // BUGFIX (jul-2026): antes esta función descartaba el `error` del upsert
+  // (`const { data: row } = await ...`). Si el guardado fallaba en el backend
+  // (constraint faltante, RLS, red, etc.), `row` quedaba `undefined`, la nota
+  // nunca se escribía en la tabla, y el componente que llama a esta función
+  // igual mostraba el ✓ de "guardado" porque nunca se enteraba del error.
+  // Resultado: la nota parecía guardarse y desaparecía al volver a entrar
+  // al examen. Ahora se captura el error y se devuelve para que la UI pueda
+  // mostrarlo en vez de mentir con un ✓ falso.
+  const guardarNota = async (alumnoId: string, campos: any): Promise<{ ok: boolean; error: string | null }> => {
+    const { data: row, error } = await createClient().from('notas_examenes')
       .upsert({ examen_id: examenId, alumno_id: alumnoId, ...campos }, { onConflict: 'examen_id,alumno_id' })
       .select().single()
+
+    if (error) {
+      console.error('[useNotasExamen.guardarNota]', error.message)
+      return { ok: false, error: error.message }
+    }
     if (row) {
       setData(prev => {
         const idx = prev.findIndex((n: any) => n.alumno_id === alumnoId)
@@ -838,6 +851,7 @@ export function useNotasExamen(examenId: string) {
       })
       invalidateQuery(`notasExamen-${examenId}`)
     }
+    return { ok: true, error: null }
   }
 
   return { notas: data, guardarNota }
