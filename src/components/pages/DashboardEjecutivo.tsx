@@ -41,6 +41,20 @@ export default function DashboardEjecutivo() {
   const [erTab, setErTab] = useState<'resumen'|'estado'|'cierre'|'proyecciones'>('resumen')
   const erDebounceRef = useRef<Record<string,ReturnType<typeof setTimeout>>>({})
 
+  // ── Simulador de cuotas y punto de equilibrio ────────────────────────────
+  // Promedios históricos usados para pre-cargar el simulador (siempre año
+  // corriente real, independiente del mes/año que esté seleccionado arriba).
+  const [promLiqDocentesAnio,     setPromLiqDocentesAnio]     = useState<number | null>(null)
+  const [promLiqSecretariasAnio,  setPromLiqSecretariasAnio]  = useState<number | null>(null)
+  const [promEgresosConceptoAnio, setPromEgresosConceptoAnio] = useState<Record<string, number>>({})
+  const [promAlumnosNuevosMes,    setPromAlumnosNuevosMes]    = useState<number>(0)
+  const [simSeeded, setSimSeeded] = useState(false)
+  type SimCosto = { label: string; monto: number; auto: boolean; escala: boolean }
+  const [simTramos,  setSimTramos]  = useState<{ pct: number; mes: number }[]>([{ pct: 0, mes: 1 }])
+  const [simCostos,  setSimCostos]  = useState<SimCosto[]>([])
+  const [simAlumnosNuevos, setSimAlumnosNuevos] = useState(0)
+  const [simInflacion, setSimInflacion] = useState(10)
+
   const mesNombre    = MESES[mes]
   const mesAntIdx    = mes === 0 ? 11 : mes - 1
   const anioAnt      = mes === 0 ? anio - 1 : anio
@@ -182,6 +196,81 @@ export default function DashboardEjecutivo() {
     setTimeout(cargarER, 800)
     setTimeout(cargarER, 2500)
   }, [cargar, cargarER])
+
+  // ── Simulador: promedios históricos del año corriente ────────────────────
+  // Independiente del selector de mes/año de arriba — siempre usa el año
+  // calendario real, no el que esté filtrado en el dashboard.
+  useEffect(() => {
+    if (!usuario?.instituto_id || !profesoras.length) return
+    const sb = createClient()
+    const anioActual = new Date().getFullYear()
+    const idsDoc = new Set(profesoras.filter((p: any) => p.tipo_colaborador !== 'secretaria').map((p: any) => p.id))
+    const idsSec = new Set(profesoras.filter((p: any) => p.tipo_colaborador === 'secretaria').map((p: any) => p.id))
+
+    ;(async () => {
+      try {
+        const [{ data: liqAnioData }, { data: erAnioData }] = await Promise.all([
+          sb.from('liquidaciones').select('total, profesora_id, mes')
+            .eq('anio', anioActual).eq('instituto_id', usuario.instituto_id),
+          sb.from('estado_resultado_mensual').select('concepto, importe, mes')
+            .eq('anio', anioActual).eq('instituto_id', usuario.instituto_id),
+        ])
+
+        // Promedio de liquidaciones por mes con datos (docentes y secretarias por separado)
+        const porMesDoc: Record<string, number> = {}
+        const porMesSec: Record<string, number> = {}
+        ;(liqAnioData || []).forEach((l: any) => {
+          if (idsDoc.has(l.profesora_id)) porMesDoc[l.mes] = (porMesDoc[l.mes] || 0) + (l.total || 0)
+          if (idsSec.has(l.profesora_id)) porMesSec[l.mes] = (porMesSec[l.mes] || 0) + (l.total || 0)
+        })
+        const mesesDoc = Object.keys(porMesDoc)
+        const mesesSec = Object.keys(porMesSec)
+        setPromLiqDocentesAnio(mesesDoc.length ? Object.values(porMesDoc).reduce((s, v) => s + v, 0) / mesesDoc.length : 0)
+        setPromLiqSecretariasAnio(mesesSec.length ? Object.values(porMesSec).reduce((s, v) => s + v, 0) / mesesSec.length : 0)
+
+        // Promedio de cada concepto de egreso manual (Est. Resultado) por mes con dato cargado
+        const porConcepto: Record<string, number[]> = {}
+        ;(erAnioData || []).forEach((r: any) => {
+          if (!r.importe) return
+          if (!porConcepto[r.concepto]) porConcepto[r.concepto] = []
+          porConcepto[r.concepto].push(r.importe)
+        })
+        const promedios: Record<string, number> = {}
+        Object.entries(porConcepto).forEach(([c, vals]) => { promedios[c] = vals.reduce((s, v) => s + v, 0) / vals.length })
+        setPromEgresosConceptoAnio(promedios)
+
+        // Promedio de alumnos nuevos netos/mes — altas menos bajas, últimos 6 meses
+        const hace6 = new Date()
+        hace6.setMonth(hace6.getMonth() - 6)
+        const hace6Str = `${hace6.getFullYear()}-${String(hace6.getMonth() + 1).padStart(2, '0')}-01`
+        const [{ count: altasCount }, { count: bajasCount }] = await Promise.all([
+          sb.from('alumnos').select('id', { count: 'exact', head: true })
+            .eq('instituto_id', usuario.instituto_id).gte('fecha_alta', hace6Str),
+          sb.from('bajas_alumnos').select('id', { count: 'exact', head: true }).gte('fecha_baja', hace6Str),
+        ])
+        setPromAlumnosNuevosMes(Math.round(((altasCount || 0) - (bajasCount || 0)) / 6))
+      } catch (e) { console.warn('[Simulador] error trayendo promedios:', e) }
+    })()
+  }, [usuario?.instituto_id, profesoras.length])
+
+  // Pre-cargar el simulador una sola vez con los promedios reales — no pisa
+  // los valores si el usuario ya los tocó (simSeeded evita re-seedear).
+  useEffect(() => {
+    if (simSeeded) return
+    if (promLiqDocentesAnio === null || promLiqSecretariasAnio === null) return
+    const p = promEgresosConceptoAnio
+    setSimCostos([
+      { label: 'Liquidaciones docentes',              monto: Math.round(promLiqDocentesAnio),    auto: true,  escala: false },
+      { label: 'Sueldos administrativos',              monto: Math.round(promLiqSecretariasAnio), auto: true,  escala: false },
+      { label: 'Alquiler',                             monto: Math.round(p['Alquiler'] || 0),     auto: false, escala: true  },
+      { label: 'Luz, agua, municipal e internet',      monto: Math.round((p['Luz']||0) + (p['Agua']||0) + (p['Municipal']||0) + (p['Internet']||0)), auto: false, escala: true },
+      { label: 'Sueldo coordinadora',                  monto: Math.round(p['Sueldo Coordinadora'] || 0), auto: false, escala: false },
+      { label: 'Redes sociales y publicidad',          monto: Math.round((p['Redes Sociales']||0) + (p['Publicidad']||0)), auto: false, escala: true },
+      { label: 'Otros gastos (regalías, seguros, etc.)', monto: Math.round((p['Regalías']||0) + (p['Emergencias']||0) + (p['Seguro Integral']||0) + (p['Gastos Limpieza']||0) + (p['Bonos']||0) + (p['Egresos Adicionales']||0)), auto: false, escala: true },
+    ])
+    setSimAlumnosNuevos(promAlumnosNuevosMes)
+    setSimSeeded(true)
+  }, [promLiqDocentesAnio, promLiqSecretariasAnio, promEgresosConceptoAnio, promAlumnosNuevosMes, simSeeded])
 
   // ── Refrescar al volver a esta pantalla ────────────────────────────────
   // Esta pantalla carga sus datos una sola vez al montarse. Si el usuario crea
@@ -440,6 +529,29 @@ export default function DashboardEjecutivo() {
     // Pesimista: si el ritmo baja 20%
     const pesimista = Math.round(proyectado * 0.8)
     return { proyectado, objetivo, optimista, pesimista, pctAvance, pctDias, ritmoDiario }
+  })()
+
+  // Simulador de cuotas y punto de equilibrio — proyección a 6 meses
+  const cuotaPromedioActual = alumnos.length ? proyeccion / alumnos.length : 0
+  const simResultado = (() => {
+    const egresosEscalan   = simCostos.filter(c => c.escala).reduce((s, c) => s + c.monto, 0)
+    const egresosNoEscalan = simCostos.filter(c => !c.escala).reduce((s, c) => s + c.monto, 0)
+    const mesesArr = [1, 2, 3, 4, 5, 6]
+    let mesEquilibrio: number | null = null
+    const filas = mesesArr.map(m => {
+      const pctAplicado = simTramos.filter(t => m >= t.mes).reduce((s, t) => s + t.pct, 0)
+      const cuotaMes    = cuotaPromedioActual * (1 + pctAplicado / 100)
+      const alumnosMes  = Math.max(0, alumnos.length + simAlumnosNuevos * m)
+      const ing = alumnosMes * cuotaMes
+      const egr = egresosEscalan * (1 + (simInflacion / 100) * (m / 12)) + egresosNoEscalan
+      if (mesEquilibrio === null && ing >= egr) mesEquilibrio = m
+      return { mes: m, ingresos: Math.round(ing), egresos: Math.round(egr), resultado: Math.round(ing - egr) }
+    })
+    const egresosHoy = egresosEscalan + egresosNoEscalan
+    const aumentoMinimo = cuotaPromedioActual > 0 && alumnos.length > 0
+      ? Math.max(0, Math.round(((egresosHoy / (alumnos.length * cuotaPromedioActual)) - 1) * 100))
+      : 0
+    return { filas, mesEquilibrio, aumentoMinimo }
   })()
 
   // C) Proyección liquidaciones próximo mes
@@ -1151,7 +1263,144 @@ export default function DashboardEjecutivo() {
             })()}
           </div>
 
-          {/* E) Alumnos en riesgo de deserción */}
+          {/* E) Simulador de cuotas y punto de equilibrio */}
+          <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
+            <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'2px'}}>
+              Simulador de cuotas y punto de equilibrio
+            </div>
+            <div style={{fontSize:'12px',color:'var(--text3)',marginBottom:'14px'}}>
+              Proyección a 6 meses — {alumnos.length} alumnos activos · cuota promedio {fmt$(cuotaPromedioActual)}
+            </div>
+
+            {/* Aumentos de cuota */}
+            <div style={{marginBottom:'16px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+                <span style={{fontSize:'12px',fontWeight:700,color:'var(--text2)'}}>Aumentos de cuota</span>
+                <button onClick={() => setSimTramos(prev => [...prev, { pct: 10, mes: Math.min(6, (prev[prev.length-1]?.mes || 0) + 1) }])}
+                  style={{fontSize:'11px',padding:'5px 10px',background:'var(--vl)',color:'var(--v)',border:'none',borderRadius:'8px',fontWeight:600,cursor:'pointer'}}>
+                  + Agregar aumento
+                </button>
+              </div>
+              {simTramos.map((t, i) => (
+                <div key={i} style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'6px'}}>
+                  <span style={{fontSize:'12px',color:'var(--text3)',minWidth:'62px'}}>Aumento {i+1}</span>
+                  <input type="number" value={t.pct} onChange={e => setSimTramos(prev => prev.map((x,xi) => xi===i ? {...x, pct: parseFloat(e.target.value)||0} : x))}
+                    style={{width:'64px',padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',textAlign:'center'}} />
+                  <span style={{fontSize:'12px',color:'var(--text3)'}}>% desde el mes</span>
+                  <select value={t.mes} onChange={e => setSimTramos(prev => prev.map((x,xi) => xi===i ? {...x, mes: parseInt(e.target.value)} : x))}
+                    style={{padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px'}}>
+                    {[1,2,3,4,5,6].map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                  {simTramos.length > 1 && (
+                    <button onClick={() => setSimTramos(prev => prev.filter((_,xi) => xi!==i))}
+                      style={{marginLeft:'auto',padding:'5px 9px',background:'var(--redl)',color:'var(--red)',border:'none',borderRadius:'8px',fontSize:'11px',cursor:'pointer'}}>✕</button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Alumnos nuevos */}
+            <div style={{marginBottom:'16px'}}>
+              <div style={{fontSize:'12px',fontWeight:700,color:'var(--text2)',marginBottom:'8px'}}>Alumnos</div>
+              <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
+                <span style={{fontSize:'12px',color:'var(--text3)',minWidth:'150px'}}>Nuevos netos / mes</span>
+                <input type="number" value={simAlumnosNuevos} onChange={e => setSimAlumnosNuevos(parseInt(e.target.value)||0)}
+                  style={{width:'70px',padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',textAlign:'center'}} />
+                <span style={{fontSize:'11px',color:'var(--text3)'}}>
+                  promedio histórico (6 meses): {promAlumnosNuevosMes >= 0 ? '+' : ''}{promAlumnosNuevosMes}/mes
+                </span>
+              </div>
+            </div>
+
+            {/* Costos y liquidaciones */}
+            <div style={{marginBottom:'16px'}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'8px'}}>
+                <span style={{fontSize:'12px',fontWeight:700,color:'var(--text2)'}}>Costos y liquidaciones</span>
+                <button onClick={() => setSimCostos(prev => [...prev, { label:'Nuevo gasto', monto:0, auto:false, escala:true }])}
+                  style={{fontSize:'11px',padding:'5px 10px',background:'var(--vl)',color:'var(--v)',border:'none',borderRadius:'8px',fontWeight:600,cursor:'pointer'}}>
+                  + Agregar gasto
+                </button>
+              </div>
+              {simCostos.length === 0 ? (
+                <div style={{fontSize:'12px',color:'var(--text3)',padding:'8px 0'}}>Cargando promedios históricos...</div>
+              ) : simCostos.map((c, i) => (
+                <div key={i} style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'6px'}}>
+                  <input type="text" value={c.label} onChange={e => setSimCostos(prev => prev.map((x,xi) => xi===i ? {...x, label:e.target.value} : x))}
+                    style={{flex:1,padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px'}} />
+                  {c.auto && <span style={{fontSize:'10px',color:'var(--text3)',whiteSpace:'nowrap'}}>prom. año</span>}
+                  <input type="number" value={c.monto} onChange={e => setSimCostos(prev => prev.map((x,xi) => xi===i ? {...x, monto:parseFloat(e.target.value)||0} : x))}
+                    style={{width:'110px',padding:'6px 8px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',textAlign:'right'}} />
+                  <button onClick={() => setSimCostos(prev => prev.filter((_,xi) => xi!==i))}
+                    style={{padding:'5px 9px',background:'var(--redl)',color:'var(--red)',border:'none',borderRadius:'8px',fontSize:'11px',cursor:'pointer'}}>✕</button>
+                </div>
+              ))}
+              <div style={{display:'flex',alignItems:'center',gap:'10px',marginTop:'8px',paddingTop:'8px',borderTop:'1px solid var(--border)'}}>
+                <span style={{fontSize:'12px',color:'var(--text3)',minWidth:'150px'}}>Inflación anualizada (costos fijos)</span>
+                <input type="range" min="0" max="30" value={simInflacion} onChange={e => setSimInflacion(parseInt(e.target.value))} style={{flex:1,maxWidth:'200px'}} />
+                <span style={{fontSize:'13px',fontWeight:700,color:'var(--v)',minWidth:'32px'}}>{simInflacion}%</span>
+              </div>
+            </div>
+
+            {/* KPIs */}
+            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'14px'}}>
+              <div style={{background:'var(--vl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                <div style={{fontSize:'10.5px',color:'var(--v)',fontWeight:700,marginBottom:'4px'}}>Resultado mes 6</div>
+                <div style={{fontSize:'18px',fontWeight:800,color: simResultado.filas[5].resultado>=0?'var(--green)':'var(--red)'}}>
+                  {simResultado.filas[5].resultado>=0?'+':''}{fmt$(simResultado.filas[5].resultado)}
+                </div>
+              </div>
+              <div style={{background:'var(--vl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                <div style={{fontSize:'10.5px',color:'var(--v)',fontWeight:700,marginBottom:'4px'}}>Margen mes 6</div>
+                <div style={{fontSize:'18px',fontWeight:800,color:'var(--v)'}}>
+                  {simResultado.filas[5].ingresos>0 ? Math.round((simResultado.filas[5].resultado/simResultado.filas[5].ingresos)*100) : 0}%
+                </div>
+              </div>
+              <div style={{background:'var(--vl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                <div style={{fontSize:'10.5px',color:'var(--v)',fontWeight:700,marginBottom:'4px'}}>Aumento mínimo hoy</div>
+                <div style={{fontSize:'18px',fontWeight:800,color:'var(--v)'}}>{simResultado.aumentoMinimo}%</div>
+              </div>
+            </div>
+
+            {/* Banner punto de equilibrio */}
+            <div style={{padding:'10px 14px',borderRadius:'10px',fontSize:'12.5px',fontWeight:600,marginBottom:'14px',
+              background: simResultado.mesEquilibrio === null ? 'var(--redl)' : simResultado.mesEquilibrio === 1 ? 'var(--greenl)' : 'var(--amberl)',
+              color: simResultado.mesEquilibrio === null ? 'var(--red)' : simResultado.mesEquilibrio === 1 ? 'var(--green)' : 'var(--amber)'}}>
+              {simResultado.mesEquilibrio === null
+                ? 'Con estos supuestos no se alcanza el punto de equilibrio dentro de los 6 meses.'
+                : simResultado.mesEquilibrio === 1
+                ? 'Ya estás sobre el punto de equilibrio desde el mes 1 con estos supuestos.'
+                : `Se alcanza el punto de equilibrio en el mes ${simResultado.mesEquilibrio}.`}
+            </div>
+
+            {/* Gráfico Ingresos vs Egresos — mismo estilo que Evolución histórica */}
+            <div style={{fontSize:'10px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.06em',marginBottom:'8px'}}>
+              Ingresos vs. egresos proyectados
+            </div>
+            <div style={{display:'flex',gap:'16px',fontSize:'11px',color:'var(--text3)',marginBottom:'8px'}}>
+              <span>■ <span style={{color:'var(--v)'}}>Ingresos</span></span>
+              <span>■ <span style={{color:'var(--red)'}}>Egresos</span></span>
+            </div>
+            {(() => {
+              const maxSim = Math.max(...simResultado.filas.map(f => Math.max(f.ingresos, f.egresos)), 1)
+              return (
+                <div style={{display:'flex',alignItems:'flex-end',gap:'8px',height:'140px',marginBottom:'6px'}}>
+                  {simResultado.filas.map(f => (
+                    <div key={f.mes} style={{flex:1,display:'flex',gap:'2px',alignItems:'flex-end',height:'100%',justifyContent:'center'}}>
+                      <div style={{width:'40%',height:`${Math.max(Math.round((f.ingresos/maxSim)*100),2)}%`,background:'var(--v)',borderRadius:'3px 3px 0 0'}} title={`Ingresos mes ${f.mes}: ${fmt$(f.ingresos)}`} />
+                      <div style={{width:'40%',height:`${Math.max(Math.round((f.egresos/maxSim)*100),2)}%`,background:'var(--red)',borderRadius:'3px 3px 0 0'}} title={`Egresos mes ${f.mes}: ${fmt$(f.egresos)}`} />
+                    </div>
+                  ))}
+                </div>
+              )
+            })()}
+            <div style={{display:'flex',gap:'8px'}}>
+              {simResultado.filas.map(f => (
+                <div key={f.mes} style={{flex:1,fontSize:'9px',color:'var(--text3)',textAlign:'center'}}>Mes {f.mes}</div>
+              ))}
+            </div>
+          </div>
+
+          {/* F) Alumnos en riesgo de deserción */}
           <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:'12px'}}>
               <div>
