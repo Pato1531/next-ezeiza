@@ -22,6 +22,10 @@ export async function GET(
     const nivelParam   = searchParams.get('nivel') || ''
     const modalidad    = searchParams.get('modalidad') || 'Presencial'
     const destinatario = searchParams.get('destinatario') || ''
+    const examenNombre = searchParams.get('examen') || ''
+    const fechaExamen  = searchParams.get('fecha_examen') || ''
+    const horaExamenDesde = searchParams.get('hora_examen_desde') || ''
+    const horaExamenHasta = searchParams.get('hora_examen_hasta') || ''
 
     if (!cursoId) {
       return new NextResponse('Parámetro curso_id requerido', { status: 400 })
@@ -297,7 +301,7 @@ export async function GET(
       </div>
 
       <div class="body">
-        <div class="cert-titulo">Certificado de Cursada</div>
+        <div class="cert-titulo">${tipo === 'Rendición de examen' ? 'Certificado de Examen' : 'Certificado de Cursada'}</div>
         <div class="cert-certifica">Se certifica que</div>
         <div class="cert-nombre-wrap">
           <div class="cert-nombre">${alumno.nombre} ${alumno.apellido}</div>
@@ -311,6 +315,17 @@ export async function GET(
           const fmtFecha = (f: string) => f ? new Date(f + 'T12:00:00').toLocaleDateString('es-AR', { day:'numeric', month:'long', year:'numeric' }) : ''
           const desdeStr = fmtFecha(desde)
           const hastaStr = fmtFecha(hasta)
+
+          const DIAS_SEMANA = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
+          const fechaExamenStr = fechaExamen ? (() => {
+            const d = new Date(fechaExamen + 'T12:00:00')
+            return `${DIAS_SEMANA[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`
+          })() : ''
+          const horaExamenStr = (horaExamenDesde && horaExamenHasta)
+            ? `desde las ${horaExamenDesde.replace(':', '.')} a ${horaExamenHasta.replace(':', '.')} horas`
+            : horaExamenDesde
+              ? `a partir de las ${horaExamenDesde.replace(':', '.')} horas`
+              : ''
 
           // Grilla Nivel + Año (sin carga horaria)
           const gridNivelAnio = `
@@ -362,6 +377,27 @@ export async function GET(
                 ${destinatario ? `Se extiende el presente certificado a ser presentado a <strong>${destinatario}</strong>, para los fines que estime conveniente.` : ''}
               </div>
               ${gridNivelAnio}`
+          }
+
+          if (tipo === 'Rendición de examen') {
+            return `
+              <div class="cert-texto">
+                ${alumno.dni ? `con número de identidad <strong>${alumno.dni}</strong> ` : ''}rindió el examen
+                <strong>${examenNombre}</strong> del curso <strong>${(curso as any).nombre}</strong> —
+                modalidad <em>${modalidad}</em>.
+                ${fechaExamenStr ? `El mismo fue el día <strong>${fechaExamenStr}</strong>${horaExamenStr ? ` ${horaExamenStr}` : ''}.` : ''}
+                ${destinatario ? `Se extiende el presente certificado a ser presentado a la entidad <strong>${destinatario}</strong>, para los fines que estime conveniente.` : ''}
+              </div>
+              <div class="cert-datos">
+                <div class="cert-dato">
+                  <div class="cert-dato-val">${examenNombre || 'N/A'}</div>
+                  <div class="cert-dato-label">Examen</div>
+                </div>
+                <div class="cert-dato">
+                  <div class="cert-dato-val">${nivelMostrar || 'N/A'}</div>
+                  <div class="cert-dato-label">Nivel</div>
+                </div>
+              </div>`
           }
 
           return `<div class="cert-texto">${(curso as any).nombre}</div>${gridNivelAnio}`
