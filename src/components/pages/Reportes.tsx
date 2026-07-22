@@ -1129,11 +1129,19 @@ function CertificadoSection({ alumnos }: any) {
   const [destinatario, setDestinatario] = useState('')
   const [nivelManual, setNivelManual] = useState('')
   const [modalidad, setModalidad] = useState('Presencial')
+  const [examenNombre, setExamenNombre] = useState('')
+  const [fechaExamen, setFechaExamen] = useState('')
+  const [horaExamenDesde, setHoraExamenDesde] = useState('')
+  const [horaExamenHasta, setHoraExamenHasta] = useState('')
   const [generando, setGenerando] = useState(false)
   const IS = { padding:'9px 12px', border:'1.5px solid var(--border)', borderRadius:'10px', fontSize:'13px', fontFamily:'Inter,sans-serif', outline:'none', color:'var(--text)', background:'var(--white)', width:'100%' } as const
 
   const generar = async () => {
     if (!selAlumno) return alert('Seleccioná un alumno')
+    if (tipo === 'Rendición de examen') {
+      if (!examenNombre.trim()) return alert('Ingresá el nombre del examen (ej: Mid Term, Final...)')
+      if (!fechaExamen) return alert('Ingresá la fecha del examen')
+    }
     setGenerando(true)
     try {
       const sb = createClient()
@@ -1162,6 +1170,12 @@ function CertificadoSection({ alumnos }: any) {
         ...(destinatario ? { destinatario } : {}),
         ...(nivelManual  ? { nivel: nivelManual } : {}),
         modalidad,
+        ...(tipo === 'Rendición de examen' ? {
+          examen: examenNombre,
+          fecha_examen: fechaExamen,
+          ...(horaExamenDesde ? { hora_examen_desde: horaExamenDesde } : {}),
+          ...(horaExamenHasta ? { hora_examen_hasta: horaExamenHasta } : {}),
+        } : {}),
       })
       window.open(`/api/certificado/${selAlumno}?${params.toString()}`, '_blank')
     } catch (e) {
@@ -1184,23 +1198,50 @@ function CertificadoSection({ alumnos }: any) {
       <div style={{marginBottom:'10px'}}>
         <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Tipo</div>
         <select style={IS} value={tipo} onChange={e => setTipo(e.target.value)}>
-          {['Asistencia al curso de inglés','Nivel alcanzado','Alumno regular'].map(t => <option key={t}>{t}</option>)}
+          {['Asistencia al curso de inglés','Nivel alcanzado','Alumno regular','Rendición de examen'].map(t => <option key={t}>{t}</option>)}
         </select>
       </div>
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
-        <div>
-          <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Desde</div>
-          <input style={IS} type="date" value={desde} onChange={e => setDesde(e.target.value)} />
-        </div>
-        <div>
-          <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Hasta</div>
-          <input style={IS} type="date" value={hasta} onChange={e => setHasta(e.target.value)} />
-        </div>
-      </div>
-      <div style={{marginBottom:'10px'}}>
-        <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Nivel (opcional)</div>
-        <input style={IS} type="text" value={nivelManual} onChange={e => setNivelManual(e.target.value)} placeholder="Ej: A1, A2, B1, Intermedio..." />
-      </div>
+
+      {tipo === 'Rendición de examen' && (
+        <>
+          <div style={{marginBottom:'10px'}}>
+            <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Examen</div>
+            <input style={IS} type="text" value={examenNombre} onChange={e => setExamenNombre(e.target.value)} placeholder="Ej: Mid Term, Final..." />
+          </div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+            <div>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Fecha</div>
+              <input style={IS} type="date" value={fechaExamen} onChange={e => setFechaExamen(e.target.value)} />
+            </div>
+            <div>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Desde</div>
+              <input style={IS} type="time" value={horaExamenDesde} onChange={e => setHoraExamenDesde(e.target.value)} />
+            </div>
+            <div>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Hasta</div>
+              <input style={IS} type="time" value={horaExamenHasta} onChange={e => setHoraExamenHasta(e.target.value)} />
+            </div>
+          </div>
+        </>
+      )}
+      {tipo !== 'Rendición de examen' && (
+        <>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'10px'}}>
+            <div>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Desde</div>
+              <input style={IS} type="date" value={desde} onChange={e => setDesde(e.target.value)} />
+            </div>
+            <div>
+              <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Hasta</div>
+              <input style={IS} type="date" value={hasta} onChange={e => setHasta(e.target.value)} />
+            </div>
+          </div>
+          <div style={{marginBottom:'10px'}}>
+            <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Nivel (opcional)</div>
+            <input style={IS} type="text" value={nivelManual} onChange={e => setNivelManual(e.target.value)} placeholder="Ej: A1, A2, B1, Intermedio..." />
+          </div>
+        </>
+      )}
       <div style={{marginBottom:'10px'}}>
         <div style={{fontSize:'10.5px',fontWeight:600,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'4px'}}>Modalidad</div>
         <select style={IS} value={modalidad} onChange={e => setModalidad(e.target.value)}>
