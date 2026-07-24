@@ -255,13 +255,27 @@ export default function Alumnos() {
     win.document.close()
   }
 
-  const exportarExcel = () => {
+  const exportarExcel = async () => {
+    const ids = filtrados.map((a: any) => a.id)
+    let mapCurso: Record<string, string> = {}
+    if (ids.length) {
+      try {
+        const { data } = await createClient()
+          .from('cursos_alumnos')
+          .select('alumno_id, cursos(nombre)')
+          .in('alumno_id', ids)
+        ;(data || []).forEach((r: any) => {
+          mapCurso[r.alumno_id] = r.cursos?.nombre || '—'
+        })
+      } catch { /* si falla, se exporta con Curso vacío */ }
+    }
+
     const headers = ocultarMontos
-      ? ['Apellido', 'Nombre', 'Nivel', mesFiltroNombre, 'DNI', 'Email', 'Fecha nacimiento']
-      : ['Apellido', 'Nombre', 'Nivel', 'Cuota mensual', mesFiltroNombre, 'DNI', 'Email', 'Fecha nacimiento']
+      ? ['Apellido', 'Nombre', 'Nivel', 'Curso', mesFiltroNombre, 'DNI', 'Email', 'Fecha nacimiento']
+      : ['Apellido', 'Nombre', 'Nivel', 'Curso', 'Cuota mensual', mesFiltroNombre, 'DNI', 'Email', 'Fecha nacimiento']
     const rows = filtrados.map((a:any) => ocultarMontos
-      ? [a.apellido, a.nombre, a.nivel || '', alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe', (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '', a.email || '', a.fecha_nacimiento || '']
-      : [a.apellido, a.nombre, a.nivel || '', a.cuota_mensual || 0, alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe', (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '', a.email || '', a.fecha_nacimiento || '']
+      ? [a.apellido, a.nombre, a.nivel || '', mapCurso[a.id] || '—', alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe', (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '', a.email || '', a.fecha_nacimiento || '']
+      : [a.apellido, a.nombre, a.nivel || '', mapCurso[a.id] || '—', a.cuota_mensual || 0, alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe', (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '', a.email || '', a.fecha_nacimiento || '']
     )
     const bom = '\uFEFF'
     const csv = bom + [headers, ...rows]
