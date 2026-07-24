@@ -155,19 +155,24 @@ export async function GET(
     const examenesConNota: {
       nombre: string; tipo: string; fecha: string
       notaLabel: string; notaBg: string; notaColor: string; observacion: string
+      esMidFinal: boolean
+      escrito: number | null; oral: number | null; listening: number | null
     }[] = []
 
     if (examenes && examenes.length > 0) {
       for (const ex of examenes) {
         const { data: notaData } = await sb
           .from('notas_examenes')
-          .select('nota, observacion')
+          .select('nota, observacion, escrito, oral, listening')
           .eq('examen_id', ex.id)
           .eq('alumno_id', alumnoId)
           .single()
 
         // Si no hay nota cargada para este alumno, no incluir en el boletín
         if (!notaData || notaData.nota === null || notaData.nota === undefined || notaData.nota === '') continue
+
+        const esMidFinal = ex.tipo === 'midterm' || ex.tipo === 'final'
+          || ex.nombre === 'Midterm Exam' || ex.nombre === 'Final Exam'
 
         const badge = notaBadge(notaData.nota)
         examenesConNota.push({
@@ -182,6 +187,10 @@ export async function GET(
           notaBg:      badge.bg,
           notaColor:   badge.color,
           observacion: notaData?.observacion ?? '',
+          esMidFinal,
+          escrito:   notaData?.escrito   ?? null,
+          oral:      notaData?.oral      ?? null,
+          listening: notaData?.listening ?? null,
         })
       }
     }
@@ -199,9 +208,23 @@ export async function GET(
           const notaDisplay = !isNaN(num) && ex.notaLabel !== '—'
             ? `${ex.notaLabel}<span style="font-size:10px;font-weight:400;opacity:.6">/100</span>`
             : ex.notaLabel
+          // Midterm/Final Exam: desglose por skill (Escrito/Oral/Listening)
+          const tieneSkills = ex.esMidFinal
+            && (ex.escrito !== null || ex.oral !== null || ex.listening !== null)
+          const skillsHtml = tieneSkills
+            ? `<div class="skills-row">${
+                ([['Escrito', ex.escrito], ['Oral', ex.oral], ['Listening', ex.listening]] as const)
+                  .filter(([, v]) => v !== null)
+                  .map(([label, v]) => {
+                    const b = notaBadge(v as number)
+                    return `<span class="skill-chip" style="background:${b.bg};color:${b.color}">${label} ${v}</span>`
+                  }).join('')
+              }</div>`
+            : ''
+
           return `
         <tr>
-          <td>${ex.nombre}</td>
+          <td>${ex.nombre}${skillsHtml}</td>
           <td class="td-fecha">${ex.fecha}</td>
           <td class="td-nota">
             <span class="nota-badge" style="background:${ex.notaBg};color:${ex.notaColor}">
@@ -329,6 +352,11 @@ export async function GET(
       border-radius: 10px; font-size: 10px; padding: 2px 8px;
       margin-left: 8px; font-weight: 600;
       text-transform: uppercase; letter-spacing: .05em;
+    }
+    .skills-row { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+    .skill-chip {
+      display: inline-block; font-size: 10px; font-weight: 600;
+      padding: 2px 8px; border-radius: 8px;
     }
 
     /* ── OBSERVACIONES ── */
