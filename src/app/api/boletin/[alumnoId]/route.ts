@@ -15,15 +15,25 @@ function notaBadge(nota: string | number | null): { label: string; bg: string; c
   }
   const n = String(nota).trim().toUpperCase()
   const num = Number(nota)
-  if (n === 'A' || n === 'A+' || n === 'A-' || (!isNaN(num) && num >= 9))
-    return { label: n, bg: '#e6f4ec', color: '#2d7a4f' }
-  if (n === 'B' || n === 'B+' || n === 'B-' || (!isNaN(num) && num >= 7 && num < 9))
-    return { label: n, bg: '#e0f0f7', color: '#1a6b8a' }
-  if (n === 'C' || n === 'C+' || n === 'C-' || (!isNaN(num) && num >= 5 && num < 7))
-    return { label: n, bg: '#fef3cd', color: '#b45309' }
-  if (n === 'D' || n === 'F' || (!isNaN(num) && num < 5))
-    return { label: n, bg: '#fdeaea', color: '#c0392b' }
-  return { label: n, bg: '#f4eefb', color: '#652f8d' }
+  const esLetra = isNaN(num)
+
+  if (esLetra) {
+    // Notas conceptuales (A/B/C/D, con variantes +/-)
+    if (n === 'A' || n === 'A+' || n === 'A-')
+      return { label: n, bg: '#e6f4ec', color: '#2d7a4f' }
+    if (n === 'B' || n === 'B+' || n === 'B-')
+      return { label: n, bg: '#e0f0f7', color: '#1a6b8a' }
+    if (n === 'C' || n === 'C+' || n === 'C-')
+      return { label: n, bg: '#fef3cd', color: '#b45309' }
+    if (n === 'D' || n === 'F')
+      return { label: n, bg: '#fdeaea', color: '#c0392b' }
+    return { label: n, bg: '#f4eefb', color: '#652f8d' }
+  }
+
+  // Notas numéricas sobre 100 (exámenes): solo verde/rojo según aprobación
+  if (num >= 60)
+    return { label: n, bg: '#e6f4ec', color: '#2d7a4f' }   // verde, aprobado
+  return { label: n, bg: '#fdeaea', color: '#c0392b' }     // rojo, <60
 }
 
 export async function GET(
