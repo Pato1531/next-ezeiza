@@ -61,17 +61,24 @@ export default function Cursos() {
 
   const reanudarCurso = async (id: string) => {
     try {
-      const res = await fetch('/api/cursos', {
+      const res = await fetch('/api/actualizar-curso', {
         method: 'PATCH',
         headers: { ...apiHeaders(), 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, datos: { activo: true } })
       })
-      if (res.ok) {
-        await recargar()
-        await cargarHistorial()
-        showToast('Curso reanudado correctamente', 'success')
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || json.error) {
+        console.error('[reanudar curso]', json.error || res.status)
+        showToast('No se pudo reanudar el curso. Intentá de nuevo.', 'error')
+        return
       }
-    } catch { showToast('Error al reanudar el curso', 'error') }
+      await recargar()
+      await cargarHistorial()
+      showToast('Curso reanudado correctamente', 'success')
+    } catch (e: any) {
+      console.error('[reanudar curso] catch:', e?.message)
+      showToast('Error de conexión al reanudar el curso', 'error')
+    }
   }
 
   const borrarDefinitivamente = async (id: string) => {
