@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAlumnos, useProfesoras, useCursos, apiHeaders } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
+import { showToast } from '../Toast'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
@@ -630,6 +631,22 @@ export default function DashboardEjecutivo() {
       `<tr><td>${m}</td><td style="text-align:right;font-weight:700;color:#652f8d">${fmt$(v)}</td><td style="text-align:right;color:#9b8eaa">${pct(v, totalCobrado)}%</td></tr>`
     ).join('')
 
+    // Detalle de egresos — mismos conceptos y mismo total que la tab "Est. Resultado"
+    // (liquidaciones + conceptos manuales), para que el PDF coincida con lo que se ve en pantalla.
+    const filasEgresos = [
+      ...(totalLiqDocentes > 0 ? [['Liquidaciones docentes', totalLiqDocentes]] : []),
+      ...(totalLiqSecretarias > 0 ? [['Sueldos administrativos', totalLiqSecretarias]] : []),
+      ...CONCEPTOS_EGRESO.map(c => [c, getImporte(c)]).filter(([, v]) => (v as number) > 0),
+    ] as [string, number][]
+    const filasEgresosHtml = filasEgresos.map(([c, v]) =>
+      `<tr><td>${c}</td><td style="text-align:right;font-weight:700;color:#c0392b">${fmt$(v)}</td></tr>`
+    ).join('')
+
+    const totalIngresosMes = totalCobradoCuotas + totalIngresosExtra
+    const margenPct = totalIngresosMes > 0 ? Math.round((totalMes / totalIngresosMes) * 100) : 0
+    const colorResultado = totalMes >= 0 ? '#2d7a4f' : '#c0392b'
+    const bgResultado     = totalMes >= 0 ? '#e6f4ec' : '#fbe9e7'
+
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
     <title>Cierre ${mesNombre} ${anio}</title>
     <style>
@@ -644,9 +661,14 @@ export default function DashboardEjecutivo() {
       table{width:100%;border-collapse:collapse;margin-bottom:14px}
       th{border-bottom:2px solid #652f8d;padding:7px;text-align:left;font-size:11px;text-transform:uppercase;color:#652f8d;letter-spacing:.04em}
       td{padding:7px 8px;border-bottom:1px solid #f0edf5}
-      .neto{background:#e6f4ec;border-radius:10px;padding:14px;text-align:center;margin:14px 0}
-      .neto-val{font-size:28px;font-weight:800;color:#2d7a4f}
-      .neto-lab{font-size:11px;color:#2d7a4f;font-weight:600;text-transform:uppercase;margin-top:3px}
+      .neto{background:${bgResultado};border-radius:10px;padding:14px;text-align:center;margin:14px 0}
+      .neto-val{font-size:28px;font-weight:800;color:${colorResultado}}
+      .neto-lab{font-size:11px;color:${colorResultado};font-weight:600;text-transform:uppercase;margin-top:3px}
+      .neto-formula{font-size:11px;color:#9b8eaa;margin-top:4px}
+      .margen{background:#f9f5fd;border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+      .margen-lab{font-size:11px;font-weight:700;color:#652f8d;text-transform:uppercase}
+      .margen-sub{font-size:10px;color:#9b8eaa;margin-top:2px}
+      .margen-val{font-size:20px;font-weight:800;color:#652f8d}
       @media print{body{padding:16px}}
     </style></head><body>
     <div class="hd">
@@ -660,7 +682,23 @@ export default function DashboardEjecutivo() {
       <div class="kpi"><div class="kpi-val">${fmt$(totalLiqDocentes)}</div><div class="kpi-lab">Liq. docentes</div></div>
       <div class="kpi"><div class="kpi-val">${fmt$(totalLiqSecretarias)}</div><div class="kpi-lab">Sueldos admin</div></div>
     </div>
-    <div class="neto"><div class="neto-val">${fmt$(neto)}</div><div class="neto-lab">Resultado neto estimado</div></div>
+    <h2>Egresos del mes</h2>
+    <table><tr><th>Concepto</th><th style="text-align:right">Monto</th></tr>
+    ${filasEgresosHtml || '<tr><td colspan="2" style="color:#9b8eaa;font-style:italic">Sin egresos cargados en Est. Resultado</td></tr>'}
+    <tr><td style="font-weight:700">Total egresos</td><td style="text-align:right;font-weight:700;color:#c0392b">${fmt$(totalEgresos)}</td></tr>
+    </table>
+    <div class="neto">
+      <div class="neto-val">${fmt$(totalMes)}</div>
+      <div class="neto-lab">Resultado neto del mes</div>
+      <div class="neto-formula">${fmt$(totalCobradoCuotas)} + ${fmt$(totalIngresosExtra)} (ingresos extra) − ${fmt$(totalEgresos)} (egresos)</div>
+    </div>
+    <div class="margen">
+      <div>
+        <div class="margen-lab">Margen bruto</div>
+        <div class="margen-sub">${fmt$(totalMes)} / ${fmt$(totalIngresosMes)} de ingresos</div>
+      </div>
+      <div class="margen-val">${margenPct}%</div>
+    </div>
     <h2>Métodos de pago</h2>
     <table><tr><th>Método</th><th style="text-align:right">Monto</th><th style="text-align:right">%</th></tr>
     ${filasMetodos}</table>
@@ -674,6 +712,122 @@ export default function DashboardEjecutivo() {
     const url  = URL.createObjectURL(blob)
     window.open(url, '_blank')
     setTimeout(() => URL.revokeObjectURL(url), 15000)
+  }
+
+  // ── Informe anual ────────────────────────────────────────────────────────
+  // Trae los 12 meses del año seleccionado y arma un reporte imprimible con
+  // la evolución mes a mes del resultado neto, usando la misma fórmula que
+  // "Total del Mes" en Est. Resultado (ingresos − egresos − liquidaciones).
+  const [generandoAnual, setGenerandoAnual] = useState(false)
+  const generarInformeAnual = async () => {
+    if (!usuario?.instituto_id || generandoAnual) return
+    setGenerandoAnual(true)
+    const winRef = window.open('', '_blank')
+    if (winRef) {
+      winRef.document.write('<p style="font-family:Arial,sans-serif;padding:40px;color:#652f8d">Generando informe anual…</p>')
+    }
+    try {
+      const sb = createClient()
+      const [{ data: pagosAnio }, { data: liqAnio }, { data: erAnio }] = await Promise.all([
+        sb.from('pagos_alumnos').select('mes, tipo, monto').eq('anio', anio).eq('instituto_id', usuario.instituto_id),
+        sb.from('liquidaciones').select('mes, total, profesora_id').eq('anio', anio).eq('instituto_id', usuario.instituto_id),
+        sb.from('estado_resultado_mensual').select('mes, concepto, importe').eq('anio', anio).eq('instituto_id', usuario.instituto_id),
+      ])
+
+      const porMes = MESES.map(m => {
+        const pagosM     = (pagosAnio || []).filter((p: any) => p.mes === m)
+        const cuotas     = pagosM.filter((p: any) => p.tipo === 'cuota' || !p.tipo).reduce((s: number, p: any) => s + (p.monto || 0), 0)
+        const examenes   = pagosM.filter((p: any) => p.tipo === 'examen').reduce((s: number, p: any) => s + (p.monto || 0), 0)
+        const matriculas = pagosM.filter((p: any) => p.tipo === 'matricula').reduce((s: number, p: any) => s + (p.monto || 0), 0)
+        const liqM       = (liqAnio || []).filter((l: any) => l.mes === m)
+        const liqDoc      = liqM.filter((l: any) => idsDocentes.has(l.profesora_id)).reduce((s: number, l: any) => s + (l.total || 0), 0)
+        const liqSec      = liqM.filter((l: any) => idsSecretarias.has(l.profesora_id)).reduce((s: number, l: any) => s + (l.total || 0), 0)
+        const erM          = (erAnio || []).filter((r: any) => r.mes === m)
+        const egresosConceptos = CONCEPTOS_EGRESO.reduce((s, c) => {
+          const row = erM.find((r: any) => r.concepto === c)
+          return s + (row?.importe || 0)
+        }, 0)
+        const totalEgresosM      = egresosConceptos + liqDoc + liqSec
+        const totalIngresosExtraM = examenes + matriculas
+        const totalIngresosM      = cuotas + totalIngresosExtraM
+        const totalMesM            = totalIngresosM - totalEgresosM
+        const tieneDatos = pagosM.length > 0 || liqM.length > 0 || erM.some((r: any) => r.importe)
+        return { mes: m, cuotas, totalIngresos: totalIngresosM, totalEgresos: totalEgresosM, totalMes: totalMesM, tieneDatos }
+      })
+
+      const mesesConDatos = porMes.filter(d => d.tieneDatos)
+      const totalAnualIngresos = mesesConDatos.reduce((s, d) => s + d.totalIngresos, 0)
+      const totalAnualEgresos  = mesesConDatos.reduce((s, d) => s + d.totalEgresos, 0)
+      const totalAnualNeto     = mesesConDatos.reduce((s, d) => s + d.totalMes, 0)
+      const promedioMensual    = mesesConDatos.length > 0 ? totalAnualNeto / mesesConDatos.length : 0
+      const mejorMes = mesesConDatos.length ? mesesConDatos.reduce((a, b) => b.totalMes > a.totalMes ? b : a) : null
+      const peorMes  = mesesConDatos.length ? mesesConDatos.reduce((a, b) => b.totalMes < a.totalMes ? b : a) : null
+
+      const maxAbs = Math.max(1, ...porMes.map(d => Math.abs(d.totalMes)))
+      const filasChart = porMes.map(d => {
+        const alturaPx = Math.round((Math.abs(d.totalMes) / maxAbs) * 120)
+        const color = !d.tieneDatos ? '#e5e0ee' : d.totalMes >= 0 ? '#2d7a4f' : '#c0392b'
+        return `<div style="display:flex;flex-direction:column;align-items:center;flex:1;min-width:0">
+          <div style="height:120px;display:flex;align-items:flex-end;width:100%;justify-content:center">
+            <div style="width:70%;max-width:28px;height:${Math.max(alturaPx,2)}px;background:${color};border-radius:3px 3px 0 0"></div>
+          </div>
+          <div style="font-size:9px;color:#9b8eaa;margin-top:4px;white-space:nowrap">${d.mes.slice(0,3)}</div>
+        </div>`
+      }).join('')
+
+      const filasTabla = porMes.map(d => `<tr>
+        <td>${d.mes}</td>
+        <td style="text-align:right">${d.tieneDatos ? fmt$(d.totalIngresos) : '—'}</td>
+        <td style="text-align:right;color:#c0392b">${d.tieneDatos ? fmt$(d.totalEgresos) : '—'}</td>
+        <td style="text-align:right;font-weight:700;color:${!d.tieneDatos ? '#9b8eaa' : d.totalMes >= 0 ? '#2d7a4f' : '#c0392b'}">${d.tieneDatos ? fmt$(d.totalMes) : '—'}</td>
+      </tr>`).join('')
+
+      const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+      <title>Informe Anual ${anio}</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:28px;font-size:13px;color:#1a1020;max-width:720px;margin:0 auto}
+        .hd{display:flex;justify-content:space-between;border-bottom:3px solid #652f8d;padding-bottom:14px;margin-bottom:20px}
+        .logo{font-size:20px;font-weight:800}.logo span{color:#652f8d}
+        h2{color:#652f8d;font-size:16px;margin:22px 0 10px;border-bottom:1px solid #ede8f5;padding-bottom:6px}
+        .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px}
+        .kpi{background:#f9f5fd;border-radius:10px;padding:12px;text-align:center}
+        .kpi-val{font-size:18px;font-weight:800;color:#652f8d}
+        .kpi-lab{font-size:10px;color:#9b8eaa;font-weight:600;text-transform:uppercase;margin-top:2px}
+        .chart{display:flex;align-items:flex-end;gap:6px;background:#f9f5fd;border-radius:10px;padding:16px 12px 8px;margin-top:12px}
+        table{width:100%;border-collapse:collapse;margin-bottom:14px}
+        th{border-bottom:2px solid #652f8d;padding:7px;text-align:left;font-size:11px;text-transform:uppercase;color:#652f8d;letter-spacing:.04em}
+        td{padding:7px 8px;border-bottom:1px solid #f0edf5}
+        @media print{body{padding:16px}}
+      </style></head><body>
+      <div class="hd">
+        <div class="logo"><span>Next</span> Ezeiza</div>
+        <div style="font-size:13px;color:#9b8eaa">Informe anual — ${anio}</div>
+      </div>
+      <div class="kpis">
+        <div class="kpi"><div class="kpi-val">${fmt$(totalAnualIngresos)}</div><div class="kpi-lab">Ingresos del año</div></div>
+        <div class="kpi"><div class="kpi-val">${fmt$(totalAnualEgresos)}</div><div class="kpi-lab">Egresos del año</div></div>
+        <div class="kpi"><div class="kpi-val" style="color:${totalAnualNeto>=0?'#2d7a4f':'#c0392b'}">${fmt$(totalAnualNeto)}</div><div class="kpi-lab">Resultado neto anual</div></div>
+        <div class="kpi"><div class="kpi-val">${fmt$(promedioMensual)}</div><div class="kpi-lab">Promedio mensual</div></div>
+      </div>
+      <h2>Evolución mensual del resultado neto</h2>
+      <div class="chart">${filasChart}</div>
+      ${mejorMes ? `<div style="font-size:11px;color:#9b8eaa;margin-top:8px">Mejor mes: <strong style="color:#2d7a4f">${mejorMes.mes} (${fmt$(mejorMes.totalMes)})</strong> · Peor mes: <strong style="color:#c0392b">${peorMes?.mes} (${fmt$(peorMes?.totalMes || 0)})</strong></div>` : ''}
+      <h2>Detalle por mes</h2>
+      <table><tr><th>Mes</th><th style="text-align:right">Ingresos</th><th style="text-align:right">Egresos</th><th style="text-align:right">Resultado</th></tr>
+      ${filasTabla}</table>
+      <script>setTimeout(function(){window.print()},400)</script></body></html>`
+
+      if (winRef) {
+        winRef.document.open()
+        winRef.document.write(html)
+        winRef.document.close()
+      }
+    } catch (e) {
+      console.error('[informe anual] error:', e)
+      if (winRef) winRef.document.write('<p style="font-family:Arial,sans-serif;padding:40px;color:#c0392b">Error al generar el informe. Cerrá esta ventana e intentá de nuevo.</p>')
+      showToast('Error al generar el informe anual', 'error')
+    }
+    setGenerandoAnual(false)
   }
 
   // ── Estado de resultado helpers ──────────────────────────────────────────
@@ -746,6 +900,9 @@ export default function DashboardEjecutivo() {
           </select>
           <button onClick={exportarPDF} style={{padding:'9px 16px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',whiteSpace:'nowrap'}}>
             ⬇ PDF
+          </button>
+          <button onClick={generarInformeAnual} disabled={generandoAnual} style={{padding:'9px 16px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor: generandoAnual ? 'default' : 'pointer',whiteSpace:'nowrap',opacity: generandoAnual ? 0.6 : 1}}>
+            📊 {generandoAnual ? 'Generando...' : 'Informe Anual'}
           </button>
         </div>
       </div>
