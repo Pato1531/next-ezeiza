@@ -736,9 +736,12 @@ export default function DashboardEjecutivo() {
 
       const porMes = MESES.map(m => {
         const pagosM     = (pagosAnio || []).filter((p: any) => p.mes === m)
-        const cuotas     = pagosM.filter((p: any) => p.tipo === 'cuota' || !p.tipo).reduce((s: number, p: any) => s + (p.monto || 0), 0)
+        const totalPagosM = pagosM.reduce((s: number, p: any) => s + (p.monto || 0), 0)
         const examenes   = pagosM.filter((p: any) => p.tipo === 'examen').reduce((s: number, p: any) => s + (p.monto || 0), 0)
         const matriculas = pagosM.filter((p: any) => p.tipo === 'matricula').reduce((s: number, p: any) => s + (p.monto || 0), 0)
+        // cuotas = TODO lo cobrado menos exámenes y matrículas — igual que totalCobradoCuotas
+        // en pantalla, para incluir recargos, cuota_recargo, proporcionales, etc. sin excepción.
+        const cuotas     = totalPagosM - examenes - matriculas
         const liqM       = (liqAnio || []).filter((l: any) => l.mes === m)
         const liqDoc      = liqM.filter((l: any) => idsDocentes.has(l.profesora_id)).reduce((s: number, l: any) => s + (l.total || 0), 0)
         const liqSec      = liqM.filter((l: any) => idsSecretarias.has(l.profesora_id)).reduce((s: number, l: any) => s + (l.total || 0), 0)
