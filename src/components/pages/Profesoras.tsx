@@ -987,19 +987,24 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
       .catch(() => {})
   }, [prof.id])
 
+  // Feriados: se leen de agenda_eventos (tipo='feriado'), la MISMA fuente que usan
+  // Dashboard Ejecutivo e Informe Docente. Así lo que el director carga o sincroniza
+  // en la Agenda (nacionales + institucionales/puentes) es lo único que descuenta acá.
+  const [feriadosDetalle, setFeriadosDetalle] = useState<{fecha:string,nombre:string}[]>([])
   useEffect(() => {
     const fetchFeriados = async () => {
       setLoadingCalc(true)
       try {
-        const res = await fetch(`https://nager.date/api/v3/PublicHolidays/${anioLiq}/AR`)
-        if (res.ok) {
-          const data = await res.json()
-          setFeriados(new Set((data as any[]).map((f: any) => f.date as string)))
-        } else {
-          setFeriados(new Set())
-        }
+        const { data } = await createClient().from('agenda_eventos')
+          .select('fecha,titulo')
+          .eq('tipo', 'feriado')
+          .gte('fecha', `${anioLiq}-01-01`)
+          .lte('fecha', `${anioLiq}-12-31`)
+        setFeriados(new Set((data || []).map((f: any) => f.fecha as string)))
+        setFeriadosDetalle((data || []).map((f: any) => ({ fecha: f.fecha, nombre: f.titulo })))
       } catch {
         setFeriados(new Set())
+        setFeriadosDetalle([])
       }
       setLoadingCalc(false)
     }
@@ -1044,6 +1049,10 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
   }
 
   const { horasTotales: horasRealesMes, detalle: detalleHoras } = calcHorasRealesMes()
+  const feriadosDelMesLiq = feriadosDetalle
+    .filter(f => _mIdxCalc >= 0 && f.fecha.startsWith(`${anioLiq}-${String(_mIdxCalc + 1).padStart(2, '0')}`))
+    .sort((a, b) => a.fecha.localeCompare(b.fecha))
+  const totalHorasFeriados = detalleHoras.reduce((s, d) => s + d.feriadosExcluidos, 0)
   // semanasCalc se mantiene solo para compatibilidad con PDF de liquidaciones guardadas
   const semanasCalc = _mIdxCalc >= 0 && new Date(anioLiq, _mIdxCalc + 1, 0).getDate() >= 29 ? 5 : 4
 
@@ -1061,6 +1070,10 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
   const [liqEditando, setLiqEditando] = useState<any>(null)
   const [guardandoEdit, setGuardandoEdit] = useState(false)
   const [confirmDelLiq, setConfirmDelLiq] = useState<any>(null)
+  // Snapshot de fechas de feriado con el que se calculó/guardó la última liquidación de este mes.
+  // null = no hay liquidación previa guardada para este mes (nada que comparar).
+  const [feriadosSnapshotGuardado, setFeriadosSnapshotGuardado] = useState<string[] | null>(null)
+  const [confirmCambioFeriados, setConfirmCambioFeriados] = useState(false)
 
   const { liquidaciones, guardar: guardarLiq, recargar: recargarLiqs } = useLiquidaciones(prof.id)
   const { historial: histHoras } = useHorasHistorial(prof.id)
@@ -1092,6 +1105,11 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
       // Cargar días ausentes
       const diasMatch = liqExistente.descuento_concepto?.match(/(\d+)\s*días?/i)
       if (diasMatch) setDiasAusente(parseInt(diasMatch[1]))
+      // Cargar snapshot de feriados con el que se calculó esta liquidación (si existe)
+      try {
+        const feriadosGuardados = JSON.parse(liqExistente.feriados_aplicados || '[]')
+        setFeriadosSnapshotGuardado(Array.isArray(feriadosGuardados) ? feriadosGuardados : null)
+      } catch { setFeriadosSnapshotGuardado(null) }
       // Cargar estado
       if (liqExistente.estado === 'borrador' || liqExistente.estado === 'confirmada') {
         setEstadoLiq(liqExistente.estado)
@@ -1106,6 +1124,7 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
       setConceptos([])
       setDiasAusente(0)
       setEstadoLiq('confirmada')
+      setFeriadosSnapshotGuardado(null)
     }
   }, [mesLiq, anioLiq, liquidaciones.length])
 
@@ -1143,7 +1162,16 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
     setConceptos(prev => prev.filter(c => c.id !== id))
 
   // ── Guardar liquidación ───────────────────────────────────────────────
-  const confirmarLiquidacion = async () => {
+  // Si ya había una liquidación guardada para este mes y los feriados que se están
+  // aplicando ahora cambiaron respecto de esa vez (se agregó/sacó un feriado en Agenda),
+  // pedimos confirmación explícita antes de sobreescribir — así el director siempre sabe
+  // por qué cambió el monto.
+  const confirmarLiquidacion = async (yaConfirmado = false) => {
+    const feriadosActuales = feriadosDelMesLiq.map(f => f.fecha).sort()
+    if (tipoContrato === 'hora' && !yaConfirmado && feriadosSnapshotGuardado !== null) {
+      const cambiaron = JSON.stringify(feriadosActuales) !== JSON.stringify([...feriadosSnapshotGuardado].sort())
+      if (cambiaron) { setConfirmCambioFeriados(true); return }
+    }
     setGuardandoLiq(true)
     // Serializamos los conceptos libres en ajuste_concepto (JSON) para no cambiar la DB
     const conceptosJson = JSON.stringify(conceptos.filter(c => Math.abs(c.monto || 0) > 0 && c.label))
@@ -1160,9 +1188,12 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
       ajuste_concepto: conceptosJson,
       descuento_licencias: descuentoLicencias,
       descuento_concepto: diasAusente > 0 ? `${diasAusente} días ausente` : '',
+      feriados_aplicados: tipoContrato === 'hora' ? JSON.stringify(feriadosActuales) : '[]',
       total,
       estado: estadoLiq,
     })
+    setFeriadosSnapshotGuardado(feriadosActuales)
+    setConfirmCambioFeriados(false)
     setGuardandoLiq(false)
     setLiqGuardada(true)
     setTimeout(() => setLiqGuardada(false), 3000)
@@ -1367,6 +1398,29 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
               <span style={{fontSize:'13px',color:'var(--text2)'}}>Total horas en el mes</span>
               <span style={{fontSize:'13px',fontWeight:600,color:'var(--v)'}}>{horasRealesMes}hs</span>
             </div>
+
+            {/* ── Banner de feriados aplicados — siempre visible ── */}
+            <div style={{marginTop:'10px',padding:'10px 12px',borderRadius:'10px',
+              background: feriadosDelMesLiq.length > 0 ? '#fef3cd' : 'var(--white)',
+              border: `1px solid ${feriadosDelMesLiq.length > 0 ? '#f5d78e' : 'var(--border)'}`}}>
+              <div style={{fontSize:'11px',fontWeight:700,color: feriadosDelMesLiq.length > 0 ? '#b45309' : 'var(--text3)',marginBottom: feriadosDelMesLiq.length > 0 ? '4px' : 0}}>
+                📅 {feriadosDelMesLiq.length > 0
+                  ? `${feriadosDelMesLiq.length} feriado${feriadosDelMesLiq.length !== 1 ? 's' : ''} de ${mesLiq} aplicado${feriadosDelMesLiq.length !== 1 ? 's' : ''} (-${totalHorasFeriados}hs)`
+                  : `Sin feriados cargados en ${mesLiq} ${anioLiq}`}
+              </div>
+              {feriadosDelMesLiq.length > 0 ? (
+                feriadosDelMesLiq.map(f => (
+                  <div key={f.fecha} style={{fontSize:'11px',color:'#7c4a14',display:'flex',justifyContent:'space-between'}}>
+                    <span>{f.nombre}</span>
+                    <span>{f.fecha.split('-').reverse().slice(0,2).join('/')}</span>
+                  </div>
+                ))
+              ) : (
+                <div style={{fontSize:'11px',color:'var(--text3)'}}>
+                  Si hubo un día sin clases este mes (feriado nacional, puente, cierre institucional), cargalo en Agenda → Sincronizar feriados y se va a descontar solo acá.
+                </div>
+              )}
+            </div>
           </>
         ) : (
           <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 0',borderBottom:'1px solid var(--border)'}}>
@@ -1529,7 +1583,7 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
           style={{flex:1,padding:'11px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
           Descargar PDF
         </button>
-        <button onClick={confirmarLiquidacion} disabled={guardandoLiq}
+        <button onClick={() => confirmarLiquidacion()} disabled={guardandoLiq}
           style={{flex:1,padding:'11px',
             background: guardandoLiq ? '#aaa' : liqGuardada ? 'var(--greenl)' : estadoLiq==='confirmada' ? 'var(--v)' : 'var(--amber)',
             color: liqGuardada ? 'var(--green)' : '#fff',
@@ -1538,6 +1592,31 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
           {guardandoLiq ? 'Guardando...' : liqGuardada ? '✓ Guardada' : estadoLiq==='confirmada' ? 'Confirmar liquidación' : 'Guardar borrador'}
         </button>
       </div>
+
+      {/* ── MODAL: los feriados cambiaron respecto de la liquidación guardada ── */}
+      {confirmCambioFeriados && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.45)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000,padding:'16px'}}
+          onClick={() => setConfirmCambioFeriados(false)}>
+          <div onClick={e => e.stopPropagation()}
+            style={{background:'var(--white)',borderRadius:'14px',padding:'20px',maxWidth:'380px',width:'100%'}}>
+            <div style={{fontSize:'15px',fontWeight:700,marginBottom:'8px',color:'var(--text)'}}>⚠ Los feriados de {mesLiq} cambiaron</div>
+            <div style={{fontSize:'13px',color:'var(--text2)',marginBottom:'12px',lineHeight:1.5}}>
+              Esta liquidación ya estaba guardada, pero los feriados cargados en Agenda para {mesLiq} {anioLiq} son distintos a los que se usaron la última vez.
+              Ahora se están aplicando <b>{feriadosDelMesLiq.length}</b> feriado{feriadosDelMesLiq.length !== 1 ? 's' : ''} (-{totalHorasFeriados}hs), por un subtotal de <b>${base.toLocaleString('es-AR')}</b>.
+            </div>
+            <div style={{display:'flex',gap:'8px'}}>
+              <button onClick={() => setConfirmCambioFeriados(false)}
+                style={{flex:1,padding:'10px',background:'var(--bg)',border:'1.5px solid var(--border)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',color:'var(--text2)'}}>
+                Revisar
+              </button>
+              <button onClick={() => confirmarLiquidacion(true)}
+                style={{flex:1,padding:'10px',background:'var(--v)',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',color:'#fff'}}>
+                Confirmar de todos modos
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── HISTORIAL DE LIQUIDACIONES ── */}
       {liquidaciones.length > 0 && (
