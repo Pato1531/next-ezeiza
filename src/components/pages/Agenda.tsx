@@ -50,6 +50,7 @@ export default function Agenda() {
   const [usuariosInstituto, setUsuariosInstituto] = useState<any[]>([])
   const [cargandoUsuarios, setCargandoUsuarios] = useState(false)
   const [feriadosAnios, setFeriadosAnios] = useState<Set<number>>(new Set())
+  const [sincronizandoFeriados, setSincronizandoFeriados] = useState(false)
 
   useEffect(() => { cargarEventos() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -192,6 +193,41 @@ export default function Agenda() {
     setGuardando(false)
   }
 
+  // ── Sincronizar feriados nacionales del año visible hacia agenda_eventos ──
+  // Esta es la ÚNICA vía por la que un feriado nacional pasa de "sugerencia visual"
+  // (nager.date) a dato persistido que usan Liquidaciones, Dashboard Ejecutivo e Informe Docente.
+  // El director/coordinadora revisa y dispara el alta a mano — no se auto-guarda nada.
+  const sincronizarFeriadosNacionales = async () => {
+    setSincronizandoFeriados(true)
+    try {
+      const yaGuardados = new Set(
+        eventos.filter(e => e.tipo === 'feriado' && e.fecha?.startsWith(String(anioActual))).map(e => e.fecha)
+      )
+      const pendientes = Object.entries(feriados).filter(([date]) =>
+        date.startsWith(String(anioActual)) && !yaGuardados.has(date)
+      )
+      if (pendientes.length === 0) {
+        alert(`Ya están todos los feriados nacionales de ${anioActual} cargados en la Agenda.`)
+        setSincronizandoFeriados(false)
+        return
+      }
+      for (const [date, nombre] of pendientes) {
+        await fetch('/api/guardar-evento', {
+          method: 'POST', headers: apiHeaders(),
+          body: JSON.stringify({
+            titulo: nombre, tipo: 'feriado', fecha: date,
+            convocados: 'todos', creado_por: usuario?.nombre,
+          }),
+        })
+      }
+      await cargarEventos()
+      alert(`Se cargaron ${pendientes.length} feriado${pendientes.length !== 1 ? 's' : ''} nacional${pendientes.length !== 1 ? 'es' : ''} de ${anioActual}. Ya van a descontarse automáticamente en Liquidaciones.`)
+    } catch {
+      alert('No se pudo completar la sincronización. Probá de nuevo.')
+    }
+    setSincronizandoFeriados(false)
+  }
+
   const eliminar = async (id: string) => {
     if (!confirm('¿Eliminar este evento?')) return
     const res = await fetch('/api/agenda-eventos', {
@@ -260,11 +296,20 @@ export default function Agenda() {
           <div style={{fontSize:'13px',color:'var(--text2)',marginTop:'2px'}}>Compartida con todo el equipo</div>
         </div>
         {esCoord && (
-          <button
-            onClick={() => { setForm(f => ({ ...f, fecha: hoy() })); setVista('nuevo') }}
-            style={{padding:'9px 14px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
-            + Nuevo
-          </button>
+          <div style={{display:'flex',gap:'8px'}}>
+            <button
+              onClick={sincronizarFeriadosNacionales}
+              disabled={sincronizandoFeriados}
+              title={`Carga los feriados nacionales de ${anioActual} en la Agenda para que Liquidaciones, Dashboard Ejecutivo e Informe Docente los descuenten automáticamente`}
+              style={{padding:'9px 14px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:sincronizandoFeriados?'default':'pointer',opacity:sincronizandoFeriados?.6:1}}>
+              {sincronizandoFeriados ? 'Sincronizando…' : `📅 Sincronizar feriados ${anioActual}`}
+            </button>
+            <button
+              onClick={() => { setForm(f => ({ ...f, fecha: hoy() })); setVista('nuevo') }}
+              style={{padding:'9px 14px',background:'var(--v)',color:'#fff',border:'none',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer'}}>
+              + Nuevo
+            </button>
+          </div>
         )}
       </div>
 
