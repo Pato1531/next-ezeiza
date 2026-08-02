@@ -70,7 +70,7 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
 
   // Feriados del mes — misma fuente que el Dashboard
   const { data: feriadosData } = await db.from('agenda_eventos')
-    .select('fecha').eq('tipo', 'Feriado').gte('fecha', desde).lte('fecha', hasta)
+    .select('fecha').eq('tipo', 'feriado').gte('fecha', desde).lte('fecha', hasta)
   const feriados = new Set((feriadosData || []).map((f: any) => f.fecha))
 
   // Horas dictadas
