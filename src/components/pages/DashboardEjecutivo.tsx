@@ -130,7 +130,7 @@ export default function DashboardEjecutivo() {
       const { data: feriadosData } = await sb
         .from('agenda_eventos')
         .select('fecha')
-        .eq('tipo', 'Feriado')
+        .eq('tipo', 'feriado')
         .gte('fecha', inicioMes)
         .lte('fecha', finMes)
 
