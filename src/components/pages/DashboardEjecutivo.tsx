@@ -1677,6 +1677,44 @@ export default function DashboardEjecutivo() {
             />
           </div>
 
+          {/* Punto de equilibrio del mes — costos totales vs. ingresos reales, siempre visible */}
+          {(() => {
+            const ingresosDelMes = totalCobradoCuotas + totalIngresosExtra
+            const gap = totalEgresos - ingresosDelMes // >0 = falta cobrar para cubrir costos
+            const superavit = -gap
+            const alumnosEquivalentes = cuotaPromedioActual > 0 ? Math.ceil(Math.abs(gap) / cuotaPromedioActual) : 0
+            const pctCubierto = totalEgresos > 0 ? Math.min(100, Math.round((ingresosDelMes / totalEgresos) * 100)) : 100
+            const enEquilibrio = gap <= 0
+            const color = enEquilibrio ? 'var(--green)' : 'var(--red)'
+            const bg    = enEquilibrio ? 'var(--greenl)' : 'var(--redl)'
+            return (
+              <div style={{background:bg,border:`1.5px solid ${color}`,borderRadius:'14px',padding:'14px 16px',marginBottom:'14px'}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:'8px'}}>
+                  <div style={{fontSize:'11px',fontWeight:700,color,textTransform:'uppercase',letterSpacing:'.07em'}}>
+                    🎯 Punto de equilibrio de {mesNombre}
+                  </div>
+                  <div style={{fontSize:'11px',fontWeight:700,color,background:'var(--white)',padding:'2px 8px',borderRadius:'20px'}}>
+                    {pctCubierto}% cubierto
+                  </div>
+                </div>
+                <div style={{fontSize:'13px',color:'var(--text)',lineHeight:1.5}}>
+                  Costos del mes (liquidaciones + egresos): <b>{fmt$(totalEgresos)}</b>. Ingresos hasta ahora: <b>{fmt$(ingresosDelMes)}</b>.
+                </div>
+                <div style={{fontSize:'20px',fontWeight:800,color,marginTop:'6px'}}>
+                  {enEquilibrio
+                    ? `+${fmt$(superavit)} sobre el punto de equilibrio`
+                    : `Faltan ${fmt$(gap)} para llegar`}
+                </div>
+                <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}}>
+                  {alumnosEquivalentes > 0 && cuotaPromedioActual > 0
+                    ? `Equivale a ${alumnosEquivalentes} alumno${alumnosEquivalentes !== 1 ? 's' : ''} con la cuota promedio actual (${fmt$(cuotaPromedioActual)})`
+                    : ''}
+                  {' · '}Para el detalle mes a mes y simular aumentos, vení a la pestaña 📈 Proyecciones.
+                </div>
+              </div>
+            )
+          })()}
+
           {/* Segunda fila: operativa */}
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'10px'}}>
             {[
