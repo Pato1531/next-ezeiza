@@ -220,7 +220,7 @@ export default function Alumnos() {
       return `<tr>
         <td>${a.apellido}, ${a.nombre}</td>
         <td>${a.nivel || '—'}</td>
-        ${!ocultarMontos ? `<td>${a.cuota_mensual ? '$' + a.cuota_mensual.toLocaleString('es-AR') : '—'}</td>` : ''}
+        ${!ocultarMontos ? `<td>${a.tarifa_clase ? '$'+a.tarifa_clase.toLocaleString('es-AR')+'/clase' : (a.cuota_mensual ? '$' + a.cuota_mensual.toLocaleString('es-AR') : '—')}</td>` : ''}
         <td style="color:${pagado?'#2d7a4f':'#c0392b'};font-weight:600">${pagado ? '✓ Pagó' : '✗ Debe'}</td>
         <td>${a.es_menor && a.padre_dni ? a.padre_dni + ' (tutor)' : a.dni || '—'}</td>
       </tr>`
@@ -275,7 +275,7 @@ export default function Alumnos() {
       : ['Apellido', 'Nombre', 'Nivel', 'Curso', 'Cuota mensual', mesFiltroNombre, 'DNI', 'Email', 'Fecha nacimiento']
     const rows = filtrados.map((a:any) => ocultarMontos
       ? [a.apellido, a.nombre, a.nivel || '', mapCurso[a.id] || '—', alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe', (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '', a.email || '', a.fecha_nacimiento || '']
-      : [a.apellido, a.nombre, a.nivel || '', mapCurso[a.id] || '—', a.cuota_mensual || 0, alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe', (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '', a.email || '', a.fecha_nacimiento || '']
+      : [a.apellido, a.nombre, a.nivel || '', mapCurso[a.id] || '—', a.tarifa_clase ? `${a.tarifa_clase}/clase` : (a.cuota_mensual || 0), alumnosConPagoMes.has(a.id) ? 'Pagó' : 'Debe', (a.es_menor && a.padre_dni ? a.padre_dni : a.dni) || '', a.email || '', a.fecha_nacimiento || '']
     )
     const bom = '\uFEFF'
     const csv = bom + [headers, ...rows]
@@ -432,7 +432,7 @@ export default function Alumnos() {
   const filtrados = alumnos.filter(a => {
     const matchBusq = !busqueda || `${a.nombre} ${a.apellido} ${a.nivel} ${a.dni||''}`.toLowerCase().includes(busqueda.toLowerCase())
     const matchSinCurso = !soloSinCurso || alumnosSinCurso.has(a.id)
-    const matchSinCuota = !soloSinCuota || !a.cuota_mensual || a.cuota_mensual === 0
+    const matchSinCuota = !soloSinCuota || ((!a.cuota_mensual || a.cuota_mensual === 0) && !a.tarifa_clase)
     const matchSinTel = !soloSinTel || (!a.telefono && !a.padre_telefono)
     const matchSinDni = !soloSinDni || (!a.dni)
     const matchSinFecha = !soloSinFecha || (!a.fecha_nacimiento)
@@ -528,9 +528,9 @@ export default function Alumnos() {
         {!ocultarMontos && <button onClick={() => setSoloSinCuota(!soloSinCuota)} style={{display:'flex',alignItems:'center',gap:'6px',padding:'7px 14px',borderRadius:'20px',fontSize:'12.5px',fontWeight:600,cursor:'pointer',border:'1.5px solid',borderColor:soloSinCuota?'var(--red)':'var(--border)',background:soloSinCuota?'var(--redl)':'var(--white)',color:soloSinCuota?'var(--red)':'var(--text2)',transition:'all .15s'}}>
           <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 2H4a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8l-6-6z"/><path d="M14 2v6h6"/></svg>
           Sin cuota
-          {alumnos.filter((a:any) => !a.cuota_mensual || a.cuota_mensual === 0).length > 0 && (
+          {alumnos.filter((a:any) => (!a.cuota_mensual || a.cuota_mensual === 0) && !a.tarifa_clase).length > 0 && (
             <span style={{background:soloSinCuota?'var(--red)':'var(--border)',color:soloSinCuota?'#fff':'var(--text2)',borderRadius:'20px',padding:'1px 7px',fontSize:'11px',fontWeight:700}}>
-              {alumnos.filter((a:any) => !a.cuota_mensual || a.cuota_mensual === 0).length}
+              {alumnos.filter((a:any) => (!a.cuota_mensual || a.cuota_mensual === 0) && !a.tarifa_clase).length}
             </span>
           )}
         </button>}
@@ -721,6 +721,11 @@ export default function Alumnos() {
               {!ocultarMontos && <Row2>
                 <Field2 label="Matrícula ($)"><Input type="number" value={form?.matricula||''} onChange={(v:string)=>setForm({...form,matricula:+v})} /></Field2>
                 <Field2 label="Cuota mensual ($)"><Input type="number" value={form?.cuota_mensual||''} onChange={(v:string)=>setForm({...form,cuota_mensual:+v})} /></Field2>
+              </Row2>}
+              {!ocultarMontos && <Row2>
+                <Field2 label="Tarifa por clase ($) — solo si el curso es particular">
+                  <Input type="number" value={form?.tarifa_clase||''} onChange={(v:string)=>setForm({...form,tarifa_clase:+v})} placeholder="Ej: 8000" />
+                </Field2>
               </Row2>}
               <Row2>
                 
@@ -1293,6 +1298,8 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
   const { historial: histCuotas } = useCuotasHistorial(a.id)
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [cursoActual, setCursoActual] = useState<any>(null)
+  const [clasesAsistidasMes, setClasesAsistidasMes] = useState<{fecha:string,tema:string}[]>([])
+  const [cargandoClasesAsist, setCargandoClasesAsist] = useState(false)
   const { cursos: todosLosCursos } = useCursos()
   const [modalAsignarCurso, setModalAsignarCurso] = useState(false)
   const [asignando, setAsignando] = useState(false)
@@ -1320,6 +1327,32 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
         }
       }, () => setCursoActual(null))
   }, [a.id, todosLosCursos.length])
+
+  // ── Cursos "por clase" (particulares): traer clases del mes a las que asistió,
+  // para sugerir el monto del pago. Se recalcula si cambia el mes/año elegido en el modal.
+  useEffect(() => {
+    if (!modalPago || !a.tarifa_clase || !cursoActual?.id) { setClasesAsistidasMes([]); return }
+    const mesIdx = MESES.indexOf(pago.mes)
+    if (mesIdx < 0) return
+    const desde = `${pago.anio}-${String(mesIdx + 1).padStart(2, '0')}-01`
+    const hasta = `${pago.anio}-${String(mesIdx + 1).padStart(2, '0')}-31`
+    setCargandoClasesAsist(true)
+    const sb = createClient()
+    sb.from('clases').select('id, fecha, tema').eq('curso_id', cursoActual.id).gte('fecha', desde).lte('fecha', hasta)
+      .then(async ({ data: clases }) => {
+        const claseIds = (clases || []).map((c: any) => c.id)
+        if (claseIds.length === 0) { setClasesAsistidasMes([]); setCargandoClasesAsist(false); return }
+        const { data: asist } = await sb.from('asistencia_clases').select('clase_id, estado').eq('alumno_id', a.id).in('clase_id', claseIds)
+        const asistidas = new Set((asist || []).filter((r: any) => r.estado === 'P' || r.estado === 'T').map((r: any) => r.clase_id))
+        const detalle = (clases || [])
+          .filter((c: any) => asistidas.has(c.id))
+          .sort((x: any, y: any) => x.fecha.localeCompare(y.fecha))
+          .map((c: any) => ({ fecha: c.fecha, tema: c.tema || 'Sin tema cargado' }))
+        setClasesAsistidasMes(detalle)
+        setCargandoClasesAsist(false)
+        setPago((prev: any) => ({ ...prev, monto: detalle.length * (a.tarifa_clase || 0) }))
+      })
+  }, [modalPago, cursoActual?.id, pago.mes, pago.anio, a.id, a.tarifa_clase]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const asignarCurso = async (cursoId: string) => {
     setAsignando(true)
@@ -1406,7 +1439,7 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
     const msg = `Hola ${contacto}! 👋 Te escribimos de *Next Ezeiza English Institute*.
 
 Te recordamos que la cuota de *${pago.mes} ${pago.anio}* de *${a.nombre} ${a.apellido}* se encuentra pendiente de pago.
-${!ocultarMontos ? `\n💰 Monto: *$${(a.cuota_mensual||0).toLocaleString('es-AR')}*` : ''}
+${!ocultarMontos && !a.tarifa_clase ? `\n💰 Monto: *$${(a.cuota_mensual||0).toLocaleString('es-AR')}*` : ''}
 📚 Curso: *${cursoActual?.nombre || '—'}*
 
 Podés abonar en el instituto o por transferencia. Ante cualquier consulta estamos a disposición. ¡Muchas gracias! 🙏`
@@ -1519,7 +1552,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
           <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'1px',background:'var(--border)',borderRadius:'12px',overflow:'hidden'}}>
             <Kpi val={`$${Math.round(pagos.reduce((s:number,p:any)=>s+p.monto,0)/1000)}k`} label="Pagado" color="var(--v)" />
             <Kpi val={pagos.length} label="Pagos" />
-            <Kpi val={`$${a.cuota_mensual?.toLocaleString('es-AR')}`} label="Cuota" color="var(--v)" />
+            <Kpi val={a.tarifa_clase ? `$${a.tarifa_clase.toLocaleString('es-AR')}/clase` : `$${a.cuota_mensual?.toLocaleString('es-AR')}`} label={a.tarifa_clase ? 'Tarifa' : 'Cuota'} color="var(--v)" />
           </div>
         )}
       </div>
@@ -1546,7 +1579,9 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
         {a.fecha_alta && <FieldRO label="Alumno activo desde" value={new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})} />}
         <FieldRO label="Teléfono" value={a.telefono||'—'} />
         <FieldRO label="Email" value={a.email||'—'} />
-        {!ocultarMontos && <FieldRO label="Cuota mensual" value={`$${a.cuota_mensual?.toLocaleString('es-AR')}`} />}
+        {!ocultarMontos && (a.tarifa_clase
+          ? <FieldRO label="Tarifa por clase" value={`$${a.tarifa_clase.toLocaleString('es-AR')}/clase`} />
+          : <FieldRO label="Cuota mensual" value={`$${a.cuota_mensual?.toLocaleString('es-AR')}`} />)}
 
         {/* CURSO */}
         <div style={{marginBottom:'11px'}}>
@@ -1618,14 +1653,14 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
           {MESES.map((m,i) => {
             const p = pagos.find((x:any) => x.mes === m && x.anio === new Date().getFullYear())
             const futuro = i > new Date().getMonth()
-            const col = futuro?'var(--border)':!p?'var(--redl)':p.monto>=a.cuota_mensual?'var(--greenl)':'var(--amberl)'
+            const col = futuro?'var(--border)':!p?'var(--redl)':(a.tarifa_clase ? (p.monto>0?'var(--greenl)':'var(--redl)') : (p.monto>=a.cuota_mensual?'var(--greenl)':'var(--amberl)'))
             return <div key={m} style={{height:'18px',borderRadius:'3px',background:col}} title={m} />
           })}
         </div>
         {pagos.length === 0 && <div style={{textAlign:'center',padding:'20px',color:'var(--text3)'}}>Sin pagos registrados</div>}
         {[...pagos].map((p:any) => {
-          const ok = p.monto >= a.cuota_mensual
-          const parc = p.monto > 0 && p.monto < a.cuota_mensual
+          const ok = a.tarifa_clase ? p.monto > 0 : p.monto >= a.cuota_mensual
+          const parc = a.tarifa_clase ? false : (p.monto > 0 && p.monto < a.cuota_mensual)
           return (
             <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'11px 0',borderBottom:'1px solid var(--border)'}}>
               <div>
@@ -1779,8 +1814,12 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
                   <div style={{fontSize:'11px',color:'var(--text3)'}}>Total</div>
                 </div>
                 <div style={{background:'var(--amberl)',borderRadius:'10px',padding:'10px',textAlign:'center'}}>
-                  <div style={{fontSize:'18px',fontWeight:700,color:'var(--amber)'}}>${a.cuota_mensual?.toLocaleString('es-AR')}</div>
-                  <div style={{fontSize:'11px',color:'var(--text3)'}}>Cuota actual</div>
+                  <div style={{fontSize:'18px',fontWeight:700,color:'var(--amber)'}}>
+                    {a.tarifa_clase ? `$${a.tarifa_clase.toLocaleString('es-AR')}/clase` : `$${a.cuota_mensual?.toLocaleString('es-AR')}`}
+                  </div>
+                  <div style={{fontSize:'11px',color:'var(--text3)'}}>
+                    {a.tarifa_clase ? 'Tarifa por clase' : 'Cuota actual'}
+                  </div>
                 </div>
               </div>
             </>}
@@ -1794,6 +1833,32 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
             {MESES.map(m=><option key={m}>{m}</option>)}
           </select>
         </Field2>
+        {a.tarifa_clase && (
+          <div style={{padding:'10px 12px',background:'var(--vl)',borderRadius:'10px',marginBottom:'10px'}}>
+            <div style={{fontSize:'11px',fontWeight:700,color:'var(--v)',marginBottom:'6px'}}>
+              📚 Clases asistidas en {pago.mes} {pago.anio}
+            </div>
+            {cargandoClasesAsist ? (
+              <div style={{fontSize:'12px',color:'var(--text3)'}}>Buscando clases...</div>
+            ) : clasesAsistidasMes.length === 0 ? (
+              <div style={{fontSize:'12px',color:'var(--text3)'}}>Sin clases con asistencia registrada este mes.</div>
+            ) : (
+              <>
+                {clasesAsistidasMes.map(c => (
+                  <div key={c.fecha} style={{display:'flex',justifyContent:'space-between',fontSize:'11px',color:'var(--text2)',padding:'2px 0'}}>
+                    <span>{new Date(c.fecha+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})} — {c.tema}</span>
+                  </div>
+                ))}
+                <div style={{fontSize:'11px',color:'var(--v)',fontWeight:700,marginTop:'6px',borderTop:'1px solid var(--border)',paddingTop:'6px'}}>
+                  {clasesAsistidasMes.length} clase{clasesAsistidasMes.length!==1?'s':''} × ${(a.tarifa_clase||0).toLocaleString('es-AR')} = ${(clasesAsistidasMes.length*(a.tarifa_clase||0)).toLocaleString('es-AR')} sugerido
+                </div>
+              </>
+            )}
+            {!a.tarifa_clase && (
+              <div style={{fontSize:'11px',color:'var(--amber)',marginTop:'6px'}}>⚠ Este alumno no tiene tarifa por clase cargada — editala en su ficha.</div>
+            )}
+          </div>
+        )}
         <Field2 label="Monto ($)"><Input type="number" value={pago.monto||''} onChange={(v:string)=>setPago({...pago,monto:+v})} /></Field2>
         <Field2 label="Método">
           <select style={IS} value={pago.metodo} onChange={e=>setPago({...pago,metodo:e.target.value})}>
