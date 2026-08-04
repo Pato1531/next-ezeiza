@@ -122,10 +122,10 @@ export default function Reportes() {
         const institutoId = usuario?.instituto_id
         const [altasRes, bajasRes] = await Promise.all([
           (institutoId
-            ? sb.from('alumnos').select('nombre, apellido, nivel, cuota_mensual, fecha_alta, color')
+            ? sb.from('alumnos').select('nombre, apellido, nivel, cuota_mensual, tarifa_clase, fecha_alta, color')
                 .gte('fecha_alta', inicioMes).lte('fecha_alta', finMes).eq('activo', true)
                 .eq('instituto_id', institutoId).order('fecha_alta', { ascending: false })
-            : sb.from('alumnos').select('nombre, apellido, nivel, cuota_mensual, fecha_alta, color')
+            : sb.from('alumnos').select('nombre, apellido, nivel, cuota_mensual, tarifa_clase, fecha_alta, color')
                 .gte('fecha_alta', inicioMes).lte('fecha_alta', finMes).eq('activo', true)
                 .order('fecha_alta', { ascending: false })
           ),
@@ -363,6 +363,11 @@ export default function Reportes() {
   }
 
   const diaHoy = new Date().getDate()
+  // Un alumno con tarifa_clase se factura por clase asistida, no por cuota fija —
+  // mostrar $0 sería engañoso, así que se etiqueta distinto en todos los reportes.
+  const montoLabel = (a: any) => a?.tarifa_clase
+    ? `$${a.tarifa_clase.toLocaleString('es-AR')}/clase`
+    : (a?.cuota_mensual ? `$${a.cuota_mensual.toLocaleString('es-AR')}` : '—')
   const getEstadoCobranza = (alumnoId: string) => {
     if (alumnosConPago.has(alumnoId)) return { label: 'Pagado', color: '#2d7a4f' }
     if (diaHoy <= 10) return { label: 'Al día', color: '#b45309' }
@@ -379,7 +384,7 @@ export default function Reportes() {
       ['Alumno','Curso','Cuota mensual','Estado'],
       ...alumnos.map(a => {
         const { label } = getEstadoCobranza(a.id)
-        return [`${a.nombre} ${a.apellido}`, a.nivel, `$${a.cuota_mensual?.toLocaleString('es-AR')}`, label]
+        return [`${a.nombre} ${a.apellido}`, a.nivel, montoLabel(a), label]
       })
     ]
     descargarCSV(rows, 'cobranza_alumnos')
@@ -389,7 +394,7 @@ export default function Reportes() {
     const html = `<h1>Cobranza por Alumno — ${mesActualNombre} ${anioActual}</h1>
     <p style="color:#888;font-size:12px">Pagado: pago registrado &bull; Al día: sin pago del 1-10 &bull; Deudor: sin pago del 11+</p>
     <table><tr><th>Alumno</th><th>Nivel</th><th>Cuota</th><th>Estado</th></tr>
-    ${alumnos.map(a=>{const e=getEstadoCobranza(a.id);return`<tr><td>${a.nombre} ${a.apellido}</td><td>${alumnoCursoMap[a.id]||'—'}</td><td>$${a.cuota_mensual?.toLocaleString('es-AR')}</td><td style="color:${e.color};font-weight:600">${e.label}</td></tr>`}).join('')}
+    ${alumnos.map(a=>{const e=getEstadoCobranza(a.id);return`<tr><td>${a.nombre} ${a.apellido}</td><td>${alumnoCursoMap[a.id]||'—'}</td><td>${montoLabel(a)}</td><td style="color:${e.color};font-weight:600">${e.label}</td></tr>`}).join('')}
     </table>`
     abrirPDF('Cobranza por Alumno', html)
   }
@@ -458,7 +463,7 @@ export default function Reportes() {
       [''],
       ['=== ALUMNOS ==='],
       ['Nombre','Nivel','Cuota'],
-      ...alumnos.map(a=>[`${a.nombre} ${a.apellido}`,a.nivel,`$${a.cuota_mensual?.toLocaleString('es-AR')}`]),
+      ...alumnos.map(a=>[`${a.nombre} ${a.apellido}`,a.nivel,montoLabel(a)]),
       [''],
       ['=== CURSOS ==='],
       ['Nombre','Nivel','Días'],
@@ -476,7 +481,7 @@ export default function Reportes() {
     </table>
     <h2>Alumnos</h2>
     <table><tr><th>Nombre</th><th>Nivel</th><th>Cuota</th></tr>
-    ${alumnos.map(a=>`<tr><td>${a.nombre} ${a.apellido}</td><td>${a.nivel}</td><td>$${a.cuota_mensual?.toLocaleString('es-AR')}</td></tr>`).join('')}
+    ${alumnos.map(a=>`<tr><td>${a.nombre} ${a.apellido}</td><td>${a.nivel}</td><td>${montoLabel(a)}</td></tr>`).join('')}
     </table>
     <h2>Cursos</h2>
     <table><tr><th>Nombre</th><th>Nivel</th><th>Días</th><th>Horario</th></tr>
@@ -678,7 +683,7 @@ export default function Reportes() {
                       <Av color={a.color} size={28}>{a.nombre[0]}{a.apellido[0]}</Av>
                       <div>
                         <div style={{fontSize:'13.5px',fontWeight:600}}>{a.nombre} {a.apellido}</div>
-                        <div style={{fontSize:'12px',color:'var(--text2)'}}>{alumnoCursoMap[a.id] || '—'} · ${a.cuota_mensual?.toLocaleString('es-AR')}/mes</div>
+                        <div style={{fontSize:'12px',color:'var(--text2)'}}>{alumnoCursoMap[a.id] || '—'} · {montoLabel(a)}{a.tarifa_clase ? '' : '/mes'}</div>
                       </div>
                     </div>
                     <div style={{display:'flex',alignItems:'center',gap:'6px'}}>
@@ -738,7 +743,7 @@ export default function Reportes() {
             [''],
             ['ALTAS DEL MES'],
             ['Nombre', 'Nivel', 'Cuota', 'Fecha de alta'],
-            ...altasDelMes.map((a:any) => [`${a.nombre} ${a.apellido}`, a.nivel, `$${a.cuota_mensual?.toLocaleString('es-AR')||'0'}`, a.fecha_alta ? new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR') : '—']),
+            ...altasDelMes.map((a:any) => [`${a.nombre} ${a.apellido}`, a.nivel, montoLabel(a), a.fecha_alta ? new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR') : '—']),
             [''],
             ['BAJAS DEL MES'],
             ['Nombre', 'Nivel', 'Cuota', 'Fecha de baja', 'Motivo'],
@@ -762,7 +767,7 @@ export default function Reportes() {
             ${altasDelMes.length > 0 ? `
             <h3 style="color:#2d7a4f">Altas del mes</h3>
             <table><tr><th>Alumno</th><th>Nivel</th><th>Cuota</th><th>Fecha</th></tr>
-            ${altasDelMes.map((a:any)=>`<tr><td>${a.nombre} ${a.apellido}</td><td>${a.nivel}</td><td>$${a.cuota_mensual?.toLocaleString('es-AR')||'0'}</td><td>${fmtF(a.fecha_alta)}</td></tr>`).join('')}
+            ${altasDelMes.map((a:any)=>`<tr><td>${a.nombre} ${a.apellido}</td><td>${a.nivel}</td><td>${montoLabel(a)}</td><td>${fmtF(a.fecha_alta)}</td></tr>`).join('')}
             </table>` : '<p style="color:#9b8eaa">Sin altas en el mes</p>'}
             ${bajasDelMes.length > 0 ? `
             <h3 style="color:#c0392b">Bajas del mes</h3>
@@ -808,7 +813,7 @@ export default function Reportes() {
                       </div>
                     </div>
                     <div style={{textAlign:'right',flexShrink:0}}>
-                      <div style={{fontSize:'12px',fontWeight:700,color:'var(--green)'}}>${a.cuota_mensual?.toLocaleString('es-AR')||'0'}/mes</div>
+                      <div style={{fontSize:'12px',fontWeight:700,color:'var(--green)'}}>{montoLabel(a)}{a.tarifa_clase ? '' : '/mes'}</div>
                       <div style={{fontSize:'11px',color:'var(--text3)'}}>{a.fecha_alta ? new Date(a.fecha_alta+'T12:00:00').toLocaleDateString('es-AR',{day:'numeric',month:'short'}) : '—'}</div>
                     </div>
                   </div>
