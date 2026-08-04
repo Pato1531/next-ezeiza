@@ -104,6 +104,9 @@ export default function Pagos() {
   const [montoProporcional, setMontoProporcional] = useState('')
   const [cobrarExamen, setCobrarExamen] = useState(false)
   const [montoExamen, setMontoExamen] = useState('')
+  const [cobrarClaseParticular, setCobrarClaseParticular] = useState(false)
+  const [montoClaseParticular, setMontoClaseParticular] = useState<Record<string, number>>({})
+  const [cargandoClaseParticular, setCargandoClaseParticular] = useState(false)
 
   // ── Estado: Feedback post-registro ───────────────────────────────────────
   // Guarda el resumen del último registro para mostrarlo en pantalla
@@ -329,6 +332,41 @@ export default function Pagos() {
     ? alumnos.filter((a: any) => `${a.nombre} ${a.apellido}`.toLowerCase().includes(busqueda.toLowerCase()))
     : alumnos
 
+  // ── Clase particular: calcular monto sugerido por alumno según asistencia del mes ──
+  // Se dispara al activar el concepto o al cambiar de mes. Se apoya en `clases` +
+  // `asistencia_clases`, la misma fuente que usa Alumnos → Registrar pago individual.
+  useEffect(() => {
+    if (!cobrarClaseParticular) return
+    const idsPorClase = alumnos.filter((a: any) => a.tarifa_clase).map((a: any) => a.id)
+    if (idsPorClase.length === 0) { setMontoClaseParticular({}); return }
+    setCargandoClaseParticular(true)
+    const sb = createClient()
+    const mesIdx = MESES.indexOf(mes)
+    const desde = `${anioActual}-${String(mesIdx + 1).padStart(2, '0')}-01`
+    const hasta = `${anioActual}-${String(mesIdx + 1).padStart(2, '0')}-31`
+    ;(async () => {
+      const { data: cursosAlumno } = await sb.from('cursos_alumnos').select('alumno_id, curso_id').in('alumno_id', idsPorClase)
+      const cursoIds = [...new Set((cursosAlumno || []).map((r: any) => r.curso_id))]
+      if (cursoIds.length === 0) { setMontoClaseParticular({}); setCargandoClaseParticular(false); return }
+      const { data: clases } = await sb.from('clases').select('id, curso_id').in('curso_id', cursoIds).gte('fecha', desde).lte('fecha', hasta)
+      const claseIds = (clases || []).map((c: any) => c.id)
+      if (claseIds.length === 0) { setMontoClaseParticular({}); setCargandoClaseParticular(false); return }
+      const { data: asist } = await sb.from('asistencia_clases').select('alumno_id, clase_id, estado').in('alumno_id', idsPorClase).in('clase_id', claseIds)
+      const conteoPorAlumno: Record<string, number> = {}
+      for (const r of (asist || [])) {
+        if (r.estado !== 'P' && r.estado !== 'T') continue
+        conteoPorAlumno[r.alumno_id] = (conteoPorAlumno[r.alumno_id] || 0) + 1
+      }
+      const montos: Record<string, number> = {}
+      for (const a of alumnos) {
+        if (!a.tarifa_clase) continue
+        montos[a.id] = (conteoPorAlumno[a.id] || 0) * a.tarifa_clase
+      }
+      setMontoClaseParticular(montos)
+      setCargandoClaseParticular(false)
+    })()
+  }, [cobrarClaseParticular, mes, anioActual, alumnos]) // eslint-disable-line react-hooks/exhaustive-deps
+
   const totalMonto = [...seleccionados].reduce((sum, id) => {
     const a = alumnos.find((x: any) => x.id === id)
     if (!a) return sum
@@ -338,6 +376,7 @@ export default function Pagos() {
     if (cobrarMatricula) t += (a.matricula || 0)
     if (cobrarProporcional) t += (parseFloat(montoProporcional) || 0)
     if (cobrarExamen) t += (parseFloat(montoExamen) || 0)
+    if (cobrarClaseParticular) t += (montoClaseParticular[id] || 0)
     return sum + t
   }, 0)
 
@@ -352,6 +391,7 @@ export default function Pagos() {
     cobrarMatricula && 'Matrícula',
     cobrarProporcional && `Proporcional ($${fmtMonto(parseFloat(montoProporcional)||0)})`,
     cobrarExamen && `Examen ($${fmtMonto(parseFloat(montoExamen)||0)})`,
+    cobrarClaseParticular && 'Clase particular',
   ].filter(Boolean) as string[]
 
   // ── Selección alumnos ─────────────────────────────────────────────────────
@@ -404,6 +444,11 @@ export default function Pagos() {
         monto: parseFloat(montoExamen) || 0,
         tipo: 'examen', observaciones: `Examen ${mes} ${anioActual}`,
       })
+      if (cobrarClaseParticular && (montoClaseParticular[a.id] || 0) > 0) inserts.push({
+        alumno_id: a.id, mes, anio: anioActual, metodo, fecha_pago: fecha,
+        monto: montoClaseParticular[a.id],
+        tipo: 'cuota', observaciones: `Clases particulares ${mes} ${anioActual}`,
+      })
     }
 
     try {
@@ -429,6 +474,7 @@ export default function Pagos() {
         if (cobrarMatricula) t += (a.matricula || 0)
         if (cobrarProporcional) t += (parseFloat(montoProporcional) || 0)
         if (cobrarExamen) t += (parseFloat(montoExamen) || 0)
+        if (cobrarClaseParticular) t += (montoClaseParticular[id] || 0)
         return sum + t
       }, 0)
 
@@ -1129,6 +1175,20 @@ export default function Pagos() {
                 </div>
               )}
             </div>
+            {/* Clase particular */}
+            <div style={{ borderRadius:'10px', border: `1.5px solid ${cobrarClaseParticular ? '#d4537e' : 'var(--border)'}`, background: cobrarClaseParticular ? '#fbeaf0' : 'var(--white)', marginTop:'8px' }}>
+              <div onClick={() => setCobrarClaseParticular(!cobrarClaseParticular)} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', cursor:'pointer' }}>
+                <div style={{ width:18, height:18, borderRadius:5, border: `2px solid ${cobrarClaseParticular ? '#d4537e' : 'var(--border)'}`, background: cobrarClaseParticular ? '#d4537e' : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  {cobrarClaseParticular && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2.5"><path d="M2 5l2 2 4-4"/></svg>}
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:'13px', fontWeight:600 }}>Clase particular</div>
+                  <div style={{ fontSize:'11px', color:'var(--text3)', marginTop:'1px' }}>
+                    {cargandoClaseParticular ? 'Calculando clases asistidas...' : `${mes} ${anioActual} · clases asistidas × tarifa de cada alumno`}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
           {/* ── BARRA DE BÚSQUEDA RÁPIDA ─────────────────────────────────── */}
@@ -1173,6 +1233,7 @@ export default function Pagos() {
                 if (cobrarRecargo) monto += (parseFloat(montoRecargo) || 0)
                 if (cobrarMatricula) monto += (a.matricula || 0)
                 if (cobrarProporcional) monto += (parseFloat(montoProporcional) || 0)
+                if (cobrarClaseParticular) monto += (montoClaseParticular[a.id] || 0)
                 const yaPago = alumnosPagadosMes.has(a.id)
                 return (
                   <div
@@ -1191,7 +1252,7 @@ export default function Pagos() {
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ fontSize:'13.5px', fontWeight:600 }}>{a.nombre} {a.apellido}</div>
                       <div style={{ fontSize:'11.5px', color:'var(--text2)' }}>
-                        {cursosPorAlumno[a.id] || a.nivel || '—'}
+                        {cursosPorAlumno[a.id] || a.nivel || '—'}{a.tarifa_clase ? ' · particular' : ''}
                       </div>
                       {notasPorAlumno[a.id] && (
                         <div
