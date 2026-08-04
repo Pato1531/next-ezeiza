@@ -202,37 +202,48 @@ export default function DashboardEjecutivo() {
   }, [cargar, cargarER])
 
   // ── Estimado de alumnos por-clase (sin cuota fija) ────────────────────────
-  // No hay forma de "proyectar" cuánto van a asistir este mes, así que se
-  // aproxima con el promedio de lo efectivamente pagado en los últimos 3 meses.
-  // Si un alumno todavía no tiene pagos registrados, no se le puede estimar nada (0).
+  // Proyección teórica: cuántas clases tiene el curso de cada alumno este mes
+  // según sus días de dictado, descontando feriados — igual criterio que ya
+  // usa Liquidaciones para las profesoras. No depende de asistencia real ni
+  // de historial de pagos, así que funciona desde el primer mes del alumno.
+  const contarClasesTeoricasMes = (diasStr: string, feriados: Set<string>): number => {
+    if (!diasStr) return 0
+    const mapaDias: Record<string, number> = {
+      'Lun': 1, 'Mar': 2, 'Mié': 3, 'Jue': 4, 'Vie': 5, 'Sáb': 6, 'Dom': 0,
+      'lun': 1, 'mar': 2, 'mie': 3, 'jue': 4, 'vie': 5, 'sab': 6, 'dom': 0,
+    }
+    const diasCurso = new Set(
+      diasStr.split(/[\/,\s]+/).map((d: string) => mapaDias[d.trim()]).filter((n: any) => n !== undefined)
+    )
+    if (diasCurso.size === 0) return 0
+    let clasesEnMes = 0
+    const diasEnMes = new Date(anio, mes + 1, 0).getDate()
+    for (let d = 1; d <= diasEnMes; d++) {
+      const fecha = new Date(anio, mes, d)
+      const fechaStr = `${anio}-${String(mes + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      if (diasCurso.has(fecha.getDay()) && !feriados.has(fechaStr)) clasesEnMes++
+    }
+    return clasesEnMes
+  }
+
   useEffect(() => {
-    const idsPorClase = alumnos.filter((a: any) => a.tarifa_clase).map((a: any) => a.id)
-    if (idsPorClase.length === 0) { setEstimadoPorClase({}); return }
-    const ventana = [0, 1, 2].map(offset => {
-      let m = mes - offset, y = anio
-      if (m < 0) { m += 12; y -= 1 }
-      return `${MESES[m]}-${y}`
-    })
+    const porClase = alumnos.filter((a: any) => a.tarifa_clase)
+    if (porClase.length === 0) { setEstimadoPorClase({}); return }
     const sb = createClient()
-    sb.from('pagos_alumnos')
-      .select('alumno_id, monto, tipo, mes, anio')
-      .in('alumno_id', idsPorClase)
+    sb.from('cursos_alumnos')
+      .select('alumno_id, cursos(dias)')
+      .in('alumno_id', porClase.map((a: any) => a.id))
       .then(({ data }) => {
-        const porAlumno: Record<string, number[]> = {}
-        for (const p of (data || [])) {
-          if (p.tipo === 'examen' || p.tipo === 'matricula') continue
-          if (!ventana.includes(`${p.mes}-${p.anio}`)) continue
-          if (!porAlumno[p.alumno_id]) porAlumno[p.alumno_id] = []
-          porAlumno[p.alumno_id].push(p.monto || 0)
-        }
+        const diasPorAlumno: Record<string, string> = {}
+        for (const r of (data || [])) diasPorAlumno[(r as any).alumno_id] = (r as any).cursos?.dias || ''
         const estimado: Record<string, number> = {}
-        for (const id of idsPorClase) {
-          const pagos = porAlumno[id] || []
-          estimado[id] = pagos.length > 0 ? Math.round(pagos.reduce((s, v) => s + v, 0) / pagos.length) : 0
+        for (const a of porClase) {
+          const clasesTeoricas = contarClasesTeoricasMes(diasPorAlumno[a.id] || '', rentabilidadData.feriados)
+          estimado[a.id] = clasesTeoricas * (a.tarifa_clase || 0)
         }
         setEstimadoPorClase(estimado)
       })
-  }, [alumnos, mes, anio])
+  }, [alumnos, mes, anio, rentabilidadData.feriados])
 
   // ── Simulador: promedios históricos del año corriente ────────────────────
   // Independiente del selector de mes/año de arriba — siempre usa el año
