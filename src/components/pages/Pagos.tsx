@@ -507,7 +507,7 @@ export default function Pagos() {
 
   const guardar = () => {
     if (seleccionados.size === 0) return showToast('Seleccioná al menos un alumno', 'warning')
-    if (!cobrarCuota && !cobrarRecargo && !cobrarMatricula && !cobrarProporcional && !cobrarExamen) return showToast('Seleccioná al menos un concepto', 'warning')
+    if (!cobrarCuota && !cobrarRecargo && !cobrarMatricula && !cobrarProporcional && !cobrarExamen && !cobrarClaseParticular) return showToast('Seleccioná al menos un concepto', 'warning')
     if (cobrarProporcional && (!montoProporcional || parseFloat(montoProporcional) <= 0)) return showToast('Ingresá el monto proporcional', 'warning')
     if (cobrarRecargo && (!montoRecargo || parseFloat(montoRecargo) <= 0)) return showToast('Ingresá el monto del recargo', 'warning')
 
