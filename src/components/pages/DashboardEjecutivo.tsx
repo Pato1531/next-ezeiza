@@ -33,6 +33,9 @@ export default function DashboardEjecutivo() {
   const [rentabilidadData, setRentabilidadData] = useState<{cursos:any[], feriados:Set<string>, clasesReales:any[]}>({cursos:[], feriados:new Set(), clasesReales:[]})
   const [historico,        setHistorico]        = useState<any[]>([])
   const [asistenciaRiesgo, setAsistenciaRiesgo] = useState<any[]>([])
+  // Alumnos por-clase no tienen cuota_mensual fija — estimamos su aporte mensual
+  // con el promedio de lo que efectivamente pagaron en los últimos 3 meses.
+  const [estimadoPorClase, setEstimadoPorClase] = useState<Record<string, number>>({})
 
   // ── Estado de resultado ───────────────────────────────────────────────────
   const [erData,    setErData]    = useState<any[]>([])
@@ -123,7 +126,7 @@ export default function DashboardEjecutivo() {
       // Rentabilidad: query directa con dias y horario real del curso
       const { data: rentData } = await sb
         .from('cursos')
-        .select('id, nombre, nivel, profesora_id, dias, hora_inicio, hora_fin, profesoras(nombre, tarifa_hora), cursos_alumnos(alumnos(cuota_mensual))')
+        .select('id, nombre, nivel, profesora_id, dias, hora_inicio, hora_fin, profesoras(nombre, tarifa_hora), cursos_alumnos(alumnos(id, cuota_mensual, tarifa_clase))')
         .eq('activo', true)
 
       // Feriados del mes desde agenda_eventos
@@ -158,7 +161,7 @@ export default function DashboardEjecutivo() {
       // Alumnos en riesgo: traer últimas clases por alumno para detectar ausencias consecutivas
       const { data: riesgoData } = await sb
         .from('asistencia_clases')
-        .select('alumno_id, estado, clase_id, clases(id, fecha, cursos(nombre, activo)), alumnos!inner(nombre, apellido, nivel, cuota_mensual, activo, instituto_id)')
+        .select('alumno_id, estado, clase_id, clases(id, fecha, cursos(nombre, activo)), alumnos!inner(id, nombre, apellido, nivel, cuota_mensual, tarifa_clase, activo, instituto_id)')
         .eq('alumnos.activo', true)
         .eq('alumnos.instituto_id', usuario?.instituto_id || '')
         .eq('clases.cursos.activo', true)
@@ -197,6 +200,39 @@ export default function DashboardEjecutivo() {
     setTimeout(cargarER, 800)
     setTimeout(cargarER, 2500)
   }, [cargar, cargarER])
+
+  // ── Estimado de alumnos por-clase (sin cuota fija) ────────────────────────
+  // No hay forma de "proyectar" cuánto van a asistir este mes, así que se
+  // aproxima con el promedio de lo efectivamente pagado en los últimos 3 meses.
+  // Si un alumno todavía no tiene pagos registrados, no se le puede estimar nada (0).
+  useEffect(() => {
+    const idsPorClase = alumnos.filter((a: any) => a.tarifa_clase).map((a: any) => a.id)
+    if (idsPorClase.length === 0) { setEstimadoPorClase({}); return }
+    const ventana = [0, 1, 2].map(offset => {
+      let m = mes - offset, y = anio
+      if (m < 0) { m += 12; y -= 1 }
+      return `${MESES[m]}-${y}`
+    })
+    const sb = createClient()
+    sb.from('pagos_alumnos')
+      .select('alumno_id, monto, tipo, mes, anio')
+      .in('alumno_id', idsPorClase)
+      .then(({ data }) => {
+        const porAlumno: Record<string, number[]> = {}
+        for (const p of (data || [])) {
+          if (p.tipo === 'examen' || p.tipo === 'matricula') continue
+          if (!ventana.includes(`${p.mes}-${p.anio}`)) continue
+          if (!porAlumno[p.alumno_id]) porAlumno[p.alumno_id] = []
+          porAlumno[p.alumno_id].push(p.monto || 0)
+        }
+        const estimado: Record<string, number> = {}
+        for (const id of idsPorClase) {
+          const pagos = porAlumno[id] || []
+          estimado[id] = pagos.length > 0 ? Math.round(pagos.reduce((s, v) => s + v, 0) / pagos.length) : 0
+        }
+        setEstimadoPorClase(estimado)
+      })
+  }, [alumnos, mes, anio])
 
   // ── Simulador: promedios históricos del año corriente ────────────────────
   // Independiente del selector de mes/año de arriba — siempre usa el año
@@ -307,8 +343,10 @@ export default function DashboardEjecutivo() {
     ? Math.round(((totalCobradoCuotas - totalAntCobradoCuotas) / totalAntCobradoCuotas) * 100)
     : 0
 
-  // Proyección: total esperado = suma de cuotas de todos los alumnos activos
-  const proyeccion = alumnos.reduce((s, a) => s + (a.cuota_mensual || 0), 0)
+  // Proyección: total esperado = cuota fija de los alumnos con cuota + estimado
+  // (histórico) de los que facturan por clase asistida
+  const proyeccion = alumnos.reduce((s, a) =>
+    s + (a.tarifa_clase ? (estimadoPorClase[a.id] ?? 0) : (a.cuota_mensual || 0)), 0)
   const pctCobrado = pct(totalCobradoCuotas, proyeccion)
 
   // Alumnos que pagaron su cuota vs no pagaron (exámenes/matrículas no cuentan como "cuota pagada")
@@ -431,7 +469,8 @@ export default function DashboardEjecutivo() {
     const prof = c.profesoras
     const inscriptos: any[] = c.cursos_alumnos || []
     const cantAlumnos = inscriptos.length
-    const ingresosCurso = inscriptos.reduce((s: number, r: any) => s + (r.alumnos?.cuota_mensual || 0), 0)
+    const ingresosCurso = inscriptos.reduce((s: number, r: any) =>
+      s + (r.alumnos?.tarifa_clase ? (estimadoPorClase[r.alumnos.id] ?? 0) : (r.alumnos?.cuota_mensual || 0)), 0)
 
     // Siempre usar cálculo por calendario: clases proyectadas del mes según días del curso menos feriados
     const horasReales = calcularHorasCursoMes(c, rentabilidadData.feriados)
@@ -611,6 +650,7 @@ export default function DashboardEjecutivo() {
           apellido: info.apellido || '',
           nivel: info.nivel || '',
           cuota: info.cuota_mensual || 0,
+          tarifaClase: info.tarifa_clase || 0,
           ausencias: ausenciasConsecutivas,
           ultimasFechas: ultimasFechas.slice(0, 2),
           curso: cursoPrincipal,
@@ -1614,7 +1654,7 @@ export default function DashboardEjecutivo() {
                         <span style={{fontSize:'11px',fontWeight:700,background:riesgoBg,color:riesgoColor,padding:'3px 10px',borderRadius:'20px'}}>
                           {riesgoLabel}
                         </span>
-                        <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>{fmt$(a.cuota)}/mes</div>
+                        <div style={{fontSize:'10px',color:'var(--text3)',marginTop:'2px'}}>{a.tarifaClase ? `${fmt$(a.tarifaClase)}/clase` : `${fmt$(a.cuota)}/mes`}</div>
                       </div>
                     </div>
                   )
