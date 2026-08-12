@@ -59,6 +59,12 @@ export default function DashboardEjecutivo() {
   const [simAlumnosNuevos, setSimAlumnosNuevos] = useState(0)
   const [simInflacion, setSimInflacion] = useState(10)
 
+  // ── Simulador de tarifa por hora (impacto en liquidaciones del mes actual) ──
+  const [simProfId, setSimProfId] = useState('')
+  const [simNuevaTarifaH, setSimNuevaTarifaH] = useState<number>(0)
+  const [simModoTodas, setSimModoTodas] = useState(false)
+  const [simPctTodas, setSimPctTodas] = useState<number>(10)
+
   const mesNombre    = MESES[mes]
   const mesAntIdx    = mes === 0 ? 11 : mes - 1
   const anioAnt      = mes === 0 ? anio - 1 : anio
@@ -516,6 +522,48 @@ export default function DashboardEjecutivo() {
       ingresos: ingresosCurso, costo: costoPorMes, margen, pctMargen,
       horasReales, detalle: `${horasReales}hs · $${prof?.tarifa_hora?.toLocaleString('es-AR') || 0}/h · ${fuenteCalculo}` }
   }).filter((c: any) => c.cantAlumnos > 0).sort((a: any, b: any) => b.margen - a.margen)
+
+  // ── Horas reales del mes por profesora, sumando TODOS sus cursos activos ──
+  // (sin filtrar por cantidad de alumnos, a diferencia de rentabilidadCursos)
+  // Mismo cálculo de calendario + feriados que usa calcularHorasCursoMes arriba.
+  const horasPorProfesora = (() => {
+    const map: Record<string, { nombre: string; tarifaHora: number; horas: number; cursos: number }> = {}
+    for (const c of rentabilidadData.cursos) {
+      if (!c.profesora_id || !c.profesoras) continue
+      const horas = calcularHorasCursoMes(c, rentabilidadData.feriados)
+      if (!map[c.profesora_id]) {
+        map[c.profesora_id] = { nombre: c.profesoras.nombre, tarifaHora: c.profesoras.tarifa_hora || 0, horas: 0, cursos: 0 }
+      }
+      map[c.profesora_id].horas += horas
+      map[c.profesora_id].cursos += 1
+    }
+    return map
+  })()
+  const profesorasSimList = Object.entries(horasPorProfesora)
+    .map(([id, v]) => ({ id, ...v }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre))
+  const simProfActivo = profesorasSimList.find(p => p.id === simProfId) || profesorasSimList[0]
+  const simLiqActual    = simProfActivo ? simProfActivo.horas * simProfActivo.tarifaHora : 0
+  const simLiqNueva     = simProfActivo ? simProfActivo.horas * simNuevaTarifaH : 0
+  const simDeltaTarifa  = simLiqNueva - simLiqActual
+  const simTotalLiqDocentesNuevo = totalLiqDocentes + simDeltaTarifa
+  const simNetoNuevo    = neto - simDeltaTarifa
+
+  // Modo "todas juntas": mismo % de aumento aplicado a la tarifa propia de cada profesora
+  const simTodasDetalle = profesorasSimList.map(p => ({
+    ...p, tarifaNueva: Math.round(p.tarifaHora * (1 + simPctTodas / 100)),
+    liqActual: p.horas * p.tarifaHora,
+    liqNueva: p.horas * Math.round(p.tarifaHora * (1 + simPctTodas / 100)),
+  }))
+  const simTodasLiqActual = simTodasDetalle.reduce((s, p) => s + p.liqActual, 0)
+  const simTodasLiqNueva  = simTodasDetalle.reduce((s, p) => s + p.liqNueva, 0)
+  const simTodasDelta     = simTodasLiqNueva - simTodasLiqActual
+  const simTodasLiqDocentesNuevo = totalLiqDocentes + simTodasDelta
+  const simTodasNetoNuevo = neto - simTodasDelta
+
+  useEffect(() => {
+    if (simProfActivo) setSimNuevaTarifaH(simProfActivo.tarifaHora)
+  }, [simProfActivo?.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Días con más pagos ────────────────────────────────────────────────────
   const diasConteo: Record<number, number> = {}
@@ -1472,6 +1520,131 @@ export default function DashboardEjecutivo() {
                 </>
               )
             })()}
+          </div>
+
+          {/* D-bis) Simulador de tarifa por hora — impacto real en el mes actual */}
+          <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'14px',padding:'16px',marginBottom:'14px'}}>
+            <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',marginBottom:'2px'}}>
+              💰 Impacto de cambiar la tarifa por hora
+            </div>
+            <div style={{fontSize:'12px',color:'var(--text3)',marginBottom:'14px'}}>
+              Con las horas reales de {mesNombre} {anio} — todos los cursos activos de la profesora, feriados ya descontados
+            </div>
+
+            {profesorasSimList.length === 0 ? (
+              <div style={{fontSize:'13px',color:'var(--text3)'}}>No hay profesoras con cursos activos este mes para simular.</div>
+            ) : (
+              <>
+                <div style={{display:'flex',gap:'6px',marginBottom:'14px'}}>
+                  <button onClick={() => setSimModoTodas(false)}
+                    style={{flex:1,padding:'8px',borderRadius:'8px',fontSize:'12px',fontWeight:600,cursor:'pointer',
+                      border:'1.5px solid var(--v)',background: !simModoTodas?'var(--v)':'var(--white)',color: !simModoTodas?'#fff':'var(--v)'}}>
+                    Una profesora
+                  </button>
+                  <button onClick={() => setSimModoTodas(true)}
+                    style={{flex:1,padding:'8px',borderRadius:'8px',fontSize:'12px',fontWeight:600,cursor:'pointer',
+                      border:'1.5px solid var(--v)',background: simModoTodas?'var(--v)':'var(--white)',color: simModoTodas?'#fff':'var(--v)'}}>
+                    Todas juntas
+                  </button>
+                </div>
+
+                {simModoTodas ? (
+                  <>
+                    <div style={{display:'flex',alignItems:'center',gap:'10px',marginBottom:'14px'}}>
+                      <span style={{fontSize:'12px',color:'var(--text2)',minWidth:'140px'}}>Aumento parejo para todas</span>
+                      <input type="range" min="-30" max="60" value={simPctTodas} onChange={e => setSimPctTodas(parseInt(e.target.value))} style={{flex:1,maxWidth:'220px'}} />
+                      <span style={{fontSize:'14px',fontWeight:700,color:'var(--v)',minWidth:'44px'}}>{simPctTodas>=0?'+':''}{simPctTodas}%</span>
+                    </div>
+
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'12px'}}>
+                      <div style={{background:'var(--bg)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                        <div style={{fontSize:'10.5px',color:'var(--text3)',fontWeight:700,marginBottom:'4px'}}>Liquidaciones actuales</div>
+                        <div style={{fontSize:'17px',fontWeight:800,color:'var(--text)'}}>{fmt$(simTodasLiqActual)}</div>
+                      </div>
+                      <div style={{background:'var(--vl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                        <div style={{fontSize:'10.5px',color:'var(--v)',fontWeight:700,marginBottom:'4px'}}>Liquidaciones simuladas</div>
+                        <div style={{fontSize:'17px',fontWeight:800,color:'var(--v)'}}>{fmt$(simTodasLiqNueva)}</div>
+                      </div>
+                      <div style={{background: simTodasDelta>=0?'var(--redl)':'var(--greenl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                        <div style={{fontSize:'10.5px',color: simTodasDelta>=0?'var(--red)':'var(--green)',fontWeight:700,marginBottom:'4px'}}>Diferencia</div>
+                        <div style={{fontSize:'17px',fontWeight:800,color: simTodasDelta>=0?'var(--red)':'var(--green)'}}>
+                          {simTodasDelta>=0?'+':''}{fmt$(simTodasDelta)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{maxHeight:'220px',overflowY:'auto',border:'1px solid var(--border)',borderRadius:'10px',marginBottom:'12px'}}>
+                      {simTodasDetalle.map(p => (
+                        <div key={p.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',borderBottom:'1px solid var(--border)',fontSize:'12px'}}>
+                          <div>
+                            <div style={{fontWeight:600}}>{p.nombre}</div>
+                            <div style={{color:'var(--text3)',fontSize:'11px'}}>{p.horas}hs · {fmt$(p.tarifaHora)}/h → {fmt$(p.tarifaNueva)}/h</div>
+                          </div>
+                          <div style={{fontWeight:700,color: (p.liqNueva-p.liqActual)>=0?'var(--red)':'var(--green)'}}>
+                            {(p.liqNueva-p.liqActual)>=0?'+':''}{fmt$(p.liqNueva-p.liqActual)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{background:'var(--bg)',borderRadius:'10px',padding:'10px 12px',fontSize:'12px',color:'var(--text2)',lineHeight:1.6}}>
+                      Liquidaciones docentes de {mesNombre}: {fmt$(totalLiqDocentes)} → <b style={{color:simTodasDelta>=0?'var(--red)':'var(--green)'}}>{fmt$(simTodasLiqDocentesNuevo)}</b><br/>
+                      Resultado neto estimado: {fmt$(neto)} → <b style={{color:simTodasNetoNuevo>=neto?'var(--green)':'var(--red)'}}>{fmt$(simTodasNetoNuevo)}</b>
+                    </div>
+                  </>
+                ) : (
+              <>
+                <div style={{display:'flex',gap:'10px',marginBottom:'14px',flexWrap:'wrap'}}>
+                  <div style={{flex:'1 1 200px'}}>
+                    <label style={{fontSize:'11px',fontWeight:700,color:'var(--text2)',display:'block',marginBottom:'4px'}}>Profesora</label>
+                    <select value={simProfActivo?.id || ''} onChange={e => setSimProfId(e.target.value)}
+                      style={{width:'100%',padding:'8px 10px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px'}}>
+                      {profesorasSimList.map(p => <option key={p.id} value={p.id}>{p.nombre} · {p.cursos} curso{p.cursos!==1?'s':''}</option>)}
+                    </select>
+                  </div>
+                  <div style={{flex:'0 0 150px'}}>
+                    <label style={{fontSize:'11px',fontWeight:700,color:'var(--text2)',display:'block',marginBottom:'4px'}}>Nueva tarifa/hora ($)</label>
+                    <input type="number" value={simNuevaTarifaH} onChange={e => setSimNuevaTarifaH(parseFloat(e.target.value)||0)}
+                      style={{width:'100%',padding:'8px 10px',border:'1.5px solid var(--border)',borderRadius:'8px',fontSize:'13px',fontWeight:700}} />
+                  </div>
+                </div>
+
+                {simProfActivo && (
+                  <>
+                    <div style={{fontSize:'12px',color:'var(--text2)',marginBottom:'12px'}}>
+                      {simProfActivo.nombre} dictó/dicta <b>{simProfActivo.horas}hs</b> reales este mes, repartidas en {simProfActivo.cursos} curso{simProfActivo.cursos!==1?'s':''} · tarifa actual <b>{fmt$(simProfActivo.tarifaHora)}/h</b>
+                    </div>
+
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'12px'}}>
+                      <div style={{background:'var(--bg)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                        <div style={{fontSize:'10.5px',color:'var(--text3)',fontWeight:700,marginBottom:'4px'}}>Liquidación actual</div>
+                        <div style={{fontSize:'17px',fontWeight:800,color:'var(--text)'}}>{fmt$(simLiqActual)}</div>
+                      </div>
+                      <div style={{background:'var(--vl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                        <div style={{fontSize:'10.5px',color:'var(--v)',fontWeight:700,marginBottom:'4px'}}>Liquidación simulada</div>
+                        <div style={{fontSize:'17px',fontWeight:800,color:'var(--v)'}}>{fmt$(simLiqNueva)}</div>
+                      </div>
+                      <div style={{background: simDeltaTarifa>=0?'var(--redl)':'var(--greenl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
+                        <div style={{fontSize:'10.5px',color: simDeltaTarifa>=0?'var(--red)':'var(--green)',fontWeight:700,marginBottom:'4px'}}>Diferencia</div>
+                        <div style={{fontSize:'17px',fontWeight:800,color: simDeltaTarifa>=0?'var(--red)':'var(--green)'}}>
+                          {simDeltaTarifa>=0?'+':''}{fmt$(simDeltaTarifa)}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div style={{background:'var(--bg)',borderRadius:'10px',padding:'10px 12px',fontSize:'12px',color:'var(--text2)',lineHeight:1.6}}>
+                      Liquidaciones docentes de {mesNombre}: {fmt$(totalLiqDocentes)} → <b style={{color:simDeltaTarifa>=0?'var(--red)':'var(--green)'}}>{fmt$(simTotalLiqDocentesNuevo)}</b><br/>
+                      Resultado neto estimado: {fmt$(neto)} → <b style={{color:simNetoNuevo>=neto?'var(--green)':'var(--red)'}}>{fmt$(simNetoNuevo)}</b>
+                    </div>
+                    <div style={{fontSize:'10.5px',color:'var(--text3)',marginTop:'8px'}}>
+                      Estimado sobre horas × tarifa. Si su liquidación de {mesNombre} ya tiene bonos, descuentos o ajustes manuales cargados, esos no se mueven acá — solo la parte que depende de la tarifa/hora.
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+              </>
+            )}
           </div>
 
           {/* E) Simulador de cuotas y punto de equilibrio */}
