@@ -561,6 +561,18 @@ export default function DashboardEjecutivo() {
   const simTodasLiqDocentesNuevo = totalLiqDocentes + simTodasDelta
   const simTodasNetoNuevo = neto - simTodasDelta
 
+  // ── Reconciliación con lo confirmado ──────────────────────────────────
+  // La base teórica (horas × tarifa) puede no coincidir con totalLiqDocentes
+  // porque ese total sale de liquidaciones YA GUARDADAS (que pueden traer
+  // ajustes o descuentos por ausencias cargados a mano), y porque puede haber
+  // profesoras con cursos activos que todavía no tienen su liquidación de
+  // este mes generada en el módulo de Profesoras.
+  const liqRealPorProfesora: Record<string, number> = {}
+  for (const l of liqsDocentes) liqRealPorProfesora[l.profesora_id] = (liqRealPorProfesora[l.profesora_id] || 0) + (l.total || 0)
+  const profesorasSinLiqConfirmada = profesorasSimList.filter(p => !(p.id in liqRealPorProfesora))
+  const baseTeoricaTotal = profesorasSimList.reduce((s, p) => s + p.horas * p.tarifaHora, 0)
+  const gapBaseVsReal = baseTeoricaTotal - totalLiqDocentes
+
   useEffect(() => {
     if (simProfActivo) setSimNuevaTarifaH(simProfActivo.tarifaHora)
   }, [simProfActivo?.id]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -1556,13 +1568,13 @@ export default function DashboardEjecutivo() {
                       <span style={{fontSize:'14px',fontWeight:700,color:'var(--v)',minWidth:'44px'}}>{simPctTodas>=0?'+':''}{simPctTodas}%</span>
                     </div>
 
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'12px'}}>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'6px'}}>
                       <div style={{background:'var(--bg)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
-                        <div style={{fontSize:'10.5px',color:'var(--text3)',fontWeight:700,marginBottom:'4px'}}>Liquidaciones actuales</div>
+                        <div style={{fontSize:'10.5px',color:'var(--text3)',fontWeight:700,marginBottom:'4px'}}>Base teórica actual</div>
                         <div style={{fontSize:'17px',fontWeight:800,color:'var(--text)'}}>{fmt$(simTodasLiqActual)}</div>
                       </div>
                       <div style={{background:'var(--vl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
-                        <div style={{fontSize:'10.5px',color:'var(--v)',fontWeight:700,marginBottom:'4px'}}>Liquidaciones simuladas</div>
+                        <div style={{fontSize:'10.5px',color:'var(--v)',fontWeight:700,marginBottom:'4px'}}>Base teórica simulada</div>
                         <div style={{fontSize:'17px',fontWeight:800,color:'var(--v)'}}>{fmt$(simTodasLiqNueva)}</div>
                       </div>
                       <div style={{background: simTodasDelta>=0?'var(--redl)':'var(--greenl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
@@ -1572,12 +1584,17 @@ export default function DashboardEjecutivo() {
                         </div>
                       </div>
                     </div>
+                    {Math.abs(gapBaseVsReal) > 1 && (
+                      <div style={{fontSize:'11px',color:'var(--amber)',marginBottom:'10px'}}>
+                        ⚠ La base teórica ({fmt$(baseTeoricaTotal)}) no coincide con lo ya confirmado en Liquidaciones ({fmt$(totalLiqDocentes)}){profesorasSinLiqConfirmada.length > 0 ? ` — ${profesorasSinLiqConfirmada.map(p=>p.nombre).join(', ')} todavía no tiene${profesorasSinLiqConfirmada.length===1?'':'n'} la liquidación de ${mesNombre} generada` : ', probablemente por ajustes o descuentos cargados a mano en las que sí están confirmadas'}.
+                      </div>
+                    )}
 
                     <div style={{maxHeight:'220px',overflowY:'auto',border:'1px solid var(--border)',borderRadius:'10px',marginBottom:'12px'}}>
                       {simTodasDetalle.map(p => (
                         <div key={p.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',borderBottom:'1px solid var(--border)',fontSize:'12px'}}>
                           <div>
-                            <div style={{fontWeight:600}}>{p.nombre}</div>
+                            <div style={{fontWeight:600}}>{p.nombre}{!(p.id in liqRealPorProfesora) && <span style={{color:'var(--amber)',fontWeight:400}}> · sin liquidación confirmada</span>}</div>
                             <div style={{color:'var(--text3)',fontSize:'11px'}}>{p.horas}hs · {fmt$(p.tarifaHora)}/h → {fmt$(p.tarifaNueva)}/h</div>
                           </div>
                           <div style={{fontWeight:700,color: (p.liqNueva-p.liqActual)>=0?'var(--red)':'var(--green)'}}>
@@ -1588,8 +1605,11 @@ export default function DashboardEjecutivo() {
                     </div>
 
                     <div style={{background:'var(--bg)',borderRadius:'10px',padding:'10px 12px',fontSize:'12px',color:'var(--text2)',lineHeight:1.6}}>
-                      Liquidaciones docentes de {mesNombre}: {fmt$(totalLiqDocentes)} → <b style={{color:simTodasDelta>=0?'var(--red)':'var(--green)'}}>{fmt$(simTodasLiqDocentesNuevo)}</b><br/>
+                      Liquidaciones docentes confirmadas de {mesNombre}: {fmt$(totalLiqDocentes)} → <b style={{color:simTodasDelta>=0?'var(--red)':'var(--green)'}}>{fmt$(simTodasLiqDocentesNuevo)}</b><br/>
                       Resultado neto estimado: {fmt$(neto)} → <b style={{color:simTodasNetoNuevo>=neto?'var(--green)':'var(--red)'}}>{fmt$(simTodasNetoNuevo)}</b>
+                    </div>
+                    <div style={{fontSize:'10.5px',color:'var(--text3)',marginTop:'8px'}}>
+                      El "→" de arriba parte de lo ya confirmado y le suma el aumento calculado sobre la base teórica — no reemplaza lo confirmado por la base teórica.
                     </div>
                   </>
                 ) : (
@@ -1615,13 +1635,13 @@ export default function DashboardEjecutivo() {
                       {simProfActivo.nombre} dictó/dicta <b>{simProfActivo.horas}hs</b> reales este mes, repartidas en {simProfActivo.cursos} curso{simProfActivo.cursos!==1?'s':''} · tarifa actual <b>{fmt$(simProfActivo.tarifaHora)}/h</b>
                     </div>
 
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'12px'}}>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'6px'}}>
                       <div style={{background:'var(--bg)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
-                        <div style={{fontSize:'10.5px',color:'var(--text3)',fontWeight:700,marginBottom:'4px'}}>Liquidación actual</div>
+                        <div style={{fontSize:'10.5px',color:'var(--text3)',fontWeight:700,marginBottom:'4px'}}>Base teórica actual</div>
                         <div style={{fontSize:'17px',fontWeight:800,color:'var(--text)'}}>{fmt$(simLiqActual)}</div>
                       </div>
                       <div style={{background:'var(--vl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
-                        <div style={{fontSize:'10.5px',color:'var(--v)',fontWeight:700,marginBottom:'4px'}}>Liquidación simulada</div>
+                        <div style={{fontSize:'10.5px',color:'var(--v)',fontWeight:700,marginBottom:'4px'}}>Base teórica simulada</div>
                         <div style={{fontSize:'17px',fontWeight:800,color:'var(--v)'}}>{fmt$(simLiqNueva)}</div>
                       </div>
                       <div style={{background: simDeltaTarifa>=0?'var(--redl)':'var(--greenl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
@@ -1631,9 +1651,19 @@ export default function DashboardEjecutivo() {
                         </div>
                       </div>
                     </div>
+                    {simProfActivo && !(simProfActivo.id in liqRealPorProfesora) && (
+                      <div style={{fontSize:'11px',color:'var(--amber)',marginBottom:'10px'}}>
+                        ⚠ {simProfActivo.nombre} todavía no tiene la liquidación de {mesNombre} generada en Profesoras — la base teórica de arriba es una proyección, no hay un total confirmado con qué compararla todavía.
+                      </div>
+                    )}
+                    {simProfActivo && (simProfActivo.id in liqRealPorProfesora) && Math.abs(liqRealPorProfesora[simProfActivo.id] - simLiqActual) > 1 && (
+                      <div style={{fontSize:'11px',color:'var(--amber)',marginBottom:'10px'}}>
+                        ⚠ Su liquidación confirmada de {mesNombre} es {fmt$(liqRealPorProfesora[simProfActivo.id])}, distinta a la base teórica ({fmt$(simLiqActual)}) — probablemente tiene ajustes o descuentos por ausencias cargados a mano.
+                      </div>
+                    )}
 
                     <div style={{background:'var(--bg)',borderRadius:'10px',padding:'10px 12px',fontSize:'12px',color:'var(--text2)',lineHeight:1.6}}>
-                      Liquidaciones docentes de {mesNombre}: {fmt$(totalLiqDocentes)} → <b style={{color:simDeltaTarifa>=0?'var(--red)':'var(--green)'}}>{fmt$(simTotalLiqDocentesNuevo)}</b><br/>
+                      Liquidaciones docentes confirmadas de {mesNombre}: {fmt$(totalLiqDocentes)} → <b style={{color:simDeltaTarifa>=0?'var(--red)':'var(--green)'}}>{fmt$(simTotalLiqDocentesNuevo)}</b><br/>
                       Resultado neto estimado: {fmt$(neto)} → <b style={{color:simNetoNuevo>=neto?'var(--green)':'var(--red)'}}>{fmt$(simNetoNuevo)}</b>
                     </div>
                     <div style={{fontSize:'10.5px',color:'var(--text3)',marginTop:'8px'}}>
