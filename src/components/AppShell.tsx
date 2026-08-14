@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context'
 import { useComunicados } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
 import { ToastProvider, showToast } from './Toast'
+import { Skeleton } from './Skeleton'
 import Dashboard from './pages/Dashboard'
 import Alumnos from './pages/Alumnos'
 const Pagos = lazy(() => import('./pages/Pagos'))
@@ -180,10 +181,10 @@ function NavEditor({ allAllowed, navOrdered, MAX_NAV, saveNavCustom, onClose }: 
         <div style={{ width:'40px', height:'4px', background:'var(--border)', borderRadius:'2px', margin:'0 auto 16px' }} />
         <div style={{ fontSize:'16px', fontWeight:700, marginBottom:'4px' }}>Personalizar navegación</div>
         <div style={{ fontSize:'13px', color:'var(--text2)', marginBottom:'6px' }}>
-          Elegí hasta 5 módulos para la barra inferior.
+          Elegí hasta {MAX_NAV} módulos para la barra inferior.
         </div>
         <div style={{ fontSize:'12px', color:'var(--v)', fontWeight:600, marginBottom:'16px' }}>
-          {activeIds.length}/5 seleccionados
+          {activeIds.length}/{MAX_NAV} seleccionados
         </div>
 
         <div style={{ fontSize:'11px', fontWeight:700, color:'var(--text3)', textTransform:'uppercase', letterSpacing:'.06em', marginBottom:'10px' }}>
@@ -274,6 +275,7 @@ export default function AppShell() {
     const handler = (e: Event) => {
       const d = (e as CustomEvent).detail
       if (d?.page) {
+        try { window.history.pushState({ type: 'page', page: d.page }, '') } catch {}
         setPage(d.page)
         setMounted(prev => new Set([...prev, d.page]))
         setMasOpen(false)
@@ -282,6 +284,33 @@ export default function AppShell() {
     }
     window.addEventListener('navigate-to', handler)
     return () => window.removeEventListener('navigate-to', handler)
+  }, [])
+
+  // ── Historial real para el botón/gesto "atrás" ──────────────────────────
+  // Sin esto, la navegación entre módulos (Alumnos → Cursos → etc.) no queda
+  // registrada en el historial del navegador, y "atrás" en Android cierra
+  // la app entera en vez de volver al módulo anterior. Se establece una
+  // entrada base apenas se resuelve la página inicial, y cada cambio de
+  // módulo (navTo) agrega una entrada nueva. Al recibir "atrás" (popstate),
+  // solo se refleja el cambio de módulo — no se vuelve a empujar historial.
+  useEffect(() => {
+    if (!pageReady) return
+    try { window.history.replaceState({ type: 'page', page }, '') } catch {}
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pageReady])
+
+  useEffect(() => {
+    const onPopState = (e: PopStateEvent) => {
+      const state = e.state as { type?: string; page?: string } | null
+      if (state?.type === 'page' && state.page) {
+        setPage(state.page)
+        setMounted(prev => new Set([...prev, state.page as string]))
+        setMasOpen(false)
+        try { sessionStorage.setItem('nav_page', state.page) } catch {}
+      }
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
   }, [])
 
   useEffect(() => {
@@ -426,6 +455,9 @@ export default function AppShell() {
     try { localStorage.setItem(`comunicados_vistos_${usuario.id}`, JSON.stringify(ids)) } catch {}
     setVistosLocal(ids)
     setComunicadosBadge(0)
+    if (page !== 'comunicados') {
+      try { window.history.pushState({ type: 'page', page: 'comunicados' }, '') } catch {}
+    }
     setPage('comunicados')
     setMounted(prev => new Set([...prev, 'comunicados']))
     setMasOpen(false)
@@ -438,7 +470,7 @@ export default function AppShell() {
   )
 
   const allAllowed = ALL_NAV.filter(n => puedeVer(n.id))
-  const MAX_NAV = 5
+  const MAX_NAV = 4
   const navOrdered = navCustom
     ? [...navCustom.filter(id => allAllowed.some(n => n.id === id)).map(id => allAllowed.find(n => n.id === id)!),
        ...allAllowed.filter(n => !navCustom.includes(n.id))]
@@ -457,6 +489,9 @@ export default function AppShell() {
   const navTo = (id: string) => {
     if (id === 'comunicados') { irAComunicados(); return }
     if (id === 'atencion') setAtencionBadge(0)
+    if (id !== page) {
+      try { window.history.pushState({ type: 'page', page: id }, '') } catch {}
+    }
     setPage(id)
     setMounted(prev => new Set([...prev, id]))
     setMasOpen(false)
@@ -607,11 +642,11 @@ export default function AppShell() {
         {mounted.has('perfil')      && <div style={{ padding: '16px 16px 24px', display: page === 'perfil'      ? 'block' : 'none' }}><PanelErrorBoundary name="Perfil">     <Perfil />            </PanelErrorBoundary></div>}
         {mounted.has('agenda')      && <div style={{ padding: '16px 16px 24px', display: page === 'agenda'      ? 'block' : 'none' }}><PanelErrorBoundary name="Agenda">     <Agenda />            </PanelErrorBoundary></div>}
         {mounted.has('comunicados') && <div style={{ padding: '16px 16px 24px', display: page === 'comunicados' ? 'block' : 'none' }}><PanelErrorBoundary name="Comunicados"><Comunicados />       </PanelErrorBoundary></div>}
-        {mounted.has('actividad')   && <div style={{ padding: '16px 16px 24px', display: page === 'actividad'   ? 'block' : 'none' }}><Suspense fallback={<div style={{ padding: '40px', textAlign: 'center', color: 'var(--text3)' }}>Cargando...</div>}><Actividad /></Suspense></div>}
-        {mounted.has('atencion')    && <div style={{ padding: '16px 16px 24px', display: page === 'atencion'    ? 'block' : 'none' }}><Suspense fallback={<div style={{ padding: '40px', textAlign: 'center', color: 'var(--text3)' }}>Cargando...</div>}><AtencionCliente /></Suspense></div>}
-        {mounted.has('ejecutivo')   && <div style={{ padding: '16px 16px 24px', display: page === 'ejecutivo'   ? 'block' : 'none' }}><Suspense fallback={<div style={{ padding: '40px', textAlign: 'center', color: 'var(--text3)' }}>Cargando...</div>}><DashboardEjecutivo /></Suspense></div>}
-        {mounted.has('cuotas')      && <div style={{ padding: '16px 16px 24px', display: page === 'cuotas'      ? 'block' : 'none' }}><Suspense fallback={<div style={{ padding: '40px', textAlign: 'center', color: 'var(--text3)' }}>Cargando...</div>}><CuotasPorCurso /></Suspense></div>}
-        {mounted.has('pagos')       && <div style={{ padding: '16px 16px 24px', display: page === 'pagos'       ? 'block' : 'none' }}><Suspense fallback={<div style={{ padding: '40px', textAlign: 'center', color: 'var(--text3)' }}>Cargando...</div>}><Pagos /></Suspense></div>}
+        {mounted.has('actividad')   && <div style={{ padding: '16px 16px 24px', display: page === 'actividad'   ? 'block' : 'none' }}><Suspense fallback={<Skeleton padding="32px 16px" />}><Actividad /></Suspense></div>}
+        {mounted.has('atencion')    && <div style={{ padding: '16px 16px 24px', display: page === 'atencion'    ? 'block' : 'none' }}><Suspense fallback={<Skeleton padding="32px 16px" />}><AtencionCliente /></Suspense></div>}
+        {mounted.has('ejecutivo')   && <div style={{ padding: '16px 16px 24px', display: page === 'ejecutivo'   ? 'block' : 'none' }}><Suspense fallback={<Skeleton padding="32px 16px" />}><DashboardEjecutivo /></Suspense></div>}
+        {mounted.has('cuotas')      && <div style={{ padding: '16px 16px 24px', display: page === 'cuotas'      ? 'block' : 'none' }}><Suspense fallback={<Skeleton padding="32px 16px" />}><CuotasPorCurso /></Suspense></div>}
+        {mounted.has('pagos')       && <div style={{ padding: '16px 16px 24px', display: page === 'pagos'       ? 'block' : 'none' }}><Suspense fallback={<Skeleton padding="32px 16px" />}><Pagos /></Suspense></div>}
       </div>
 
       {/* DRAWER MÁS */}
@@ -666,6 +701,12 @@ export default function AppShell() {
             </button>
           )
         })}
+        <button onClick={() => { setBusqGlobalOpen(true); setBusqGlobalQ(''); setBusqResultados([]) }} aria-label="Buscar" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 4px 12px', border: 'none', background: 'none', cursor: 'pointer', gap: '4px', minHeight: '60px' }}>
+          <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--v)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '-12px', boxShadow: '0 2px 8px rgba(101,47,141,.35)' }}>
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="9" cy="9" r="6" /><path d="M15 15l3 3" /></svg>
+          </div>
+          <span style={{ fontSize: '10px', fontWeight: 500, lineHeight: 1, color: 'var(--v)' }}>Buscar</span>
+        </button>
         {hayMas && (
           <button onClick={() => setMasOpen(!masOpen)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '10px 4px 12px', border: 'none', background: 'none', cursor: 'pointer', color: masOpen || masItems.some(i => i.id === page) || page === 'perfil' ? 'var(--v)' : 'var(--text3)', gap: '4px', minHeight: '60px', transition: 'color .15s', position: 'relative' }}>
             {(masItems.some(i => i.id === page) || page === 'perfil') && (

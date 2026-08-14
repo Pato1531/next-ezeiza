@@ -113,3 +113,13 @@ button {
 .slide-up {
   animation: slideUp 0.25s cubic-bezier(0.32, 0.72, 0, 1);
 }
+
+/* Skeleton loader — ver src/components/Skeleton.tsx */
+@keyframes skeletonPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
+}
+.skeleton-bar {
+  background: var(--border);
+  animation: skeletonPulse 1.1s ease-in-out infinite;
+}

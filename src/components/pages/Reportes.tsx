@@ -782,7 +782,7 @@ export default function Reportes() {
         ) : (
           <>
             {/* KPIs */}
-            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'16px'}}>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'16px'}}>
               <div style={{background:'var(--vl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
                 <div style={{fontSize:'24px',fontWeight:800,color:'var(--v)'}}>{alumnos.length}</div>
                 <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'2px'}}>Activos ahora</div>

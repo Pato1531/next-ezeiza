@@ -1568,7 +1568,7 @@ export default function DashboardEjecutivo() {
                       <span style={{fontSize:'14px',fontWeight:700,color:'var(--v)',minWidth:'44px'}}>{simPctTodas>=0?'+':''}{simPctTodas}%</span>
                     </div>
 
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'6px'}}>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'6px'}}>
                       <div style={{background:'var(--bg)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
                         <div style={{fontSize:'10.5px',color:'var(--text3)',fontWeight:700,marginBottom:'4px'}}>Base teórica actual</div>
                         <div style={{fontSize:'17px',fontWeight:800,color:'var(--text)'}}>{fmt$(simTodasLiqActual)}</div>
@@ -1635,7 +1635,7 @@ export default function DashboardEjecutivo() {
                       {simProfActivo.nombre} dictó/dicta <b>{simProfActivo.horas}hs</b> reales este mes, repartidas en {simProfActivo.cursos} curso{simProfActivo.cursos!==1?'s':''} · tarifa actual <b>{fmt$(simProfActivo.tarifaHora)}/h</b>
                     </div>
 
-                    <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'6px'}}>
+                    <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'6px'}}>
                       <div style={{background:'var(--bg)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
                         <div style={{fontSize:'10.5px',color:'var(--text3)',fontWeight:700,marginBottom:'4px'}}>Base teórica actual</div>
                         <div style={{fontSize:'17px',fontWeight:800,color:'var(--text)'}}>{fmt$(simLiqActual)}</div>
@@ -1756,7 +1756,7 @@ export default function DashboardEjecutivo() {
             </div>
 
             {/* KPIs */}
-            <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'14px'}}>
+            <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'14px'}}>
               <div style={{background:'var(--vl)',borderRadius:'12px',padding:'12px',textAlign:'center'}}>
                 <div style={{fontSize:'10.5px',color:'var(--v)',fontWeight:700,marginBottom:'4px'}}>Resultado mes 6</div>
                 <div style={{fontSize:'18px',fontWeight:800,color: simResultado.filas[5].resultado>=0?'var(--green)':'var(--red)'}}>
@@ -1970,7 +1970,7 @@ export default function DashboardEjecutivo() {
           })()}
 
           {/* Segunda fila: operativa */}
-          <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:'10px',marginBottom:'10px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'10px'}}>
             {[
               { label:'Cursos activos',  val: cursos.length,  color:'var(--v)' },
               { label:'Altas del mes',   val: `+${altasMes.length}`, color:'var(--green)' },
@@ -2245,7 +2245,7 @@ export default function DashboardEjecutivo() {
                 <div style={{textAlign:'center',padding:'12px',color:'var(--text3)',fontSize:'13px'}}>Sin datos del mes anterior para comparar</div>
               ) : (
                 <>
-                  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:'10px',marginBottom:'14px'}}>
+                  <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(140px,1fr))',gap:'10px',marginBottom:'14px'}}>
                     {[
                       {label:'Retuvimos',            val:alumnosQueRetuvimos, color:'var(--green)', bg:'var(--greenl)'},
                       {label:'No pagaron este mes',  val:alumnosPerdidos,     color:'var(--red)',   bg:'var(--redl)'},
