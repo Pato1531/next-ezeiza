@@ -48,6 +48,7 @@ const ModalSheet = ({title,children,onClose}:any) => (
 
 import { showToast } from '@/components/Toast'
 import ImportarAlumnos from '@/components/ImportarAlumnos'
+import { estadoPagoMes, type PagoAlumno } from '@/lib/pagos'
 
 type Vista = 'lista' | 'detalle' | 'form' | 'baja' | 'bajas_historicas' | 'renovacion_matricula'
 
@@ -109,11 +110,22 @@ export default function Alumnos() {
     const sb = createClient()
     const anio = new Date().getFullYear()
     Promise.all([
-      sb.from('pagos_alumnos').select('alumno_id').eq('mes', mesFiltroNombre).eq('anio', anio),
+      sb.from('pagos_alumnos').select('alumno_id, tipo, monto').eq('mes', mesFiltroNombre).eq('anio', anio),
       sb.from('cursos_alumnos').select('alumno_id'),
       sb.from('notas_alumnos').select('alumno_id'),
     ]).then(([pagosRes, cursosRes, notasRes]) => {
-      setAlumnosConPagoMes(new Set((pagosRes.data || []).map((r: any) => r.alumno_id)))
+      const pagosPorAlumno: Record<string, PagoAlumno[]> = {}
+      ;(pagosRes.data || []).forEach((r: any) => {
+        if (!pagosPorAlumno[r.alumno_id]) pagosPorAlumno[r.alumno_id] = []
+        pagosPorAlumno[r.alumno_id].push({ tipo: r.tipo, monto: r.monto })
+      })
+      const conCuotaSaldada = new Set(
+        Object.keys(pagosPorAlumno).filter(id => {
+          const a = alumnos.find(x => x.id === id)
+          return estadoPagoMes(pagosPorAlumno[id], { esClaseParticular: !!a?.tarifa_clase }) === 'pagado'
+        })
+      )
+      setAlumnosConPagoMes(conCuotaSaldada)
       const conCurso = new Set((cursosRes.data || []).map((r: any) => r.alumno_id))
       setAlumnosSinCurso(new Set(alumnos.map(a => a.id).filter(id => !conCurso.has(id))))
       const conNota = new Set((notasRes.data || []).map((r: any) => r.alumno_id))
@@ -144,6 +156,8 @@ export default function Alumnos() {
   const [filtroAnio, setFiltroAnio] = useState<string>(new Date().getFullYear().toString())
   const [filtroMes, setFiltroMes]   = useState<string>('todos')
   const [filtroMotivo, setFiltroMotivo] = useState<string>('todos')
+  const [filtroRangoEdad, setFiltroRangoEdad] = useState<string>('todos')
+  const [edadesPorAlumno, setEdadesPorAlumno] = useState<Record<string, number | null>>({})
   const [pago, setPago] = useState({ mes: MESES[new Date().getMonth()], anio: new Date().getFullYear(), monto: 0, metodo:'Efectivo', fecha_pago: new Date().toISOString().split('T')[0], observaciones:'' })
 
   const [renovacionMes, setRenovacionMes] = useState(new Date().getMonth())
@@ -296,6 +310,28 @@ export default function Alumnos() {
     const sb = createClient()
     const { data } = await sb.from('bajas_alumnos').select('*').order('fecha_baja', { ascending: false })
     setBajas(data || [])
+    // Traer edad/fecha_nacimiento actual de los alumnos (activos o no) para poder
+    // clasificar las bajas por rango de edad. Si el alumno fue eliminado
+    // definitivamente de la tabla alumnos, se usa el nombre del curso como fallback.
+    const alumnoIds = [...new Set((data || []).map((b: any) => b.alumno_id).filter(Boolean))]
+    if (alumnoIds.length > 0) {
+      const { data: alumnosData } = await sb.from('alumnos').select('id, edad, fecha_nacimiento').in('id', alumnoIds)
+      const mapa: Record<string, number | null> = {}
+      ;(alumnosData || []).forEach((a: any) => {
+        let edad: number | null = a.edad || null
+        if (!edad && a.fecha_nacimiento) {
+          const nac = new Date(a.fecha_nacimiento + 'T12:00:00')
+          const hoy = new Date()
+          edad = hoy.getFullYear() - nac.getFullYear()
+          const noCumplioAun = hoy.getMonth() < nac.getMonth() || (hoy.getMonth() === nac.getMonth() && hoy.getDate() < nac.getDate())
+          if (noCumplioAun) edad--
+        }
+        mapa[a.id] = edad
+      })
+      setEdadesPorAlumno(mapa)
+    } else {
+      setEdadesPorAlumno({})
+    }
     setLoadingBajas(false)
   }
   const irAFormNuevo = () => {
@@ -383,17 +419,40 @@ export default function Alumnos() {
         .single()
       const cursoNombre = (cursoData as any)?.cursos?.nombre || '—'
 
-      const [bajasRes, , alumnoRes] = await Promise.all([
-        sb.from('bajas_alumnos').insert({
-          alumno_id:    sel.id,
-          alumno_nombre: sel.nombre,
-          alumno_apellido: sel.apellido,
-          curso_nombre: cursoNombre,
-          nivel:        sel.nivel,
-          cuota_mensual: sel.cuota_mensual,
-          motivo:       motivoBaja === 'Otro' ? motivoLibre : motivoBaja,
-          fecha_baja:   new Date().toISOString().split('T')[0],
-        }),
+      // Edad del alumno AL MOMENTO de la baja — se guarda fija en el registro
+      // para que el reporte de "Bajas históricas" no la recalcule más adelante
+      // (si no, un alumno dado de baja como Teen podría aparecer como Adulto
+      // años después, cuando se mira el histórico).
+      let edadAlBaja: number | null = (sel as any).edad || null
+      if (!edadAlBaja && (sel as any).fecha_nacimiento) {
+        const nac = new Date((sel as any).fecha_nacimiento + 'T12:00:00')
+        const hoy = new Date()
+        edadAlBaja = hoy.getFullYear() - nac.getFullYear()
+        const noCumplioAun = hoy.getMonth() < nac.getMonth() || (hoy.getMonth() === nac.getMonth() && hoy.getDate() < nac.getDate())
+        if (noCumplioAun) edadAlBaja--
+      }
+
+      const bajaInsert: any = {
+        alumno_id:    sel.id,
+        alumno_nombre: sel.nombre,
+        alumno_apellido: sel.apellido,
+        curso_nombre: cursoNombre,
+        nivel:        sel.nivel,
+        cuota_mensual: sel.cuota_mensual,
+        motivo:       motivoBaja === 'Otro' ? motivoLibre : motivoBaja,
+        fecha_baja:   new Date().toISOString().split('T')[0],
+        edad_al_baja: edadAlBaja,
+      }
+
+      let bajasRes = await sb.from('bajas_alumnos').insert(bajaInsert)
+      // Si la columna edad_al_baja no existe todavía (migración pendiente),
+      // reintentar sin ella para no bloquear el registro de la baja
+      if (bajasRes.error?.code === '42703') {
+        const { edad_al_baja, ...sinEdad } = bajaInsert
+        bajasRes = await sb.from('bajas_alumnos').insert(sinEdad)
+      }
+
+      const [, alumnoRes] = await Promise.all([
         sb.from('cursos_alumnos').delete().eq('alumno_id', sel.id),
         sb.from('alumnos').update({ activo: false }).eq('id', sel.id),
       ])
@@ -891,6 +950,40 @@ export default function Alumnos() {
     }
     const MOTIVO_DEFAULT = {bg:'var(--bg)',color:'var(--text2)'}
 
+    const RANGOS_EDAD = ['Children', 'Juniors', 'Teens', 'Adultos', 'Sin clasificar'] as const
+    const RANGO_EDAD_COLORES: Record<string,{bg:string,color:string}> = {
+      'Children':      {bg:'#e6f4ec',color:'#2d7a4f'},
+      'Juniors':       {bg:'#e0f0f7',color:'#1a6b8a'},
+      'Teens':         {bg:'#f2e8f9',color:'#652f8d'},
+      'Adultos':       {bg:'#fff7ed',color:'#c2610f'},
+      'Sin clasificar':{bg:'var(--bg)',color:'var(--text2)'},
+    }
+    // Clasifica una baja por rango etario: prioriza la edad real del alumno
+    // (calculada a partir de fecha_nacimiento/edad cargada en su ficha); si no
+    // hay edad disponible (ej. el alumno fue eliminado de la base), infiere el
+    // rango a partir del nombre del curso en el que estaba anotado.
+    // Clasifica una baja por rango etario. Prioridad:
+    // 1) edad_al_baja — la edad fija guardada en el momento de la baja (no cambia con el tiempo).
+    // 2) edadesPorAlumno — edad actual del alumno, solo como fallback para bajas
+    //    registradas ANTES de que existiera la columna edad_al_baja.
+    // 3) nombre del curso — último recurso si no hay ningún dato de edad.
+    const categorizarRangoEdad = (b: any): typeof RANGOS_EDAD[number] => {
+      const edadFija = b.edad_al_baja != null ? b.edad_al_baja : null
+      const edad = edadFija != null ? edadFija : (b.alumno_id != null ? edadesPorAlumno[b.alumno_id] : null)
+      if (edad != null && edad > 0) {
+        if (edad <= 8) return 'Children'
+        if (edad <= 11) return 'Juniors'
+        if (edad <= 16) return 'Teens'
+        return 'Adultos'
+      }
+      const c = (b.curso_nombre || b.nivel || '').toLowerCase()
+      if (/child|niñ|kids/.test(c)) return 'Children'
+      if (/junior/.test(c)) return 'Juniors'
+      if (/teen/.test(c)) return 'Teens'
+      if (/adult/.test(c)) return 'Adultos'
+      return 'Sin clasificar'
+    }
+
     // Años disponibles
     const aniosDisponibles = [...new Set(bajas.map(b => b.fecha_baja?.split('-')[0]).filter(Boolean))].sort().reverse() as string[]
     const MESES_NOMBRES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -901,6 +994,7 @@ export default function Alumnos() {
       if (filtroAnio !== 'todos' && a !== filtroAnio) return false
       if (filtroMes !== 'todos' && m !== filtroMes) return false
       if (filtroMotivo !== 'todos' && b.motivo !== filtroMotivo) return false
+      if (filtroRangoEdad !== 'todos' && categorizarRangoEdad(b) !== filtroRangoEdad) return false
       return true
     })
 
@@ -914,6 +1008,16 @@ export default function Alumnos() {
       const m = b.fecha_baja?.split('-')[1]
       if (m) porMes[m] = (porMes[m] || 0) + 1
     })
+
+    // Resumen por rango de edad
+    const porRangoEdad: Record<string, number> = {}
+    bajasFiltradas.forEach(b => {
+      const r = categorizarRangoEdad(b)
+      porRangoEdad[r] = (porRangoEdad[r] || 0) + 1
+    })
+
+    // Total rápido: cantidad y cuota mensual total perdida en el período filtrado
+    const cuotaMensualPerdida = bajasFiltradas.reduce((s, b) => s + (b.cuota_mensual || 0), 0)
 
     const motivosUnicos = [...new Set(bajas.map(b => b.motivo).filter(Boolean))] as string[]
 
@@ -936,14 +1040,15 @@ export default function Alumnos() {
           <div class="fecha">Generado: ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
         </div>
         <h1>${titulo}</h1>
-        <div class="sub">${bajasFiltradas.length} baja${bajasFiltradas.length!==1?'s':''} registrada${bajasFiltradas.length!==1?'s':''}</div>
+        <div class="sub">${bajasFiltradas.length} baja${bajasFiltradas.length!==1?'s':''} registrada${bajasFiltradas.length!==1?'s':''}${!ocultarMontos?` · $${cuotaMensualPerdida.toLocaleString('es-AR')} de cuota mensual perdida`:''}</div>
         <table>
-          <tr><th>Fecha</th><th>Alumno</th><th>Curso</th><th>Nivel</th>${!ocultarMontos?'<th>Cuota</th>':''}<th>Motivo</th></tr>
+          <tr><th>Fecha</th><th>Alumno</th><th>Curso</th><th>Nivel</th><th>Edad</th>${!ocultarMontos?'<th>Cuota</th>':''}<th>Motivo</th></tr>
           ${bajasFiltradas.map(b=>`<tr>
             <td>${b.fecha_baja?b.fecha_baja.split('-').reverse().join('/'):'—'}</td>
             <td>${b.alumno_nombre} ${b.alumno_apellido}</td>
             <td>${b.curso_nombre||'—'}</td>
             <td>${b.nivel||'—'}</td>
+            <td>${categorizarRangoEdad(b)}</td>
             ${!ocultarMontos?`<td>$${b.cuota_mensual?.toLocaleString('es-AR')||'—'}</td>`:''}
             <td>${b.motivo||'—'}</td>
           </tr>`).join('')}
@@ -989,8 +1094,12 @@ export default function Alumnos() {
             <option value="todos">Todos los motivos</option>
             {motivosUnicos.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
-          {(filtroAnio !== new Date().getFullYear().toString() || filtroMes !== 'todos' || filtroMotivo !== 'todos') && (
-            <button onClick={() => { setFiltroAnio(new Date().getFullYear().toString()); setFiltroMes('todos'); setFiltroMotivo('todos') }}
+          <select value={filtroRangoEdad} onChange={e=>setFiltroRangoEdad(e.target.value)} style={IS2}>
+            <option value="todos">Todas las edades</option>
+            {RANGOS_EDAD.map(r => <option key={r} value={r}>{r}</option>)}
+          </select>
+          {(filtroAnio !== new Date().getFullYear().toString() || filtroMes !== 'todos' || filtroMotivo !== 'todos' || filtroRangoEdad !== 'todos') && (
+            <button onClick={() => { setFiltroAnio(new Date().getFullYear().toString()); setFiltroMes('todos'); setFiltroMotivo('todos'); setFiltroRangoEdad('todos') }}
               style={{...IS2,color:'var(--v)',borderColor:'var(--v)',fontWeight:600}}>
               Limpiar
             </button>
@@ -1000,9 +1109,25 @@ export default function Alumnos() {
           </div>
         </div>
 
+        {/* Total rápido */}
+        {bajasFiltradas.length > 0 && (
+          <div style={{display:'flex',gap:'10px',marginBottom:'16px',flexWrap:'wrap'}}>
+            <div style={{flex:'1 1 160px',background:'#fdeaea',border:'1.5px solid #f5c2c2',borderRadius:'12px',padding:'14px 16px'}}>
+              <div style={{fontSize:'26px',fontWeight:800,color:'#c0392b'}}>{bajasFiltradas.length}</div>
+              <div style={{fontSize:'11px',fontWeight:700,color:'#c0392b',textTransform:'uppercase',letterSpacing:'.04em',marginTop:'2px'}}>Total bajas</div>
+            </div>
+            {!ocultarMontos && (
+              <div style={{flex:'1 1 160px',background:'#fff7ed',border:'1.5px solid #fde0bb',borderRadius:'12px',padding:'14px 16px'}}>
+                <div style={{fontSize:'26px',fontWeight:800,color:'#c2610f'}}>${cuotaMensualPerdida.toLocaleString('es-AR')}</div>
+                <div style={{fontSize:'11px',fontWeight:700,color:'#c2610f',textTransform:'uppercase',letterSpacing:'.04em',marginTop:'2px'}}>Cuota mensual perdida</div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Resumen estadístico */}
         {bajasFiltradas.length > 0 && (
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'10px',marginBottom:'16px'}}>
+          <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit, minmax(220px, 1fr))',gap:'10px',marginBottom:'16px'}}>
             {/* Por motivo */}
             <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'14px'}}>
               <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'10px'}}>Por motivo</div>
@@ -1044,8 +1169,31 @@ export default function Alumnos() {
                 })}
               </div>
             </div>
+            {/* Por rango de edad */}
+            <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'14px'}}>
+              <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'10px'}}>Por rango de edad</div>
+              <div style={{display:'flex',flexDirection:'column',gap:'6px'}}>
+                {RANGOS_EDAD.filter(r => (porRangoEdad[r]||0) > 0).sort((a,b)=>(porRangoEdad[b]||0)-(porRangoEdad[a]||0)).map(rango => {
+                  const cant = porRangoEdad[rango] || 0
+                  const rc = RANGO_EDAD_COLORES[rango] || MOTIVO_DEFAULT
+                  const pct = Math.round((cant / bajasFiltradas.length) * 100)
+                  return (
+                    <div key={rango}>
+                      <div style={{display:'flex',justifyContent:'space-between',marginBottom:'2px'}}>
+                        <span style={{fontSize:'11px',color:rc.color,fontWeight:600}}>{rango}</span>
+                        <span style={{fontSize:'11px',color:'var(--text3)',fontWeight:700}}>{cant} ({pct}%)</span>
+                      </div>
+                      <div style={{height:'4px',borderRadius:'4px',background:'var(--border)',overflow:'hidden'}}>
+                        <div style={{width:`${pct}%`,height:'100%',background:rc.color,borderRadius:'4px'}} />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
           </div>
         )}
+
 
         {loadingBajas && <Loader />}
 
@@ -1062,6 +1210,8 @@ export default function Alumnos() {
           <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'16px',overflow:'hidden'}}>
             {bajasFiltradas.map((b, i) => {
               const mc = MOTIVOS_COLORES[b.motivo] || MOTIVO_DEFAULT
+              const rango = categorizarRangoEdad(b)
+              const rc = RANGO_EDAD_COLORES[rango] || MOTIVO_DEFAULT
               return (
                 <div key={b.id} style={{display:'flex',alignItems:'center',gap:'12px',padding:'12px 16px',
                   borderBottom:i<bajasFiltradas.length-1?'1px solid var(--border)':'none'}}>
@@ -1080,8 +1230,13 @@ export default function Alumnos() {
                       {!ocultarMontos && b.cuota_mensual ? ` · $${b.cuota_mensual.toLocaleString('es-AR')}/mes` : ''}
                     </div>
                   </div>
-                  <div style={{padding:'3px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:600,background:mc.bg,color:mc.color,flexShrink:0,maxWidth:'160px',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
-                    {b.motivo||'Sin motivo'}
+                  <div style={{display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-end',flexShrink:0}}>
+                    <div style={{padding:'3px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:600,background:mc.bg,color:mc.color,maxWidth:'160px',textAlign:'center',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>
+                      {b.motivo||'Sin motivo'}
+                    </div>
+                    <div style={{padding:'2px 8px',borderRadius:'20px',fontSize:'10px',fontWeight:600,background:rc.bg,color:rc.color}}>
+                      {rango}
+                    </div>
                   </div>
                 </div>
               )
@@ -1651,16 +1806,19 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
         </div>
         <div style={{display:'grid',gridTemplateColumns:'repeat(12,1fr)',gap:'3px',marginBottom:'14px'}}>
           {MESES.map((m,i) => {
-            const p = pagos.find((x:any) => x.mes === m && x.anio === new Date().getFullYear())
+            const pagosDelMes = pagos.filter((x:any) => x.mes === m && x.anio === new Date().getFullYear())
             const futuro = i > new Date().getMonth()
-            const col = futuro?'var(--border)':!p?'var(--redl)':(a.tarifa_clase ? (p.monto>0?'var(--greenl)':'var(--redl)') : (p.monto>=a.cuota_mensual?'var(--greenl)':'var(--amberl)'))
+            const estado = estadoPagoMes(pagosDelMes, { esClaseParticular: !!a.tarifa_clase })
+            const col = futuro ? 'var(--border)' : estado === 'pagado' ? 'var(--greenl)' : estado === 'parcial' ? 'var(--amberl)' : 'var(--redl)'
             return <div key={m} style={{height:'18px',borderRadius:'3px',background:col}} title={m} />
           })}
         </div>
         {pagos.length === 0 && <div style={{textAlign:'center',padding:'20px',color:'var(--text3)'}}>Sin pagos registrados</div>}
         {[...pagos].map((p:any) => {
-          const ok = a.tarifa_clase ? p.monto > 0 : p.monto >= a.cuota_mensual
-          const parc = a.tarifa_clase ? false : (p.monto > 0 && p.monto < a.cuota_mensual)
+          const pagosDelMismoMes = pagos.filter((x:any) => x.mes === p.mes && x.anio === p.anio)
+          const estadoMes = estadoPagoMes(pagosDelMismoMes, { esClaseParticular: !!a.tarifa_clase })
+          const ok = estadoMes === 'pagado'
+          const parc = estadoMes === 'parcial'
           return (
             <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'11px 0',borderBottom:'1px solid var(--border)'}}>
               <div>

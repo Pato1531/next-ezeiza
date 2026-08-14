@@ -27,20 +27,22 @@ export async function POST(req: NextRequest) {
     const tipo = pago.tipo || 'cuota'
 
     // ── LÓGICA DE REEMPLAZO SELECTIVA ──────────────────────────────────────────
-    // Solo se elimina el pago previo si es del MISMO TIPO.
-    // Esto evita que registrar una cuota mensual borre un proporcional previo,
-    // o que una matrícula borre una cuota del mismo mes.
+    // "Familia cuota": representan la MISMA obligación (la cuota mensual del
+    // alumno), solo que con variantes de monto. Solo puede existir UNA de estas
+    // por alumno/mes — si ya había otra variante (ej. 'cuota' plana) y ahora se
+    // registra 'cuota_descuento', se borra la anterior para no duplicar el cobro.
+    //   'cuota'            → cuota mensual estándar (monto fijo del alumno)
+    //   'recargo'          → cuota con recargo (monto uniforme para el grupo)
+    //   'cuota_recargo'    → alias de recargo
+    //   'cuota_descuento'  → cuota mensual con descuento (monto editable por alumno)
     //
-    // Tipos que REEMPLAZAN (solo puede haber 1 por mes):
-    //   'cuota'         → cuota mensual estándar
-    //   'recargo'       → cuota con recargo
-    //   'cuota_recargo' → alias de recargo
-    //   'matricula'     → matrícula anual
+    // 'matricula' reemplaza solo a sí misma (no es parte de la familia cuota).
     //
     // Tipos que ACUMULAN (pueden existir varios en el mismo mes):
     //   'proporcional'  → cobro parcial, siempre se agrega como registro nuevo
     // ───────────────────────────────────────────────────────────────────────────
-    const TIPOS_QUE_REEMPLAZAN = ['cuota', 'recargo', 'cuota_recargo', 'matricula']
+    const FAMILIA_CUOTA = ['cuota', 'recargo', 'cuota_recargo', 'cuota_descuento']
+    const TIPOS_QUE_REEMPLAZAN = [...FAMILIA_CUOTA, 'matricula']
 
     if (TIPOS_QUE_REEMPLAZAN.includes(tipo)) {
       let delQ = supabase
@@ -49,7 +51,15 @@ export async function POST(req: NextRequest) {
         .eq('alumno_id', pago.alumno_id)
         .eq('mes', pago.mes)
         .eq('anio', pago.anio)
-        .eq('tipo', tipo)
+      if (FAMILIA_CUOTA.includes(tipo)) {
+        // Borra cualquier variante previa de la familia cuota (incluye NULL,
+        // pagos legacy sin columna 'tipo' migrada)
+        delQ = (delQ as any).or(
+          "tipo.is.null,tipo.eq.cuota,tipo.eq.recargo,tipo.eq.cuota_recargo,tipo.eq.cuota_descuento"
+        )
+      } else {
+        delQ = delQ.eq('tipo', tipo)
+      }
       if (institutoId) delQ = (delQ as any).eq('instituto_id', institutoId)
 
       const { error: delError } = await delQ

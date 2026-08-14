@@ -5,6 +5,7 @@ import { useAlumnos, apiHeaders, logActivity } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
 import { createClient } from '@/lib/supabase'
 import { showToast } from '@/components/Toast'
+import { FILTRO_SUPABASE_CUOTA_COMPLETA, estadoPagoMes, type PagoAlumno } from '@/lib/pagos'
 
 // ── Constantes ────────────────────────────────────────────────────────────────
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
@@ -42,6 +43,36 @@ const ModalSheet = ({ title, children, onClose }: any) => (
   </div>
 )
 
+// Arma el texto "Cuota y matrícula registrada" a partir de los tipos de pago
+// que un alumno tiene cargados ese mes. Usado en la vista Registrar pagos
+// para reemplazar el genérico "✓ Ya pagó" por lo que efectivamente se cobró.
+function labelConceptosPagados(tiposRaw: (string | null | undefined)[], esClaseParticular: boolean): string {
+  const LABEL_POR_TIPO: Record<string, string> = {
+    cuota: 'Cuota',
+    cuota_descuento: 'Cuota c/descuento',
+    recargo: 'Recargo',
+    cuota_recargo: 'Recargo',
+    matricula: 'Matrícula',
+    examen: 'Examen',
+    proporcional: 'Proporcional',
+  }
+  const ORDEN = ['Cuota', 'Cuota c/descuento', 'Clases particulares', 'Recargo', 'Matrícula', 'Examen', 'Proporcional']
+
+  const set = new Set<string>()
+  tiposRaw.forEach(t => {
+    const tipo = t || 'cuota'
+    if (esClaseParticular && tipo === 'cuota') { set.add('Clases particulares'); return }
+    set.add(LABEL_POR_TIPO[tipo] || tipo)
+  })
+
+  const labels = ORDEN.filter(l => set.has(l))
+  set.forEach(l => { if (!labels.includes(l)) labels.push(l) })
+
+  if (labels.length === 0) return 'Ya pagó'
+  if (labels.length === 1) return `${labels[0]} registrada`
+  return `${labels.slice(0, -1).join(', ')} y ${labels[labels.length - 1]} registrada`
+}
+
 // Chip de concepto para mostrar en el detalle de cada pago registrado
 const ChipConcepto = ({ tipo }: { tipo: string }) => {
   const map: Record<string, { label: string; color: string; bg: string }> = {
@@ -51,6 +82,7 @@ const ChipConcepto = ({ tipo }: { tipo: string }) => {
     matricula:   { label: 'Matrícula',    color: '#1a6b8a', bg: '#e0f0f7' },
     examen:      { label: 'Examen',       color: '#7c3aed', bg: '#ede9fe' },
     proporcional:{ label: 'Proporcional', color: '#2d7a4f', bg: '#e6f4ec' },
+    cuota_descuento: { label: 'Cuota c/desc.', color: '#0f766e', bg: '#e6f7f5' },
   }
   const c = map[tipo] || { label: tipo, color: 'var(--text3)', bg: 'var(--bg)' }
   return (
@@ -93,10 +125,13 @@ export default function Pagos() {
   const [metodo, setMetodo] = useState('Efectivo')
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set())
   const [alumnosPagadosMes, setAlumnosPagadosMes] = useState<Set<string>>(new Set())
+  const [alumnosPagadosLabelMes, setAlumnosPagadosLabelMes] = useState<Record<string, string>>({})
   const [busqueda, setBusqueda] = useState('')
   const [guardando, setGuardando] = useState(false)
   // Conceptos
   const [cobrarCuota, setCobrarCuota] = useState(true)
+  const [cobrarDescuento, setCobrarDescuento] = useState(false)
+  const [montoDescuento, setMontoDescuento] = useState<Record<string, number>>({})
   const [cobrarRecargo, setCobrarRecargo] = useState(false)
   const [montoRecargo, setMontoRecargo] = useState('')
   const [cobrarMatricula, setCobrarMatricula] = useState(false)
@@ -212,20 +247,30 @@ export default function Pagos() {
         .eq('activo', true)
         .lte('fecha_alta', ultimoDia)
 
-      // 2. IDs de alumnos que ya pagaron su CUOTA ese mes
-      // Tipos que cuentan: cuota, recargo, cuota_recargo, null
-      // Tipos que NO cuentan: matricula, proporcional, examen
-      const { data: pagaron } = await sb
+      // 2. TODOS los pagos del mes (para calcular estado con calcularPagoMes,
+      // incluye proporcionales para detectar "pago parcial" vs "sin pagar")
+      const { data: pagosDelMes } = await sb
         .from('pagos_alumnos')
-        .select('alumno_id')
+        .select('alumno_id, tipo, monto')
         .eq('mes', deudMes)
         .eq('anio', deudAnio)
-        .or('tipo.is.null,tipo.eq.cuota,tipo.eq.recargo,tipo.eq.cuota_recargo')
 
-      const pagaronSet = new Set((pagaron || []).map((r: any) => r.alumno_id))
+      const pagosPorAlumno: Record<string, PagoAlumno[]> = {}
+      ;(pagosDelMes || []).forEach((p: any) => {
+        if (!pagosPorAlumno[p.alumno_id]) pagosPorAlumno[p.alumno_id] = []
+        pagosPorAlumno[p.alumno_id].push({ tipo: p.tipo, monto: p.monto })
+      })
 
-      // 3. Filtrar: activos ese mes y sin pago
-      const resultado = (todosAlumnos || []).filter((a: any) => !pagaronSet.has(a.id))
+      // 3. Filtrar: activos ese mes y sin la cuota saldada (deudor o parcial)
+      const resultado = (todosAlumnos || [])
+        .filter((a: any) => estadoPagoMes(pagosPorAlumno[a.id] || [], { esClaseParticular: !!a.tarifa_clase }) !== 'pagado')
+        .map((a: any) => {
+          const estado = estadoPagoMes(pagosPorAlumno[a.id] || [], { esClaseParticular: !!a.tarifa_clase })
+          const montoParcial = (pagosPorAlumno[a.id] || [])
+            .filter(p => p.tipo === 'proporcional')
+            .reduce((s, p) => s + (p.monto || 0), 0)
+          return { ...a, _estadoPago: estado, _montoParcial: montoParcial }
+        })
       setDeudoresList(resultado)
     } catch (e) { console.error(e) }
     setLoadingDeudores(false)
@@ -243,19 +288,39 @@ export default function Pagos() {
         const res = await fetch(`/api/registrar-pago?${params}`, { headers: apiHeaders() })
         const json = await res.json()
         if (json.data) {
-          setAlumnosPagadosMes(new Set(json.data.map((r: any) => r.alumno_id)))
+          // Agrupar por alumno y aplicar la misma lógica de "cuota saldada"
+          // que Deudores, para que "✓ Ya pagó" sea consistente en toda la app
+          const pagosPorAlumno: Record<string, PagoAlumno[]> = {}
+          json.data.forEach((r: any) => {
+            if (!pagosPorAlumno[r.alumno_id]) pagosPorAlumno[r.alumno_id] = []
+            pagosPorAlumno[r.alumno_id].push({ tipo: r.tipo, monto: r.monto })
+          })
+          const pagados = Object.keys(pagosPorAlumno).filter(id => {
+            const a = alumnos.find((x: any) => x.id === id)
+            return estadoPagoMes(pagosPorAlumno[id], { esClaseParticular: !!a?.tarifa_clase }) === 'pagado'
+          })
+          setAlumnosPagadosMes(new Set(pagados))
+
+          const labels: Record<string, string> = {}
+          pagados.forEach(id => {
+            const a = alumnos.find((x: any) => x.id === id)
+            labels[id] = labelConceptosPagados(pagosPorAlumno[id].map(p => p.tipo), !!a?.tarifa_clase)
+          })
+          setAlumnosPagadosLabelMes(labels)
         } else {
           setAlumnosPagadosMes(new Set())
+          setAlumnosPagadosLabelMes({})
         }
       } catch {
         setAlumnosPagadosMes(new Set())
+        setAlumnosPagadosLabelMes({})
       }
     }
     cargar()
     // Limpiar resultado anterior al cambiar mes
     setResultadoRegistro(null)
     setSeleccionados(new Set())
-  }, [mes])
+  }, [mes, alumnos.length])
 
   // ── Filtros ───────────────────────────────────────────────────────────────
   const pagosReporteFiltrados = pagosReporte.filter(p => {
@@ -299,6 +364,8 @@ export default function Pagos() {
       'Nombre': a.nombre,
       'Nivel': a.nivel,
       'Cuota mensual': a.cuota_mensual || 0,
+      'Estado': a._estadoPago === 'parcial' ? `Parcial ($${(a._montoParcial||0).toLocaleString('es-AR')})` : 'Sin pago',
+      'Saldo pendiente': Math.max(0, (a.cuota_mensual||0) - (a._montoParcial||0)),
       'Teléfono': a.telefono || a.padre_telefono || '',
     }))
     const ws = XLSX.utils.json_to_sheet(rows)
@@ -309,15 +376,15 @@ export default function Pagos() {
 
   // ── Exportar Deudores PDF ─────────────────────────────────────────────────
   const descargarDeudoresPDF = () => {
-    const totalMonto = deudores.reduce((s:number,a:any) => s + (a.cuota_mensual||0), 0)
+    const totalMonto = deudores.reduce((s:number,a:any) => s + Math.max(0,(a.cuota_mensual||0)-(a._montoParcial||0)), 0)
     const rows = deudores.sort((a:any,b:any)=>a.apellido.localeCompare(b.apellido))
-      .map((a:any) => `<tr><td>${a.apellido}, ${a.nombre}</td><td>${a.nivel||'—'}</td><td>$${(a.cuota_mensual||0).toLocaleString('es-AR')}</td></tr>`).join('')
+      .map((a:any) => `<tr><td>${a.apellido}, ${a.nombre}</td><td>${a.nivel||'—'}</td><td>${a._estadoPago === 'parcial' ? `Parcial ($${(a._montoParcial||0).toLocaleString('es-AR')})` : 'Sin pago'}</td><td>$${Math.max(0,(a.cuota_mensual||0)-(a._montoParcial||0)).toLocaleString('es-AR')}</td></tr>`).join('')
     const html = `<h1 style="font-family:sans-serif;color:#652f8d">Deudores — ${deudMes} ${deudAnio}</h1>
       <p style="font-family:sans-serif;font-size:13px;color:#666">${deudores.length} deudores · Total: $${totalMonto.toLocaleString('es-AR')}</p>
       <table style="font-family:sans-serif;border-collapse:collapse;width:100%;font-size:13px">
-        <tr><th style="border-bottom:2px solid #652f8d;text-align:left;padding:6px">Alumno</th><th style="border-bottom:2px solid #652f8d;padding:6px">Nivel</th><th style="border-bottom:2px solid #652f8d;text-align:right;padding:6px">Cuota</th></tr>
+        <tr><th style="border-bottom:2px solid #652f8d;text-align:left;padding:6px">Alumno</th><th style="border-bottom:2px solid #652f8d;padding:6px">Nivel</th><th style="border-bottom:2px solid #652f8d;padding:6px">Estado</th><th style="border-bottom:2px solid #652f8d;text-align:right;padding:6px">Saldo</th></tr>
         ${rows}
-        <tr style="border-top:2px solid #652f8d;font-weight:700"><td style="padding:6px">TOTAL</td><td></td><td style="text-align:right;padding:6px">$${totalMonto.toLocaleString('es-AR')}</td></tr>
+        <tr style="border-top:2px solid #652f8d;font-weight:700"><td style="padding:6px">TOTAL</td><td></td><td></td><td style="text-align:right;padding:6px">$${totalMonto.toLocaleString('es-AR')}</td></tr>
       </table>`
     const w = window.open('','_blank')
     if (!w) return
@@ -372,6 +439,7 @@ export default function Pagos() {
     if (!a) return sum
     let t = 0
     if (cobrarCuota) t += (a.cuota_mensual || 0)
+    if (cobrarDescuento) t += (montoDescuento[id] ?? a.cuota_mensual ?? 0)
     if (cobrarRecargo) t += (parseFloat(montoRecargo) || 0)
     if (cobrarMatricula) t += (a.matricula || 0)
     if (cobrarProporcional) t += (parseFloat(montoProporcional) || 0)
@@ -387,6 +455,7 @@ export default function Pagos() {
   // Conceptos activos (para mostrar en resumen)
   const conceptosActivos = [
     cobrarCuota && 'Cuota mensual',
+    cobrarDescuento && 'Cuota con descuento',
     cobrarRecargo && `Recargo ($${fmtMonto(parseFloat(montoRecargo)||0)})`,
     cobrarMatricula && 'Matrícula',
     cobrarProporcional && `Proporcional ($${fmtMonto(parseFloat(montoProporcional)||0)})`,
@@ -423,6 +492,11 @@ export default function Pagos() {
         alumno_id: a.id, mes, anio: anioActual, metodo, fecha_pago: fecha,
         monto: a.cuota_mensual || 0,
         tipo: 'cuota', observaciones: `Cuota ${mes} ${anioActual}`,
+      })
+      if (cobrarDescuento) inserts.push({
+        alumno_id: a.id, mes, anio: anioActual, metodo, fecha_pago: fecha,
+        monto: montoDescuento[a.id] ?? a.cuota_mensual ?? 0,
+        tipo: 'cuota_descuento', observaciones: `Cuota con descuento ${mes} ${anioActual}`,
       })
       if (cobrarRecargo) inserts.push({
         alumno_id: a.id, mes, anio: anioActual, metodo, fecha_pago: fecha,
@@ -470,6 +544,7 @@ export default function Pagos() {
         if (!a) return sum
         let t = 0
         if (cobrarCuota) t += (a.cuota_mensual || 0)
+        if (cobrarDescuento) t += (montoDescuento[id] ?? a.cuota_mensual ?? 0)
         if (cobrarRecargo) t += (parseFloat(montoRecargo) || 0)
         if (cobrarMatricula) t += (a.matricula || 0)
         if (cobrarProporcional) t += (parseFloat(montoProporcional) || 0)
@@ -507,16 +582,17 @@ export default function Pagos() {
 
   const guardar = () => {
     if (seleccionados.size === 0) return showToast('Seleccioná al menos un alumno', 'warning')
-    if (!cobrarCuota && !cobrarRecargo && !cobrarMatricula && !cobrarProporcional && !cobrarExamen && !cobrarClaseParticular) return showToast('Seleccioná al menos un concepto', 'warning')
+    if (!cobrarCuota && !cobrarDescuento && !cobrarRecargo && !cobrarMatricula && !cobrarProporcional && !cobrarExamen && !cobrarClaseParticular) return showToast('Seleccioná al menos un concepto', 'warning')
+    if (cobrarDescuento && [...seleccionados].some(id => (montoDescuento[id] ?? alumnos.find((a:any)=>a.id===id)?.cuota_mensual ?? 0) <= 0)) return showToast('Ingresá el monto con descuento para cada alumno seleccionado', 'warning')
     if (cobrarProporcional && (!montoProporcional || parseFloat(montoProporcional) <= 0)) return showToast('Ingresá el monto proporcional', 'warning')
     if (cobrarRecargo && (!montoRecargo || parseFloat(montoRecargo) <= 0)) return showToast('Ingresá el monto del recargo', 'warning')
 
     // ── Advertencia si algún alumno seleccionado ya pagó cuota este mes ─────
-    if (seleccionadosQueYaPagaron.length > 0 && (cobrarCuota || cobrarRecargo || cobrarMatricula)) {
+    if (seleccionadosQueYaPagaron.length > 0 && (cobrarCuota || cobrarDescuento || cobrarRecargo || cobrarMatricula)) {
       const nombres = seleccionadosQueYaPagaron
         .map(id => { const a = alumnos.find((x: any) => x.id === id); return a ? `${a.nombre} ${a.apellido}` : '' })
         .filter(Boolean).join(', ')
-      const concepto = [cobrarCuota && 'cuota', cobrarRecargo && 'recargo', cobrarMatricula && 'matrícula'].filter(Boolean).join(', ')
+      const concepto = [cobrarCuota && 'cuota', cobrarDescuento && 'cuota con descuento', cobrarRecargo && 'recargo', cobrarMatricula && 'matrícula'].filter(Boolean).join(', ')
       window.dispatchEvent(new CustomEvent('confirm-action', { detail: {
         mensaje: `${seleccionadosQueYaPagaron.length} alumno${seleccionadosQueYaPagaron.length > 1 ? 's' : ''} ya ${seleccionadosQueYaPagaron.length > 1 ? 'tienen' : 'tiene'} pago de ${concepto} en ${mes}`,
         detalle: `${nombres}. El pago anterior será reemplazado. ¿Continuás?`,
@@ -821,7 +897,7 @@ export default function Pagos() {
                   </div>
                   {deudores.length > 0 && (
                     <div style={{ fontSize:'13px', fontWeight:700, color:'#dc2626', marginTop:'4px' }}>
-                      Total deuda: ${deudores.reduce((s:number,a:any)=>s+(a.cuota_mensual||0),0).toLocaleString('es-AR')}
+                      Total deuda: ${deudores.reduce((s:number,a:any)=>s+Math.max(0,(a.cuota_mensual||0)-(a._montoParcial||0)),0).toLocaleString('es-AR')}
                     </div>
                   )}
                 </div>
@@ -863,9 +939,15 @@ export default function Pagos() {
                           </div>
                         </div>
                         <div style={{ display:'flex', alignItems:'center', gap:'8px' }}>
-                          <span style={{ padding:'3px 10px', borderRadius:'20px', fontSize:'11.5px', fontWeight:600, background:'#fef2f2', color:'#dc2626', border:'1px solid #fca5a5' }}>
-                            Sin pago
-                          </span>
+                          {a._estadoPago === 'parcial' ? (
+                            <span style={{ padding:'3px 10px', borderRadius:'20px', fontSize:'11.5px', fontWeight:600, background:'var(--amberl)', color:'var(--amber)', border:'1px solid var(--amber)' }}>
+                              Pago parcial ${a._montoParcial?.toLocaleString('es-AR')}
+                            </span>
+                          ) : (
+                            <span style={{ padding:'3px 10px', borderRadius:'20px', fontSize:'11.5px', fontWeight:600, background:'#fef2f2', color:'#dc2626', border:'1px solid #fca5a5' }}>
+                              Sin pago
+                            </span>
+                          )}
                           {cel && (
                             <a
                               href={`https://wa.me/54${cel}?text=${encodeURIComponent(msgDeudor)}`}
@@ -1067,7 +1149,7 @@ export default function Pagos() {
 
             {/* Cuota mensual */}
             <div
-              onClick={() => setCobrarCuota(!cobrarCuota)}
+              onClick={() => { setCobrarCuota(!cobrarCuota); if (!cobrarCuota) setCobrarDescuento(false) }}
               style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'10px', marginBottom:'8px', cursor:'pointer',
                 border: `1.5px solid ${cobrarCuota ? 'var(--v)' : 'var(--border)'}`,
                 background: cobrarCuota ? 'var(--vl)' : 'var(--white)' }}>
@@ -1077,6 +1159,23 @@ export default function Pagos() {
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:'13px', fontWeight:600 }}>Cuota mensual</div>
                 <div style={{ fontSize:'11px', color:'var(--text3)', marginTop:'1px' }}>{mes} {anioActual} · monto individual de cada alumno</div>
+              </div>
+            </div>
+
+            {/* Cuota con descuento */}
+            <div
+              onClick={() => { setCobrarDescuento(!cobrarDescuento); if (!cobrarDescuento) setCobrarCuota(false) }}
+              style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', borderRadius:'10px', marginBottom:'8px', cursor:'pointer',
+                border: `1.5px solid ${cobrarDescuento ? '#0f766e' : 'var(--border)'}`,
+                background: cobrarDescuento ? '#e6f7f5' : 'var(--white)' }}>
+              <div style={{ width:18, height:18, borderRadius:5, border: `2px solid ${cobrarDescuento ? '#0f766e' : 'var(--border)'}`, background: cobrarDescuento ? '#0f766e' : 'transparent', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                {cobrarDescuento && <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="white" strokeWidth="2.5"><path d="M2 5l2 2 4-4"/></svg>}
+              </div>
+              <div style={{ flex:1 }}>
+                <div style={{ fontSize:'13px', fontWeight:600 }}>Cuota con descuento</div>
+                <div style={{ fontSize:'11px', color:'var(--text3)', marginTop:'1px' }}>
+                  {mes} {anioActual} · monto editable por alumno — cuenta como cuota pagada
+                </div>
               </div>
             </div>
 
@@ -1230,6 +1329,7 @@ export default function Pagos() {
                 const sel = seleccionados.has(a.id)
                 let monto = 0
                 if (cobrarCuota) monto += (a.cuota_mensual || 0)
+                if (cobrarDescuento) monto += (montoDescuento[a.id] ?? a.cuota_mensual ?? 0)
                 if (cobrarRecargo) monto += (parseFloat(montoRecargo) || 0)
                 if (cobrarMatricula) monto += (a.matricula || 0)
                 if (cobrarProporcional) monto += (parseFloat(montoProporcional) || 0)
@@ -1271,8 +1371,16 @@ export default function Pagos() {
                         📌
                       </button>
                     )}
-                    {yaPago
-                      ? <span style={{ fontSize:'11px', fontWeight:700, color:'var(--green)', background:'var(--greenl)', padding:'3px 10px', borderRadius:'20px', flexShrink:0 }}>✓ Ya pagó</span>
+                    {cobrarDescuento && sel ? (
+                      <input
+                        type="number"
+                        value={montoDescuento[a.id] ?? a.cuota_mensual ?? 0}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => setMontoDescuento(prev => ({ ...prev, [a.id]: +e.target.value }))}
+                        style={{ width:'86px', padding:'6px 8px', border:'1.5px solid #0f766e', borderRadius:'8px', fontSize:'13px', fontWeight:700, color:'#0f766e', textAlign:'right', flexShrink:0 }}
+                      />
+                    ) : yaPago
+                      ? <span style={{ fontSize:'11px', fontWeight:700, color:'var(--green)', background:'var(--greenl)', padding:'3px 10px', borderRadius:'20px', flexShrink:0, textAlign:'right' }}>✓ {alumnosPagadosLabelMes[a.id] || 'Ya pagó'}</span>
                       : <div style={{ fontSize:'13px', fontWeight:700, color: sel ? 'var(--v)' : 'var(--text3)', flexShrink:0 }}>${monto.toLocaleString('es-AR')}</div>
                     }
                   </div>
@@ -1295,7 +1403,7 @@ export default function Pagos() {
             </div>
 
             {/* Advertencia: alumnos seleccionados que ya pagaron */}
-            {seleccionadosQueYaPagaron.length > 0 && (cobrarCuota || cobrarRecargo || cobrarMatricula) && (
+            {seleccionadosQueYaPagaron.length > 0 && (cobrarCuota || cobrarDescuento || cobrarRecargo || cobrarMatricula) && (
               <div style={{ padding:'9px 12px', background:'var(--amberl)', border:'1px solid var(--amber)', borderRadius:'10px', fontSize:'12px', color:'var(--amber)', fontWeight:600, marginBottom:'10px', lineHeight:1.4 }}>
                 ⚠ {seleccionadosQueYaPagaron.length} alumno{seleccionadosQueYaPagaron.length > 1 ? 's' : ''} ya {seleccionadosQueYaPagaron.length > 1 ? 'tienen' : 'tiene'} un pago de cuota/recargo/matrícula en {mes}. Al confirmar, ese pago será reemplazado.
               </div>
