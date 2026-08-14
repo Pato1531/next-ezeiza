@@ -950,13 +950,12 @@ export default function Alumnos() {
     }
     const MOTIVO_DEFAULT = {bg:'var(--bg)',color:'var(--text2)'}
 
-    const RANGOS_EDAD = ['Children', 'Juniors', 'Teens', 'Adultos', 'Sin clasificar'] as const
+    const RANGOS_EDAD = ['Children', 'Juniors', 'Teens', 'Adultos'] as const
     const RANGO_EDAD_COLORES: Record<string,{bg:string,color:string}> = {
       'Children':      {bg:'#e6f4ec',color:'#2d7a4f'},
       'Juniors':       {bg:'#e0f0f7',color:'#1a6b8a'},
       'Teens':         {bg:'#f2e8f9',color:'#652f8d'},
       'Adultos':       {bg:'#fff7ed',color:'#c2610f'},
-      'Sin clasificar':{bg:'var(--bg)',color:'var(--text2)'},
     }
     // Clasifica una baja por rango etario: prioriza la edad real del alumno
     // (calculada a partir de fecha_nacimiento/edad cargada en su ficha); si no
@@ -980,8 +979,8 @@ export default function Alumnos() {
       if (/child|niñ|kids/.test(c)) return 'Children'
       if (/junior/.test(c)) return 'Juniors'
       if (/teen/.test(c)) return 'Teens'
-      if (/adult/.test(c)) return 'Adultos'
-      return 'Sin clasificar'
+      // Sin edad y sin pista clara en el nombre del curso → se asume Adultos
+      return 'Adultos'
     }
 
     // Años disponibles
