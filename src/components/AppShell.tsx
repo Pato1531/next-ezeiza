@@ -176,7 +176,7 @@ function NavEditor({ allAllowed, navOrdered, MAX_NAV, saveNavCustom, onClose }: 
 
   return (
     <div style={{ position:'fixed', inset:0, zIndex:200, background:'rgba(20,0,40,.45)', display:'flex', alignItems:'flex-end', justifyContent:'center' }} onClick={onClose}>
-      <div style={{ background:'var(--white)', borderRadius:'24px 24px 0 0', padding:'24px 20px 36px', width:'100%', maxWidth:'480px', maxHeight:'85vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
+      <div style={{ background:'var(--white)', borderRadius:'24px 24px 0 0', padding:'24px 20px calc(36px + var(--safe-bottom))', width:'100%', maxWidth:'480px', maxHeight:'85vh', overflowY:'auto' }} onClick={e => e.stopPropagation()}>
         <div style={{ width:'40px', height:'4px', background:'var(--border)', borderRadius:'2px', margin:'0 auto 16px' }} />
         <div style={{ fontSize:'16px', fontWeight:700, marginBottom:'4px' }}>Personalizar navegación</div>
         <div style={{ fontSize:'13px', color:'var(--text2)', marginBottom:'6px' }}>
@@ -504,12 +504,12 @@ export default function AppShell() {
 
   return (
     <ToastProvider>
-    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', paddingLeft: 'var(--safe-left)', paddingRight: 'var(--safe-right)' }}>
 
       {/* ── MODAL ONBOARDING PRIMERA VEZ ─────────────────────────────────── */}
       {showOnboarding && usuario?.rol === 'director' && (
         <div style={{position:'fixed',inset:0,background:'rgba(20,0,40,.6)',zIndex:1000,display:'flex',alignItems:'flex-end',justifyContent:'center',padding:'0'}}>
-          <div style={{background:'var(--white)',borderRadius:'24px 24px 0 0',padding:'28px 20px 40px',width:'100%',maxWidth:'520px',maxHeight:'90vh',overflowY:'auto'}}>
+          <div style={{background:'var(--white)',borderRadius:'24px 24px 0 0',padding:'28px 20px calc(40px + var(--safe-bottom))',width:'100%',maxWidth:'520px',maxHeight:'90vh',overflowY:'auto'}}>
             <div style={{width:'40px',height:'4px',background:'var(--border)',borderRadius:'2px',margin:'0 auto 24px'}} />
 
             {/* Header */}
@@ -559,7 +559,7 @@ export default function AppShell() {
       )}
 
       {/* TOPBAR */}
-      <div style={{ background: 'var(--white)', borderBottom: '1px solid var(--border)', padding: '0 20px', height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 40 }}>
+      <div style={{ background: 'var(--white)', borderBottom: '1px solid var(--border)', padding: '0 20px', height: 'calc(60px + var(--safe-top))', paddingTop: 'var(--safe-top)', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 40 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'var(--v)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <svg width="20" height="20" viewBox="0 0 32 32" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -580,16 +580,16 @@ export default function AppShell() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <button onClick={() => { setBusqGlobalOpen(true); setBusqGlobalQ(''); setBusqResultados([]) }}
-            style={{ width:'32px', height:'32px', borderRadius:'10px', background:'var(--bg)', border:'1px solid var(--border)', color:'var(--text2)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            style={{ width:'40px', height:'40px', borderRadius:'10px', background:'var(--bg)', border:'1px solid var(--border)', color:'var(--text2)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
             <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="9" cy="9" r="6"/><path d="M15 15l3 3"/></svg>
           </button>
           <div style={{ padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, background: rs.bg, color: rs.color }}>
             {ROLE_LABELS[usuario.rol]}
           </div>
-          <button onClick={() => setNavEditOpen(true)} title="Personalizar navegación" style={{ width:'32px', height:'32px', borderRadius:'10px', background:'var(--bg)', border:'1px solid var(--border)', color:'var(--text2)', fontSize:'16px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <button onClick={() => setNavEditOpen(true)} title="Personalizar navegación" style={{ width:'40px', height:'40px', borderRadius:'10px', background:'var(--bg)', border:'1px solid var(--border)', color:'var(--text2)', fontSize:'16px', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
             ⚙
           </button>
-          <button onClick={() => navTo('perfil')} style={{ width: '36px', height: '36px', borderRadius: '12px', background: usuario.color, border: 'none', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+          <button onClick={() => navTo('perfil')} style={{ width: '40px', height: '40px', borderRadius: '12px', background: usuario.color, border: 'none', color: '#fff', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
             {usuario.initials}
           </button>
         </div>
@@ -617,7 +617,7 @@ export default function AppShell() {
       {/* DRAWER MÁS */}
       {masOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 100 }} onClick={() => setMasOpen(false)}>
-          <div style={{ position: 'absolute', bottom: '60px', left: 0, right: 0, background: 'var(--white)', borderTop: '1.5px solid var(--border)', borderRadius: '20px 20px 0 0', padding: '8px 0 4px', boxShadow: '0 -4px 20px rgba(0,0,0,.08)' }} onClick={e => e.stopPropagation()}>
+          <div style={{ position: 'absolute', bottom: 'calc(60px + var(--safe-bottom))', left: 0, right: 0, background: 'var(--white)', borderTop: '1.5px solid var(--border)', borderRadius: '20px 20px 0 0', padding: '8px 0 4px', boxShadow: '0 -4px 20px rgba(0,0,0,.08)' }} onClick={e => e.stopPropagation()}>
             <div style={{ width: '40px', height: '4px', background: 'var(--border)', borderRadius: '2px', margin: '0 auto 12px' }} />
             {masItems.map(item => (
               <button key={item.id} onClick={() => navTo(item.id)} style={{ display: 'flex', alignItems: 'center', gap: '14px', width: '100%', padding: '14px 24px', border: 'none', background: page === item.id ? 'var(--vl)' : 'transparent', cursor: 'pointer', transition: 'background .15s' }}>
@@ -646,7 +646,7 @@ export default function AppShell() {
       )}
 
       {/* BOTTOM NAV */}
-      <nav style={{ background: 'var(--white)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'stretch', position: 'sticky', bottom: 0, zIndex: 50 }}>
+      <nav style={{ background: 'var(--white)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'stretch', position: 'sticky', bottom: 0, zIndex: 50, paddingBottom: 'var(--safe-bottom)' }}>
         {navItems.map(item => {
           const badgeCount = item.id === 'comunicados' ? comunicadosBadge : item.id === 'atencion' ? atencionBadge : 0
           return (
@@ -699,7 +699,7 @@ export default function AppShell() {
       {/* BUSCADOR GLOBAL */}
       {busqGlobalOpen && (
         <div style={{ position:'fixed', inset:0, zIndex:300, background:'rgba(20,0,40,.5)' }} onClick={() => setBusqGlobalOpen(false)}>
-          <div style={{ position:'absolute', top:'60px', left:'50%', transform:'translateX(-50%)', width:'calc(100% - 32px)', maxWidth:'500px', background:'var(--white)', borderRadius:'16px', overflow:'hidden', boxShadow:'0 8px 32px rgba(0,0,0,.18)' }} onClick={e => e.stopPropagation()}>
+          <div style={{ position:'absolute', top:'calc(60px + var(--safe-top))', left:'50%', transform:'translateX(-50%)', width:'calc(100% - 32px)', maxWidth:'500px', background:'var(--white)', borderRadius:'16px', overflow:'hidden', boxShadow:'0 8px 32px rgba(0,0,0,.18)' }} onClick={e => e.stopPropagation()}>
             <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'12px 16px', borderBottom:'1px solid var(--border)' }}>
               <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="var(--text3)" strokeWidth="2" strokeLinecap="round" style={{flexShrink:0}}><circle cx="9" cy="9" r="6"/><path d="M15 15l3 3"/></svg>
               <input

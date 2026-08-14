@@ -41,6 +41,35 @@ body {
   min-height: 100vh;
   line-height: 1.5;
   overflow-x: hidden;
+  /* Evita el "rebote"/pull-to-refresh de la página completa cuando corre
+     instalada como PWA (display: standalone). Los contenedores internos
+     que necesitan scroll siguen scrolleando normal. */
+  overscroll-behavior-y: none;
+}
+
+/* ── Safe area (notch / home indicator) ──────────────────────────────────
+   Requiere viewport-fit=cover (ver src/app/layout.tsx). Sin esto, en
+   iPhones con notch/Dynamic Island o barra inferior, env(safe-area-inset-*)
+   devuelve 0 y no hace nada — es inofensivo en dispositivos sin notch. */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+/* ── Evitar el "salto" de zoom de iOS Safari en inputs ───────────────────
+   iOS hace auto-zoom al foco de cualquier input/select/textarea con
+   font-size menor a 16px. Como el resto de la UI usa 14px, se fuerza acá
+   a nivel global (sin tocar cada componente) solo en viewports móviles. */
+@media (max-width: 768px) {
+  input, select, textarea {
+    /* !important a propósito: la mayoría de los inputs de la app definen
+       font-size inline (ej. 14px) en cada componente, y una regla de CSS
+       normal no le gana a un inline style. Esta es la forma segura de
+       corregirlo en un solo lugar sin editar 10+ archivos de página. */
+    font-size: 16px !important;
+  }
 }
 
 /* Scrollbar sutil */

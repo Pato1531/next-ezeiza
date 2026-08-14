@@ -10,9 +10,10 @@ const nombre = process.env.NEXT_PUBLIC_INSTITUTO_NOMBRE || 'EduGest'
 export const metadata: Metadata = {
   title: `${nombre} — Panel de gestión`,
   description: `Sistema de gestión del Instituto de Inglés ${nombre}`,
+  manifest: '/manifest.json',
   icons: {
     icon: '/favicon.svg',
-    apple: '/favicon.svg',
+    apple: '/apple-touch-icon.png',
   },
   appleWebApp: {
     capable: true,
@@ -25,14 +26,15 @@ export const viewport: Viewport = {
   themeColor: '#652f8d',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
+  maximumScale: 5,
+  userScalable: true,
+  viewportFit: 'cover',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="es">
       <head>
-        {/* apple-touch-icon removido — icon-192.png no existe */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
       </head>
