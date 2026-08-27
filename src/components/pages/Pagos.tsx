@@ -160,6 +160,73 @@ export default function Pagos() {
   const [deudoresList, setDeudoresList] = useState<any[]>([])
   const [loadingDeudores, setLoadingDeudores] = useState(false)
 
+  // ── Estado: Deudas pendientes (deuda puntual, ej. la que trae un alumno ──
+  // al reactivarse — distinto de "Deudores", que es la cuota del mes) ──────
+  const [deudasPendientes, setDeudasPendientes] = useState<any[]>([])
+  const [loadingDeudasPendientes, setLoadingDeudasPendientes] = useState(false)
+  const [marcandoPagadaId, setMarcandoPagadaId] = useState<string | null>(null)
+  const puedeGestionarDeudas = usuario?.rol === 'director' || usuario?.rol === 'secretaria'
+
+  const cargarDeudasPendientes = async () => {
+    setLoadingDeudasPendientes(true)
+    try {
+      const sb = createClient()
+      const { data, error } = await sb
+        .from('deudas_pendientes')
+        .select('id, monto, motivo, estado, fecha_generada, alumno_id, alumnos(nombre, apellido)')
+        .eq('estado', 'pendiente')
+        .order('fecha_generada', { ascending: false })
+      if (error) { console.error('[cargarDeudasPendientes]', error.message); setDeudasPendientes([]); return }
+      setDeudasPendientes(data || [])
+    } catch (e: any) {
+      console.error('[cargarDeudasPendientes] catch', e?.message)
+      setDeudasPendientes([])
+    }
+    setLoadingDeudasPendientes(false)
+  }
+
+  useEffect(() => {
+    if (vistaTab === 'deudores') cargarDeudasPendientes()
+  }, [vistaTab]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Marca la deuda como pagada y, además, la registra como un pago real en
+  // pagos_alumnos (usa el endpoint existente) para que sume en Ingresos.
+  const marcarDeudaPagada = async (deuda: any) => {
+    setMarcandoPagadaId(deuda.id)
+    try {
+      const res = await window.fetch('/api/registrar-pago', {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({
+          alumno_id: deuda.alumno_id,
+          mes: mesActual,
+          anio: anioActual,
+          monto: deuda.monto,
+          metodo: 'Efectivo',
+          tipo: 'proporcional',
+          observaciones: `Deuda por reactivación — ${deuda.motivo}`,
+        }),
+      })
+      const json = await res.json()
+      if (json.error) { showToast('No se pudo registrar el pago: ' + json.error, 'error'); setMarcandoPagadaId(null); return }
+
+      const sb = createClient()
+      const { error: updErr } = await sb
+        .from('deudas_pendientes')
+        .update({ estado: 'pagada', fecha_pago: new Date().toISOString().split('T')[0], pago_id: json.data?.id || null })
+        .eq('id', deuda.id)
+      if (updErr) { console.error('[marcarDeudaPagada]', updErr.message); showToast('El pago se registró pero no se pudo actualizar la deuda: ' + updErr.message, 'error'); setMarcandoPagadaId(null); return }
+
+      logActivity('Cobró deuda pendiente', 'Pagos', `${deuda.alumnos?.nombre || ''} ${deuda.alumnos?.apellido || ''} — $${deuda.monto}`)
+      showToast('✓ Deuda marcada como pagada')
+      setDeudasPendientes(prev => prev.filter(d => d.id !== deuda.id))
+    } catch (e: any) {
+      console.error('[marcarDeudaPagada] catch', e?.message)
+      showToast('Error al marcar la deuda como pagada', 'error')
+    }
+    setMarcandoPagadaId(null)
+  }
+
   // ── Cargar reporte ────────────────────────────────────────────────────────
   const cargarReporte = async () => {
     setLoadingReporte(true)
@@ -865,6 +932,39 @@ export default function Pagos() {
       {/* ── VISTA DEUDORES ────────────────────────────────────────────────── */}
       {vistaTab === 'deudores' && (
         <div>
+          {/* Deudas pendientes — puntuales, ej. lo que trae un alumno reactivado.
+              Distinto de "Deudores" de abajo, que es la cuota normal del mes. */}
+          {(loadingDeudasPendientes || deudasPendientes.length > 0) && (
+            <div style={{ background:'var(--white)', border:'1.5px solid #f5c5c5', borderRadius:'16px', padding:'16px', marginBottom:'14px' }}>
+              <div style={{ fontSize:'11px', fontWeight:700, color:'#dc2626', textTransform:'uppercase', letterSpacing:'.04em', marginBottom:'10px' }}>
+                Deudas pendientes {deudasPendientes.length > 0 ? `(${deudasPendientes.length})` : ''}
+              </div>
+              {loadingDeudasPendientes ? (
+                <div style={{ fontSize:'13px', color:'var(--text3)', padding:'8px 0' }}>Cargando...</div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', gap:'8px' }}>
+                  {deudasPendientes.map((d: any) => (
+                    <div key={d.id} style={{ display:'flex', alignItems:'center', gap:'10px', padding:'10px 12px', background:'var(--bg)', borderRadius:'10px' }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:'13px', fontWeight:700 }}>{d.alumnos?.nombre} {d.alumnos?.apellido}</div>
+                        <div style={{ fontSize:'11px', color:'var(--text3)', marginTop:'1px' }}>
+                          {d.motivo} · desde {fmtFecha(d.fecha_generada)}
+                        </div>
+                      </div>
+                      <div style={{ fontSize:'14px', fontWeight:700, color:'#dc2626', flexShrink:0 }}>${fmtMonto(d.monto)}</div>
+                      {puedeGestionarDeudas && (
+                        <button onClick={() => marcarDeudaPagada(d)} disabled={marcandoPagadaId === d.id}
+                          style={{ padding:'7px 12px', background: marcandoPagadaId === d.id ? '#aaa' : 'var(--v)', color:'#fff', border:'none', borderRadius:'9px', fontSize:'12px', fontWeight:600, cursor: marcandoPagadaId === d.id ? 'not-allowed' : 'pointer', flexShrink:0, whiteSpace:'nowrap' }}>
+                          {marcandoPagadaId === d.id ? '...' : '✓ Pagó'}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Filtros */}
           <div style={{ background:'var(--white)', border:'1.5px solid var(--border)', borderRadius:'16px', padding:'16px', marginBottom:'14px' }}>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'10px' }}>

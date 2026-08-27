@@ -57,6 +57,10 @@ export default function Alumnos() {
   const { alumnos: todosAlumnos, loading, actualizar, agregar, recargar } = useAlumnos()
   const { usuario } = useAuth()
   const ocultarMontos = usuario?.rol === 'profesora' || usuario?.rol === 'coordinadora'
+  // Reactivar un alumno implica cargar el monto de la deuda que trae —
+  // por eso queda restringido a los roles que ya manejan montos (Coordinador
+  // nunca ve montos en ningún otro lado de la app, ver ocultarMontos arriba).
+  const puedeReactivar = usuario?.rol === 'director' || usuario?.rol === 'secretaria'
   const { miProfesora, loading: loadingProf } = useMiProfesora()
 
   // Si es profesora, mostrar solo alumnos de sus cursos
@@ -159,6 +163,12 @@ export default function Alumnos() {
   const [filtroMotivo, setFiltroMotivo] = useState<string>('todos')
   const [filtroRangoEdad, setFiltroRangoEdad] = useState<string>('todos')
   const [edadesPorAlumno, setEdadesPorAlumno] = useState<Record<string, number | null>>({})
+  // Reactivación de alumno dado de baja
+  const [bajaAReactivar, setBajaAReactivar] = useState<any>(null) // fila de bajas_alumnos seleccionada, o null si el modal está cerrado
+  const [cursoReactivar, setCursoReactivar] = useState('')
+  const [montoDeudaReactivar, setMontoDeudaReactivar] = useState('')
+  const [guardandoReactivacion, setGuardandoReactivacion] = useState(false)
+  const { cursos: cursosParaReactivar } = useCursos()
   const [pago, setPago] = useState({ mes: MESES[new Date().getMonth()], anio: new Date().getFullYear(), monto: 0, metodo:'Efectivo', fecha_pago: new Date().toISOString().split('T')[0], observaciones:'' })
 
   const [renovacionMes, setRenovacionMes] = useState(new Date().getMonth())
@@ -310,7 +320,10 @@ export default function Alumnos() {
     setLoadingBajas(true)
     const sb = createClient()
     const { data } = await sb.from('bajas_alumnos').select('*').order('fecha_baja', { ascending: false })
-    setBajas(data || [])
+    // Las bajas reactivadas (el alumno volvió) quedan en la base para auditoría,
+    // pero no deben contar en ningún reporte ni aparecer en el listado —
+    // por eso se filtran acá, antes de que lleguen a los cálculos de abajo.
+    setBajas((data || []).filter((b: any) => !b.reactivado))
     // Traer edad/fecha_nacimiento actual de los alumnos (activos o no) para poder
     // clasificar las bajas por rango de edad. Si el alumno fue eliminado
     // definitivamente de la tabla alumnos, se usa el nombre del curso como fallback.
@@ -468,6 +481,47 @@ export default function Alumnos() {
       showToast('Error al registrar la baja: ' + (e?.message || 'Error desconocido'), 'error')
     }
     setGuardandoBaja(false)
+  }
+
+  // Abre el modal de reactivación para una fila del listado de bajas históricas
+  const abrirReactivar = (baja: any) => {
+    setBajaAReactivar(baja)
+    setCursoReactivar('')
+    setMontoDeudaReactivar('')
+  }
+
+  const confirmarReactivacion = async () => {
+    if (!bajaAReactivar) return
+    if (!cursoReactivar) return showToast('Elegí el curso al que vuelve el alumno', 'warning')
+    setGuardandoReactivacion(true)
+    try {
+      const res = await window.fetch('/api/reactivar-alumno', {
+        method: 'POST',
+        headers: apiHeaders(),
+        body: JSON.stringify({
+          baja_id: bajaAReactivar.id,
+          alumno_id: bajaAReactivar.alumno_id,
+          curso_id: cursoReactivar,
+          monto_deuda: montoDeudaReactivar ? Number(montoDeudaReactivar) : 0,
+        }),
+      })
+      const json = await res.json()
+      if (json.error) {
+        showToast(json.error, 'error')
+        setGuardandoReactivacion(false)
+        return
+      }
+      logActivity('Reactivó alumno', 'Alumnos', `${bajaAReactivar.alumno_nombre} ${bajaAReactivar.alumno_apellido}${montoDeudaReactivar ? ` — deuda $${montoDeudaReactivar}` : ''}`)
+      showToast(`✓ ${bajaAReactivar.alumno_nombre} ${bajaAReactivar.alumno_apellido} reactivado`)
+      // Sacarlo de la lista local de bajas — ya no debe contar en los reportes
+      setBajas(prev => prev.filter(b => b.id !== bajaAReactivar.id))
+      setBajaAReactivar(null)
+      await recargar()
+    } catch (e: any) {
+      console.error('[confirmarReactivacion]', e)
+      showToast('Error al reactivar: ' + (e?.message || 'Error desconocido'), 'error')
+    }
+    setGuardandoReactivacion(false)
   }
 
   const eliminar = async () => {
@@ -1237,11 +1291,50 @@ export default function Alumnos() {
                     <div style={{padding:'2px 8px',borderRadius:'20px',fontSize:'10px',fontWeight:600,background:rc.bg,color:rc.color}}>
                       {rango}
                     </div>
+                    {puedeReactivar && b.alumno_id && (
+                      <button onClick={() => abrirReactivar(b)}
+                        style={{marginTop:'2px',padding:'4px 10px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'20px',fontSize:'10.5px',fontWeight:700,cursor:'pointer',whiteSpace:'nowrap'}}>
+                        ↺ Reactivar
+                      </button>
+                    )}
                   </div>
                 </div>
               )
             })}
           </div>
+        )}
+
+        {/* Modal: reactivar alumno */}
+        {bajaAReactivar && (
+          <ModalSheet title="Reactivar alumno" onClose={() => !guardandoReactivacion && setBajaAReactivar(null)}>
+            <div style={{fontSize:'13px',color:'var(--text2)',marginBottom:'16px',lineHeight:1.5}}>
+              <strong>{bajaAReactivar.alumno_nombre} {bajaAReactivar.alumno_apellido}</strong> vuelve a la plataforma.
+              Esta baja dejará de contar en los reportes. Elegí el curso al que se reincorpora
+              y, si corresponde, el monto que queda debiendo.
+            </div>
+            <Field2 label="Curso">
+              <select value={cursoReactivar} onChange={e => setCursoReactivar(e.target.value)} style={IS} disabled={guardandoReactivacion}>
+                <option value="">— Seleccioná un curso —</option>
+                {[...cursosParaReactivar].sort((a: any, b: any) => (a.nombre||'').localeCompare(b.nombre||'')).map((c: any) => (
+                  <option key={c.id} value={c.id}>{c.nombre}{c.nivel ? ` · ${c.nivel}` : ''}</option>
+                ))}
+              </select>
+            </Field2>
+            <Field2 label="Deuda pendiente (opcional)">
+              <input type="number" min="0" step="0.01" placeholder="0"
+                value={montoDeudaReactivar} onChange={e => setMontoDeudaReactivar(e.target.value)}
+                style={IS} disabled={guardandoReactivacion} />
+              <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'4px'}}>
+                Si el alumno debe algo de antes de irse, quedará registrado como deuda pendiente en Pagos.
+              </div>
+            </Field2>
+            <div style={{display:'flex',gap:'10px',marginTop:'18px'}}>
+              <BtnG onClick={() => setBajaAReactivar(null)} style={{flex:1}}>Cancelar</BtnG>
+              <BtnP onClick={confirmarReactivacion} disabled={guardandoReactivacion || !cursoReactivar} style={{flex:2}}>
+                {guardandoReactivacion ? 'Reactivando...' : 'Confirmar reactivación'}
+              </BtnP>
+            </div>
+          </ModalSheet>
         )}
       </div>
     )
