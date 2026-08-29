@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { useAlumnos, apiHeaders, logActivity } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
@@ -572,7 +572,16 @@ export default function Pagos() {
   }
 
   // ── Guardar pagos ─────────────────────────────────────────────────────────
+  // Lock síncrono además del `disabled` del botón: React actualiza el estado
+  // de forma asíncrona, así que un doble-click muy rápido podía disparar
+  // ejecutarGuardado() dos veces antes de que el botón se deshabilite,
+  // duplicando el intento de cobro (y generando falsos "errores" cuando el
+  // guard de idempotencia bloqueaba el segundo intento sobre la misma clase).
+  const guardandoRef = useRef(false)
+
   const ejecutarGuardado = async () => {
+    if (guardandoRef.current) return
+    guardandoRef.current = true
     setGuardando(true)
     setResultadoRegistro(null)
     const fecha = new Date().toISOString().split('T')[0]
@@ -636,28 +645,29 @@ export default function Pagos() {
           }).then(r => r.json())
         )
       )
-      const errores = resultados.filter(r => r.error)
-      const alumnosOk = [...new Set(resultados.filter(r => !r.error).map((_, i) => inserts[i].alumno_id))]
+      // 'CLASE_YA_PAGADA' no es un error real: es el guard de idempotencia
+      // evitando cobrar la misma clase dos veces (ej. doble tap). Se cuenta
+      // aparte para no asustar con un "error" que en realidad es correcto.
+      const errores = resultados.filter(r => r.error && r.code !== 'CLASE_YA_PAGADA')
+      const yaPagadas = resultados.filter(r => r.code === 'CLASE_YA_PAGADA')
+      const exitosos = resultados.filter(r => !r.error)
+      // Un alumno puede generar MÁS DE UN insert (ej. clase particular: uno
+      // por clase) — se junta por alumno_id mirando cada resultado exitoso
+      // contra el insert que lo originó (mismo índice en el array).
+      const alumnosOkSet = new Set<string>()
+      resultados.forEach((r, i) => { if (!r.error) alumnosOkSet.add(inserts[i].alumno_id) })
 
       // ── Resumen de feedback ───────────────────────────────────────────────
-      const montoTotal = [...seleccionados].reduce((sum, id) => {
-        const a = alumnos.find((x: any) => x.id === id)
-        if (!a) return sum
-        let t = 0
-        if (cobrarCuota) t += (a.cuota_mensual || 0)
-        if (cobrarDescuento) t += (montoDescuento[id] ?? a.cuota_mensual ?? 0)
-        if (cobrarRecargo) t += (parseFloat(montoRecargo) || 0)
-        if (cobrarMatricula) t += (a.matricula || 0)
-        if (cobrarProporcional) t += (parseFloat(montoProporcional) || 0)
-        if (cobrarExamen) t += (parseFloat(montoExamen) || 0)
-        if (cobrarClaseParticular) t += (montoClaseParticular[id] || 0)
-        return sum + t
-      }, 0)
+      // Un alumno puede generar MÁS DE UN insert (ej. clase particular: uno
+      // por clase), así que "ok"/"total" se calculan sobre los inserts
+      // efectivamente guardados — no sobre la cantidad de alumnos ni sobre
+      // el monto que se planeaba cobrar.
+      const totalMonto = exitosos.reduce((sum: number, r: any) => sum + (r.data?.monto || 0), 0)
 
       setResultadoRegistro({
-        ok: alumnosSeleccionados.length - errores.length,
+        ok: alumnosOkSet.size,
         errores: errores.length,
-        totalMonto: montoTotal,
+        totalMonto,
         conceptos: conceptosActivos,
         mes,
         metodo,
@@ -665,19 +675,22 @@ export default function Pagos() {
 
       if (errores.length > 0) {
         showToast(`⚠ ${errores.length} pago(s) no se pudieron guardar`, 'error')
+      } else if (yaPagadas.length > 0) {
+        showToast(`✓ $${fmtMonto(totalMonto)} registrado · ${yaPagadas.length} clase${yaPagadas.length !== 1 ? 's' : ''} ya estaba${yaPagadas.length !== 1 ? 'n' : ''} cobrada${yaPagadas.length !== 1 ? 's' : ''} (se omitió)`, 'warning')
       } else {
-        showToast(`✓ ${alumnosSeleccionados.length} alumno${alumnosSeleccionados.length !== 1 ? 's' : ''} · $${fmtMonto(montoTotal)} registrado${alumnosSeleccionados.length !== 1 ? 's' : ''}`)
+        showToast(`✓ ${alumnosOkSet.size} alumno${alumnosOkSet.size !== 1 ? 's' : ''} · $${fmtMonto(totalMonto)} registrado${alumnosOkSet.size !== 1 ? 's' : ''}`)
       }
 
       logActivity('Registró pagos', 'Pagos', `${alumnosSeleccionados.length} alumnos · ${mes} ${anioActual}`)
-      alumnosOk.forEach(id => window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: id } })))
-      setAlumnosPagadosMes(prev => new Set([...prev, ...alumnosOk]))
+      alumnosOkSet.forEach(id => window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: id } })))
+      setAlumnosPagadosMes(prev => new Set([...prev, ...alumnosOkSet]))
     } catch (e) {
       console.error('[Pagos] catch:', e)
       showToast('Error de conexión al guardar los pagos', 'error')
     }
 
     setGuardando(false)
+    guardandoRef.current = false
     setSeleccionados(new Set())
   }
 
