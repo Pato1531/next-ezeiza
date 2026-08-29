@@ -686,7 +686,18 @@ export function usePagos(alumnoId: string) {
       logActivity('Registró pago', 'Pagos', `${pago.mes} ${pago.anio} - $${pago.monto}`)
       if (json.data) {
         setData(prev => {
-          const sinDup = prev.filter(p => !(p.mes === json.data.mes && p.anio === json.data.anio))
+          // Tipos que REEMPLAZAN un pago anterior del mismo mes (misma lógica
+          // que TIPOS_QUE_REEMPLAZAN en /api/registrar-pago): sacamos del
+          // estado local esas variantes viejas para no duplicar la vista.
+          // 'proporcional' y 'clase_particular' ACUMULAN — cada fila es un
+          // pago propio (ej: una clase particular más), así que NO se
+          // deduplican por mes/año o se perdería el historial en pantalla.
+          const tipo = (json.data as any).tipo
+          const familiaCuota = ['cuota', 'recargo', 'cuota_recargo', 'cuota_descuento', 'matricula', null, undefined]
+          const reemplaza = familiaCuota.includes(tipo)
+          const sinDup = reemplaza
+            ? prev.filter((p: any) => !(p.mes === json.data.mes && p.anio === json.data.anio && familiaCuota.includes(p.tipo)))
+            : prev
           return [json.data, ...sinDup]
         })
         invalidateQuery(`pagos-${alumnoId}`)

@@ -1546,7 +1546,7 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
   const { historial: histCuotas } = useCuotasHistorial(a.id)
   const [guardandoPago, setGuardandoPago] = useState(false)
   const [cursoActual, setCursoActual] = useState<any>(null)
-  const [clasesAsistidasMes, setClasesAsistidasMes] = useState<{fecha:string,tema:string}[]>([])
+  const [clasesAsistidasMes, setClasesAsistidasMes] = useState<{id:string,fecha:string,tema:string}[]>([])
   const [cargandoClasesAsist, setCargandoClasesAsist] = useState(false)
   const { cursos: todosLosCursos } = useCursos()
   const [modalAsignarCurso, setModalAsignarCurso] = useState(false)
@@ -1576,8 +1576,12 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
       }, () => setCursoActual(null))
   }, [a.id, todosLosCursos.length])
 
-  // ── Cursos "por clase" (particulares): traer clases del mes a las que asistió,
-  // para sugerir el monto del pago. Se recalcula si cambia el mes/año elegido en el modal.
+  // ── Cursos "por clase" (particulares): traer clases del mes a las que asistió
+  // Y QUE TODAVÍA NO TIENEN UN PAGO REGISTRADO, para sugerir cuáles cobrar.
+  // Cada clase pendiente se cobra como un pago propio (tipo 'clase_particular',
+  // ligado a esa clase por clase_id) — así el recibo de una clase ya cobrada
+  // nunca se rompe ni cambia de monto cuando se cobra la clase siguiente
+  // (ver src/lib/pagos.ts). Se recalcula si cambia el mes/año elegido en el modal.
   useEffect(() => {
     if (!modalPago || !a.tarifa_clase || !cursoActual?.id) { setClasesAsistidasMes([]); return }
     const mesIdx = MESES.indexOf(pago.mes)
@@ -1590,15 +1594,19 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
       .then(async ({ data: clases }) => {
         const claseIds = (clases || []).map((c: any) => c.id)
         if (claseIds.length === 0) { setClasesAsistidasMes([]); setCargandoClasesAsist(false); return }
-        const { data: asist } = await sb.from('asistencia_clases').select('clase_id, estado').eq('alumno_id', a.id).in('clase_id', claseIds)
+        const [{ data: asist }, { data: yaCobradas }] = await Promise.all([
+          sb.from('asistencia_clases').select('clase_id, estado').eq('alumno_id', a.id).in('clase_id', claseIds),
+          sb.from('pagos_alumnos').select('clase_id').eq('alumno_id', a.id).in('clase_id', claseIds),
+        ])
         const asistidas = new Set((asist || []).filter((r: any) => r.estado === 'P' || r.estado === 'T').map((r: any) => r.clase_id))
-        const detalle = (clases || [])
-          .filter((c: any) => asistidas.has(c.id))
+        const cobradas = new Set((yaCobradas || []).map((r: any) => r.clase_id).filter(Boolean))
+        const pendientes = (clases || [])
+          .filter((c: any) => asistidas.has(c.id) && !cobradas.has(c.id))
           .sort((x: any, y: any) => x.fecha.localeCompare(y.fecha))
-          .map((c: any) => ({ fecha: c.fecha, tema: c.tema || 'Sin tema cargado' }))
-        setClasesAsistidasMes(detalle)
+          .map((c: any) => ({ id: c.id, fecha: c.fecha, tema: c.tema || 'Sin tema cargado' }))
+        setClasesAsistidasMes(pendientes)
         setCargandoClasesAsist(false)
-        setPago((prev: any) => ({ ...prev, monto: detalle.length * (a.tarifa_clase || 0) }))
+        setPago((prev: any) => ({ ...prev, monto: pendientes.length * (a.tarifa_clase || 0) }))
       })
   }, [modalPago, cursoActual?.id, pago.mes, pago.anio, a.id, a.tarifa_clase]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1757,6 +1765,43 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
   }
   const guardarPago = async () => {
     setGuardandoPago(true)
+
+    // ── Clase particular: un pago propio POR CLASE pendiente, no un total ──
+    // acumulado. Cada uno queda como fila independiente e inmutable (tipo
+    // 'clase_particular' + clase_id), así el recibo de una clase ya cobrada
+    // nunca se rompe ni cambia de monto al cobrar la clase siguiente.
+    if (a.tarifa_clase) {
+      if (clasesAsistidasMes.length === 0) {
+        setGuardandoPago(false)
+        showToast('No hay clases pendientes de cobro este mes', 'warning')
+        return
+      }
+      const resultados = await Promise.all(
+        clasesAsistidasMes.map(c => registrar({
+          alumno_id: a.id,
+          mes: pago.mes,
+          anio: pago.anio,
+          monto: a.tarifa_clase,
+          metodo: pago.metodo,
+          fecha_pago: pago.fecha_pago,
+          observaciones: pago.observaciones || `Clase particular — ${new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR')}`,
+          tipo: 'clase_particular',
+          clase_id: c.id,
+        }))
+      )
+      setGuardandoPago(false)
+      setModalPago(false)
+      const ok = resultados.filter(Boolean)
+      if (ok.length === 0) { showToast('No se pudo registrar el pago', 'error'); return }
+      logActivity('Registró pago', 'Pagos', `${a.nombre} ${a.apellido} — ${ok.length} clase${ok.length !== 1 ? 's' : ''} particular${ok.length !== 1 ? 'es' : ''} — $${ok.length * a.tarifa_clase}`)
+      window.dispatchEvent(new CustomEvent('pago-registrado', { detail: { alumno_id: a.id, nombre: `${a.nombre} ${a.apellido}` } }))
+      if (ok.length < resultados.length) showToast(`${ok.length} de ${resultados.length} clases registradas`, 'warning')
+      // Abre el recibo de la última clase cobrada; el resto queda disponible
+      // desde el historial de pagos (botón "Ver recibo" en cada fila).
+      generarRecibo(ok[ok.length - 1])
+      return
+    }
+
     // registrar() devuelve el row de DB con el id real asignado por Supabase
     const resultado = await registrar({ ...pago, alumno_id: a.id })
     setGuardandoPago(false)
@@ -1915,7 +1960,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
           return (
             <div key={p.id} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'11px 0',borderBottom:'1px solid var(--border)'}}>
               <div>
-                <div style={{fontSize:'14px',fontWeight:600}}>{p.mes} {p.anio}</div>
+                <div style={{fontSize:'14px',fontWeight:600}}>{p.tipo === 'clase_particular' ? `Clase particular — ${p.mes} ${p.anio}` : `${p.mes} ${p.anio}`}</div>
                 <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'2px'}}>{p.metodo} · {fmtFecha(p.fecha_pago)}</div>
               </div>
               <div style={{display:'flex',alignItems:'center',gap:'8px'}}>
@@ -2087,30 +2132,32 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
         {a.tarifa_clase && (
           <div style={{padding:'10px 12px',background:'var(--vl)',borderRadius:'10px',marginBottom:'10px'}}>
             <div style={{fontSize:'11px',fontWeight:700,color:'var(--v)',marginBottom:'6px'}}>
-              📚 Clases asistidas en {pago.mes} {pago.anio}
+              📚 Clases pendientes de cobro en {pago.mes} {pago.anio}
             </div>
             {cargandoClasesAsist ? (
               <div style={{fontSize:'12px',color:'var(--text3)'}}>Buscando clases...</div>
             ) : clasesAsistidasMes.length === 0 ? (
-              <div style={{fontSize:'12px',color:'var(--text3)'}}>Sin clases con asistencia registrada este mes.</div>
+              <div style={{fontSize:'12px',color:'var(--text3)'}}>Sin clases pendientes — ya están todas cobradas, o no hay asistencia registrada este mes.</div>
             ) : (
               <>
                 {clasesAsistidasMes.map(c => (
-                  <div key={c.fecha} style={{display:'flex',justifyContent:'space-between',fontSize:'11px',color:'var(--text2)',padding:'2px 0'}}>
+                  <div key={c.id} style={{display:'flex',justifyContent:'space-between',fontSize:'11px',color:'var(--text2)',padding:'2px 0'}}>
                     <span>{new Date(c.fecha+'T12:00:00').toLocaleDateString('es-AR',{day:'2-digit',month:'2-digit'})} — {c.tema}</span>
                   </div>
                 ))}
                 <div style={{fontSize:'11px',color:'var(--v)',fontWeight:700,marginTop:'6px',borderTop:'1px solid var(--border)',paddingTop:'6px'}}>
-                  {clasesAsistidasMes.length} clase{clasesAsistidasMes.length!==1?'s':''} × ${(a.tarifa_clase||0).toLocaleString('es-AR')} = ${(clasesAsistidasMes.length*(a.tarifa_clase||0)).toLocaleString('es-AR')} sugerido
+                  {clasesAsistidasMes.length} clase{clasesAsistidasMes.length!==1?'s':''} × ${(a.tarifa_clase||0).toLocaleString('es-AR')} = ${(clasesAsistidasMes.length*(a.tarifa_clase||0)).toLocaleString('es-AR')} a cobrar
+                </div>
+                <div style={{fontSize:'10.5px',color:'var(--text3)',marginTop:'4px'}}>
+                  Se registra un pago (y un recibo) por cada clase — no se pueden editar montos individuales acá.
                 </div>
               </>
             )}
-            {!a.tarifa_clase && (
-              <div style={{fontSize:'11px',color:'var(--amber)',marginTop:'6px'}}>⚠ Este alumno no tiene tarifa por clase cargada — editala en su ficha.</div>
-            )}
           </div>
         )}
-        <Field2 label="Monto ($)"><Input type="number" value={pago.monto||''} onChange={(v:string)=>setPago({...pago,monto:+v})} /></Field2>
+        {!a.tarifa_clase && (
+          <Field2 label="Monto ($)"><Input type="number" value={pago.monto||''} onChange={(v:string)=>setPago({...pago,monto:+v})} /></Field2>
+        )}
         <Field2 label="Método">
           <select style={IS} value={pago.metodo} onChange={e=>setPago({...pago,metodo:e.target.value})}>
             <option>Efectivo</option><option>Transferencia</option><option>MercadoPago</option>
@@ -2120,7 +2167,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
         <Field2 label="Observaciones"><Input value={pago.observaciones} onChange={(v:string)=>setPago({...pago,observaciones:v})} placeholder="Opcional..." /></Field2>
         <div style={{display:'flex',gap:'10px',marginTop:'8px'}}>
           <BtnG style={{flex:1}} onClick={() => setModalPago(false)}>Cancelar</BtnG>
-          <BtnP style={{flex:2}} onClick={guardarPago} disabled={guardandoPago}>{guardandoPago?'Guardando...':'Registrar pago'}</BtnP>
+          <BtnP style={{flex:2}} onClick={guardarPago} disabled={guardandoPago || (!!a.tarifa_clase && clasesAsistidasMes.length===0)}>{guardandoPago?'Guardando...':'Registrar pago'}</BtnP>
         </div>
       </ModalSheet>}
 

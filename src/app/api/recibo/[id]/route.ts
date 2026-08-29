@@ -50,21 +50,48 @@ export async function GET(
     const nombrePrimera = partesNombre[0]
     const nombreResto   = partesNombre.slice(1).join(' ')
 
-    // ── Todos los pagos del alumno en el mismo mes/año ───────────────────────
-    const { data: todosPagos } = await sb
-      .from('pagos_alumnos')
-      .select('id, monto, tipo, metodo, fecha_pago')
-      .eq('alumno_id', p.alumno_id)
-      .eq('mes', p.mes)
-      .eq('anio', p.anio)
-      .order('tipo', { ascending: true })
+    // ── Clase particular: recibo de UNA sola clase, inmutable ────────────────
+    // A diferencia de la cuota mensual (que agrupa todos los pagos del mes en
+    // un solo comprobante), un pago de clase particular es un evento propio:
+    // el recibo muestra solo esa clase, con su fecha exacta, y NUNCA cambia
+    // aunque se cobren más clases después. Esto es a propósito — ver
+    // src/lib/pagos.ts (TIPO_CLASE_PARTICULAR).
+    const esClaseParticular = p.tipo === 'clase_particular'
+
+    let fechaClase: string | null = null
+    if (esClaseParticular && p.clase_id) {
+      const { data: cl } = await sb.from('clases').select('fecha').eq('id', p.clase_id).maybeSingle()
+      fechaClase = cl?.fecha || null
+    }
+
+    // ── Todos los pagos del alumno en el mismo mes/año (NO aplica a clase particular) ──
+    const { data: todosPagos } = esClaseParticular
+      ? { data: [p] }
+      : await sb
+          .from('pagos_alumnos')
+          .select('id, monto, tipo, metodo, fecha_pago')
+          .eq('alumno_id', p.alumno_id)
+          .eq('mes', p.mes)
+          .eq('anio', p.anio)
+          .order('tipo', { ascending: true })
 
     const num   = params.id.slice(0, 6).toUpperCase()
     const fecha = p.fecha_pago
       ? new Date(p.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })
       : new Date().toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })
 
+    const fechaClaseFmt = fechaClase
+      ? new Date(fechaClase + 'T12:00:00').toLocaleDateString('es-AR', { day: 'numeric', month: 'long', year: 'numeric' })
+      : fecha
+
     const lineasPago = (todosPagos || [p]).map((pg: any) => {
+      if (esClaseParticular) {
+        return `
+        <div class="linea-pago">
+          <span class="linea-label">Clase particular — ${fechaClaseFmt}</span>
+          <span class="linea-monto">$${(pg.monto || 0).toLocaleString('es-AR')}</span>
+        </div>`
+      }
       const label =
         pg.tipo === 'matricula'     ? 'Matrícula'
         : pg.tipo === 'proporcional' ? `Monto proporcional ${p.mes} ${p.anio}`
@@ -80,8 +107,11 @@ export async function GET(
 
     const totalMonto   = (todosPagos || [p]).reduce((acc: number, pg: any) => acc + (pg.monto || 0), 0)
     const cuotaMensual = al?.cuota_mensual || 0
-    const ok   = totalMonto >= cuotaMensual
-    const parc = totalMonto > 0 && totalMonto < cuotaMensual
+    // Una clase particular pagada siempre es un pago completo por definición
+    // (no existe el concepto de "cuota parcial" a nivel de una sola clase) —
+    // comparar contra cuota_mensual no aplica acá.
+    const ok   = esClaseParticular || totalMonto >= cuotaMensual
+    const parc = !esClaseParticular && totalMonto > 0 && totalMonto < cuotaMensual
     const estadoLabel = ok ? 'Completo' : parc ? 'Parcial' : 'Pendiente'
     const estadoColor = ok ? '#2d7a4f'  : parc ? '#b45309' : '#c0392b'
     const estadoBg    = ok ? '#e6f4ec'  : parc ? '#fef3cd' : '#fdeaea'
@@ -146,13 +176,14 @@ export async function GET(
     <div class="monto-sec">
       <div class="monto-lab">Total abonado${badgeExtra ? ` <span class="badge-matricula">${badgeExtra}</span>` : ''}</div>
       <div class="monto">$${totalMonto.toLocaleString('es-AR')}</div>
-      <div class="monto-mes">${p.mes} ${p.anio} &middot; ${p.metodo || 'Efectivo'}</div>
+      <div class="monto-mes">${esClaseParticular ? `Clase particular &middot; ${fechaClaseFmt}` : `${p.mes} ${p.anio}`} &middot; ${p.metodo || 'Efectivo'}</div>
     </div>
-    ${(todosPagos && todosPagos.length > 1) ? `<div class="detalle-pagos">${lineasPago}</div>` : ''}
+    ${(!esClaseParticular && todosPagos && todosPagos.length > 1) ? `<div class="detalle-pagos">${lineasPago}</div>` : ''}
     <div class="body">
       <div class="fila"><div class="fila-lab">Alumno</div><div class="fila-val">${al?.nombre} ${al?.apellido}</div></div>
       ${al?.es_menor ? `<div class="fila"><div class="fila-lab">Responsable</div><div class="fila-val">${al?.padre_nombre || ''}</div></div>` : ''}
       ${dniRow}
+      ${esClaseParticular ? `<div class="fila"><div class="fila-lab">Clase</div><div class="fila-val">${fechaClaseFmt}</div></div>` : ''}
       <div class="fila"><div class="fila-lab">M&eacute;todo</div><div class="fila-val">${p.metodo || 'Efectivo'}</div></div>
       <div class="fila"><div class="fila-lab">Fecha</div><div class="fila-val">${fecha}</div></div>
       <div class="fila">

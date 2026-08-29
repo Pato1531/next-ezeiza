@@ -16,6 +16,17 @@ export type PagoAlumno = {
 }
 
 /**
+ * Tipo de pago para clases particulares (alumnos con `tarifa_clase`). A
+ * diferencia de la familia cuota, NO reemplaza pagos anteriores del mismo
+ * mes — cada clase pagada queda como una fila propia e inmutable en
+ * `pagos_alumnos` (mismo comportamiento que 'proporcional'), para poder
+ * emitir un recibo por clase que no se rompa ni cambie de monto cuando se
+ * cobra la clase siguiente. Ver `clase_id` en el mismo registro para saber
+ * a qué clase puntual corresponde.
+ */
+export const TIPO_CLASE_PARTICULAR = 'clase_particular'
+
+/**
  * Tipos de pago que representan "la cuota mensual del alumno está saldada",
  * sin importar el monto exacto (un tipo 'cuota_descuento' puede tener un
  * monto menor a cuota_mensual de forma intencional).

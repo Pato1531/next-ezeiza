@@ -80,8 +80,28 @@ export async function POST(req: NextRequest) {
         }
       }
     }
-    // Para 'proporcional' y cualquier tipo no listado:
+    // Para 'proporcional', 'clase_particular' y cualquier tipo no listado:
     // no se borra nada → se inserta directamente como registro adicional.
+    // 'clase_particular' es a propósito: cada clase pagada debe quedar como
+    // una fila propia e inmutable (ver src/lib/pagos.ts), para que el recibo
+    // de una clase no se rompa ni cambie de monto cuando se cobra la
+    // siguiente.
+
+    // ── Guard de idempotencia para pagos ligados a una clase puntual ────────────
+    // Evita cobrar dos veces la misma clase (doble tap, doble submit) — el
+    // índice único en la base ya lo impediría, pero acá devolvemos un error
+    // claro en vez de un 500 genérico.
+    if (tipo === 'clase_particular' && pago.clase_id) {
+      const { data: existente } = await supabase
+        .from('pagos_alumnos')
+        .select('id')
+        .eq('alumno_id', pago.alumno_id)
+        .eq('clase_id', pago.clase_id)
+        .maybeSingle()
+      if (existente) {
+        return NextResponse.json({ error: 'Esa clase ya tiene un pago registrado', code: 'CLASE_YA_PAGADA' }, { status: 409 })
+      }
+    }
 
     // ── INSERT ─────────────────────────────────────────────────────────────────
     const insertData: any = {
@@ -92,6 +112,7 @@ export async function POST(req: NextRequest) {
       metodo: pago.metodo || 'Efectivo',
       fecha_pago: pago.fecha_pago || new Date().toISOString().split('T')[0],
       observaciones: pago.observaciones || null,
+      ...(pago.clase_id ? { clase_id: pago.clase_id } : {}),
       ...(institutoId ? { instituto_id: institutoId } : {}),
     }
 
@@ -102,12 +123,14 @@ export async function POST(req: NextRequest) {
       .select()
       .single()
 
-    // Si falla por columna inexistente, reintentar sin 'tipo'
+    // Si falla por columna inexistente (tipo o clase_id, según la migración
+    // pendiente en esa instancia), reintentar con un insert más chico
     if (result.error?.code === '42703') {
-      console.warn('[registrar-pago] columna tipo no existe, reintentando sin ella')
+      console.warn('[registrar-pago] columna inexistente, reintentando sin tipo/clase_id:', result.error.message)
+      const { clase_id, ...insertDataSinClase } = insertData
       result = await supabase
         .from('pagos_alumnos')
-        .insert(insertData)
+        .insert(insertDataSinClase)
         .select()
         .single()
     }

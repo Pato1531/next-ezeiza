@@ -55,12 +55,16 @@ function labelConceptosPagados(tiposRaw: (string | null | undefined)[], esClaseP
     matricula: 'Matrícula',
     examen: 'Examen',
     proporcional: 'Proporcional',
+    clase_particular: 'Clases particulares',
   }
   const ORDEN = ['Cuota', 'Cuota c/descuento', 'Clases particulares', 'Recargo', 'Matrícula', 'Examen', 'Proporcional']
 
   const set = new Set<string>()
   tiposRaw.forEach(t => {
     const tipo = t || 'cuota'
+    // Legacy: algunos pagos viejos de clases particulares quedaron con
+    // tipo 'cuota' (antes de existir 'clase_particular'). Se siguen
+    // mostrando igual gracias a esClaseParticular.
     if (esClaseParticular && tipo === 'cuota') { set.add('Clases particulares'); return }
     set.add(LABEL_POR_TIPO[tipo] || tipo)
   })
@@ -83,6 +87,7 @@ const ChipConcepto = ({ tipo }: { tipo: string }) => {
     examen:      { label: 'Examen',       color: '#7c3aed', bg: '#ede9fe' },
     proporcional:{ label: 'Proporcional', color: '#2d7a4f', bg: '#e6f4ec' },
     cuota_descuento: { label: 'Cuota c/desc.', color: '#0f766e', bg: '#e6f7f5' },
+    clase_particular: { label: 'Clase particular', color: '#d4537e', bg: '#fbeaf0' },
   }
   const c = map[tipo] || { label: tipo, color: 'var(--text3)', bg: 'var(--bg)' }
   return (
@@ -141,6 +146,11 @@ export default function Pagos() {
   const [montoExamen, setMontoExamen] = useState('')
   const [cobrarClaseParticular, setCobrarClaseParticular] = useState(false)
   const [montoClaseParticular, setMontoClaseParticular] = useState<Record<string, number>>({})
+  // Clases pendientes de cobro por alumno (asistidas y sin pago todavía).
+  // Cada una se cobra como una fila propia e inmutable (tipo 'clase_particular'
+  // + clase_id) — ver src/lib/pagos.ts — así el recibo de una clase ya
+  // cobrada nunca se rompe ni cambia de monto al cobrar la clase siguiente.
+  const [clasesPendientesParticular, setClasesPendientesParticular] = useState<Record<string, { id: string, fecha: string }[]>>({})
   const [cargandoClaseParticular, setCargandoClaseParticular] = useState(false)
 
   // ── Estado: Feedback post-registro ───────────────────────────────────────
@@ -472,7 +482,7 @@ export default function Pagos() {
   useEffect(() => {
     if (!cobrarClaseParticular) return
     const idsPorClase = alumnos.filter((a: any) => a.tarifa_clase).map((a: any) => a.id)
-    if (idsPorClase.length === 0) { setMontoClaseParticular({}); return }
+    if (idsPorClase.length === 0) { setMontoClaseParticular({}); setClasesPendientesParticular({}); return }
     setCargandoClaseParticular(true)
     const sb = createClient()
     const mesIdx = MESES.indexOf(mes)
@@ -481,21 +491,36 @@ export default function Pagos() {
     ;(async () => {
       const { data: cursosAlumno } = await sb.from('cursos_alumnos').select('alumno_id, curso_id').in('alumno_id', idsPorClase)
       const cursoIds = [...new Set((cursosAlumno || []).map((r: any) => r.curso_id))]
-      if (cursoIds.length === 0) { setMontoClaseParticular({}); setCargandoClaseParticular(false); return }
-      const { data: clases } = await sb.from('clases').select('id, curso_id').in('curso_id', cursoIds).gte('fecha', desde).lte('fecha', hasta)
+      if (cursoIds.length === 0) { setMontoClaseParticular({}); setClasesPendientesParticular({}); setCargandoClaseParticular(false); return }
+      const cursoPorAlumno: Record<string, string> = {}
+      for (const r of (cursosAlumno || [])) cursoPorAlumno[r.alumno_id] = r.curso_id
+      const { data: clases } = await sb.from('clases').select('id, curso_id, fecha').in('curso_id', cursoIds).gte('fecha', desde).lte('fecha', hasta)
       const claseIds = (clases || []).map((c: any) => c.id)
-      if (claseIds.length === 0) { setMontoClaseParticular({}); setCargandoClaseParticular(false); return }
-      const { data: asist } = await sb.from('asistencia_clases').select('alumno_id, clase_id, estado').in('alumno_id', idsPorClase).in('clase_id', claseIds)
-      const conteoPorAlumno: Record<string, number> = {}
+      if (claseIds.length === 0) { setMontoClaseParticular({}); setClasesPendientesParticular({}); setCargandoClaseParticular(false); return }
+      const [{ data: asist }, { data: yaCobradas }] = await Promise.all([
+        sb.from('asistencia_clases').select('alumno_id, clase_id, estado').in('alumno_id', idsPorClase).in('clase_id', claseIds),
+        sb.from('pagos_alumnos').select('alumno_id, clase_id').in('alumno_id', idsPorClase).in('clase_id', claseIds),
+      ])
+      const claseById: Record<string, any> = {}
+      for (const c of (clases || [])) claseById[c.id] = c
+      const cobradasPorAlumno: Record<string, Set<string>> = {}
+      for (const r of (yaCobradas || [])) {
+        if (!r.clase_id) continue
+        ;(cobradasPorAlumno[r.alumno_id] ||= new Set()).add(r.clase_id)
+      }
+      const pendientesPorAlumno: Record<string, { id: string, fecha: string }[]> = {}
       for (const r of (asist || [])) {
         if (r.estado !== 'P' && r.estado !== 'T') continue
-        conteoPorAlumno[r.alumno_id] = (conteoPorAlumno[r.alumno_id] || 0) + 1
+        if (cursoPorAlumno[r.alumno_id] !== claseById[r.clase_id]?.curso_id) continue
+        if (cobradasPorAlumno[r.alumno_id]?.has(r.clase_id)) continue
+        ;(pendientesPorAlumno[r.alumno_id] ||= []).push({ id: r.clase_id, fecha: claseById[r.clase_id]?.fecha })
       }
       const montos: Record<string, number> = {}
       for (const a of alumnos) {
         if (!a.tarifa_clase) continue
-        montos[a.id] = (conteoPorAlumno[a.id] || 0) * a.tarifa_clase
+        montos[a.id] = (pendientesPorAlumno[a.id]?.length || 0) * a.tarifa_clase
       }
+      setClasesPendientesParticular(pendientesPorAlumno)
       setMontoClaseParticular(montos)
       setCargandoClaseParticular(false)
     })()
@@ -585,11 +610,20 @@ export default function Pagos() {
         monto: parseFloat(montoExamen) || 0,
         tipo: 'examen', observaciones: `Examen ${mes} ${anioActual}`,
       })
-      if (cobrarClaseParticular && (montoClaseParticular[a.id] || 0) > 0) inserts.push({
-        alumno_id: a.id, mes, anio: anioActual, metodo, fecha_pago: fecha,
-        monto: montoClaseParticular[a.id],
-        tipo: 'cuota', observaciones: `Clases particulares ${mes} ${anioActual}`,
-      })
+      // Una fila POR CLASE pendiente (no un total acumulado) — cada una queda
+      // como pago propio e inmutable, ligado a esa clase por clase_id, para
+      // que el recibo de una clase ya cobrada nunca se rompa ni cambie de
+      // monto cuando se cobra la clase siguiente (ver src/lib/pagos.ts).
+      if (cobrarClaseParticular) {
+        for (const c of (clasesPendientesParticular[a.id] || [])) {
+          inserts.push({
+            alumno_id: a.id, mes, anio: anioActual, metodo, fecha_pago: fecha,
+            monto: a.tarifa_clase || 0,
+            tipo: 'clase_particular', clase_id: c.id,
+            observaciones: `Clase particular — ${c.fecha ? new Date(c.fecha + 'T12:00:00').toLocaleDateString('es-AR') : mes + ' ' + anioActual}`,
+          })
+        }
+      }
     }
 
     try {
