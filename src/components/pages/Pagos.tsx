@@ -487,7 +487,12 @@ export default function Pagos() {
     const sb = createClient()
     const mesIdx = MESES.indexOf(mes)
     const desde = `${anioActual}-${String(mesIdx + 1).padStart(2, '0')}-01`
-    const hasta = `${anioActual}-${String(mesIdx + 1).padStart(2, '0')}-31`
+    // Último día REAL del mes (no siempre es 31: abril/junio/sept/nov tienen 30,
+    // febrero 28 o 29). Con "-31" fijo, en esos meses la fecha es inválida para
+    // Postgres, la query de `clases` falla silenciosamente (data undefined → [])
+    // y el monto de clase particular queda en $0 sin ningún error visible.
+    const ultimoDia = new Date(anioActual, mesIdx + 1, 0).getDate()
+    const hasta = `${anioActual}-${String(mesIdx + 1).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`
     ;(async () => {
       const { data: cursosAlumno } = await sb.from('cursos_alumnos').select('alumno_id, curso_id').in('alumno_id', idsPorClase)
       const cursoIds = [...new Set((cursosAlumno || []).map((r: any) => r.curso_id))]

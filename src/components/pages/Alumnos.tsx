@@ -1637,7 +1637,10 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
     const mesIdx = MESES.indexOf(pago.mes)
     if (mesIdx < 0) return
     const desde = `${pago.anio}-${String(mesIdx + 1).padStart(2, '0')}-01`
-    const hasta = `${pago.anio}-${String(mesIdx + 1).padStart(2, '0')}-31`
+    // Último día REAL del mes — ver comentario equivalente en Pagos.tsx.
+    // "-31" fijo rompe silenciosamente en meses de 30 días y febrero.
+    const ultimoDia = new Date(pago.anio, mesIdx + 1, 0).getDate()
+    const hasta = `${pago.anio}-${String(mesIdx + 1).padStart(2, '0')}-${String(ultimoDia).padStart(2, '0')}`
     setCargandoClasesAsist(true)
     const sb = createClient()
     sb.from('clases').select('id, fecha, tema').eq('curso_id', cursoActual.id).gte('fecha', desde).lte('fecha', hasta)
@@ -1737,6 +1740,22 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
     if (!num || num.length < 12) { showToast('No hay teléfono cargado para este contacto', 'warning'); return }
     const url = `https://wa.me/${num}?text=${encodeURIComponent(msg)}`
     window.open(url, '_blank')
+  }
+
+  // Reenvío del comprobante de inscripción para un alumno YA existente.
+  // El comprobante en sí (/api/comprobante-inscripcion/[id]) ya se genera y
+  // se ofrece por WhatsApp automáticamente al CREAR un alumno (ver guardar()
+  // en el componente de lista). Este botón cubre el caso de reenviarlo
+  // después — alumno viejo, se perdió el link, cambió de teléfono, etc.
+  // Como wa.me no permite adjuntar archivos, se manda el link público del
+  // comprobante (HTML con botón "Guardar / Imprimir PDF") por texto.
+  const enviarComprobanteInscripcion = () => {
+    const contacto = a.es_menor ? (a.padre_nombre || 'familia') : a.nombre
+    const tel = a.es_menor ? a.padre_telefono : a.telefono
+    if (!tel) { showToast('No hay teléfono cargado para este contacto', 'warning'); return }
+    const urlComprobante = `${window.location.origin}/api/comprobante-inscripcion/${a.id}`
+    const msg = `Hola ${contacto}! 👋 Te escribimos de *Next Ezeiza English Institute*.\n\n📄 Aquí tenés el comprobante de inscripción de *${a.nombre} ${a.apellido}*: ${urlComprobante}\n\nCualquier consulta, estamos a disposición. ¡Gracias! 🙌`
+    abrirWS(tel, msg)
   }
 
   const msgCuotaPendiente = () => {
@@ -1873,6 +1892,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
       <div style={{display:'flex',gap:'8px',marginBottom:'16px',flexWrap:'wrap'}}>
         <BtnG sm onClick={onVolver}>← Volver</BtnG>
         {puedeEditar && <BtnP sm onClick={onEditar}>Editar</BtnP>}
+        <BtnG sm onClick={enviarComprobanteInscripcion}>📄 Comprobante de inscripción</BtnG>
         {puedeEditar && <BtnDanger sm onClick={onEliminar}>Dar de baja</BtnDanger>}
       </div>
 
