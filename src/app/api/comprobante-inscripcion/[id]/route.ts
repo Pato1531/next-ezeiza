@@ -34,6 +34,18 @@ export async function GET(
 
     const inst = (al as any).institutos as any
 
+    // ── Curso asignado (reemplaza al "Nivel" genérico en el comprobante) ──
+    // Un alumno puede no tener curso asignado todavía (recién creado, sin
+    // horario definido) — en ese caso se cae de nuevo a `nivel` para no
+    // dejar el campo vacío.
+    const { data: cursoAlumno } = await sb
+      .from('cursos_alumnos')
+      .select('cursos(nombre)')
+      .eq('alumno_id', params.id)
+      .limit(1)
+      .maybeSingle()
+    const cursoNombre = (cursoAlumno as any)?.cursos?.nombre || al.nivel || '—'
+
     // ── Datos del instituto — dinámico para cualquier sede ───────────────
     const institutoNombre    = inst?.nombre || 'EduGest'
     const ciudad             = inst?.ciudad || 'Buenos Aires'
@@ -95,7 +107,7 @@ export async function GET(
 
     const responsableRows = al.es_menor
       ? `
-      <div class="fila"><div class="fila-lab">Responsable</div><div class="fila-val">${al.padre_nombre || ''} ${al.padre_apellido || ''}</div></div>
+      <div class="fila"><div class="fila-lab">Nombre y apellido</div><div class="fila-val">${al.padre_nombre || ''} ${al.padre_apellido || ''}</div></div>
       ${al.padre_dni ? `<div class="fila"><div class="fila-lab">DNI responsable</div><div class="fila-val">${al.padre_dni}</div></div>` : ''}
       ${al.padre_telefono ? `<div class="fila"><div class="fila-lab">Teléfono</div><div class="fila-val">${al.padre_telefono}</div></div>` : ''}
       ${al.padre_email ? `<div class="fila"><div class="fila-lab">Email</div><div class="fila-val">${al.padre_email}</div></div>` : ''}
@@ -135,7 +147,7 @@ export async function GET(
     .monto-chip-lab { font-size: 10px; color: #9b8eaa; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
     .monto-chip-val { font-size: 16px; font-weight: 800; color: #1a1020; }
     .body { padding: 16px 20px 4px; }
-    .seccion-lab { font-size: 11px; color: #9b8eaa; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; margin: 10px 0 2px; }
+    .seccion-lab { font-size: 11.5px; color: ${colorPrimario}; font-weight: 900; text-transform: uppercase; letter-spacing: .06em; margin: 16px 0 4px; }
     .fila { display: flex; justify-content: space-between; align-items: center; padding: 11px 0; border-bottom: 1px solid #f0edf5; gap: 10px; }
     .fila:last-child { border-bottom: none; }
     .fila-lab { font-size: 11px; color: #9b8eaa; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; white-space: nowrap; }
@@ -161,7 +173,7 @@ export async function GET(
       <div class="estado-check">✅</div>
       <div class="estado-lab">Inscripción confirmada</div>
       <div class="estado-txt">${al.nombre} ${al.apellido}</div>
-      <div class="estado-sub">Nivel ${al.nivel || '—'} &middot; Inscripto el ${fechaInscripcion}</div>
+      <div class="estado-sub">${cursoNombre} &middot; Inscripto el ${fechaInscripcion}</div>
     </div>
 
     ${(matricula > 0 || cuota > 0) ? `
@@ -174,7 +186,7 @@ export async function GET(
       <div class="seccion-lab">Datos del alumno</div>
       ${dniRow}
       ${fechaNacRow}
-      <div class="fila"><div class="fila-lab">Nivel</div><div class="fila-val">${al.nivel || '—'}</div></div>
+      <div class="fila"><div class="fila-lab">Curso</div><div class="fila-val">${cursoNombre}</div></div>
       <div class="fila"><div class="fila-lab">Fecha de inscripción</div><div class="fila-val">${fechaInscripcion}</div></div>
       ${responsableRows ? `<div class="seccion-lab">${al.es_menor ? 'Datos del responsable' : 'Contacto'}</div>${responsableRows}` : ''}
     </div>
