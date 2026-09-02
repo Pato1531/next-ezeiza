@@ -90,6 +90,8 @@ export default function Alumnos() {
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [eliminando, setEliminando] = useState(false)
   const [importarModal, setImportarModal] = useState(false)
+  const [modalComprobante, setModalComprobante] = useState(false)
+  const [comprobanteInfo, setComprobanteInfo] = useState<any>(null)
   const [busqueda, setBusqueda] = useState('')
   const [soloSinCurso, setSoloSinCurso] = useState(false)
   const [soloSinCuota, setSoloSinCuota] = useState(false)
@@ -362,6 +364,21 @@ export default function Alumnos() {
   }
   const irAFormEditar = () => { if (sel) { setForm({...sel}); setFormStep(0); setVista('form') } }
 
+  // Normalizar teléfono al formato wa.me (+54 9 11 XXXXXXXX)
+  const normalizarTel = (tel: string) => {
+    if (!tel) return ''
+    let t = tel.replace(/\D/g, '')
+    if (t.startsWith('0')) t = t.slice(1)
+    if (t.startsWith('54')) t = t.slice(2)
+    if (t.startsWith('9') && t.length > 10) t = t.slice(1)
+    return '549' + t
+  }
+  const abrirWS = (tel: string, msg: string) => {
+    const num = normalizarTel(tel)
+    if (!num || num.length < 12) { showToast('No hay teléfono cargado para este contacto', 'warning'); return }
+    window.open(`https://wa.me/${num}?text=${encodeURIComponent(msg)}`, '_blank')
+  }
+
   const guardar = async () => {
     if (!form?.nombre?.trim() || !form?.apellido?.trim()) {
       return showToast('Nombre y apellido son obligatorios', 'warning')
@@ -390,7 +407,23 @@ export default function Alumnos() {
           // La matrícula se guarda como referencia en el alumno pero NO se registra
           // automáticamente como pago — se cobra manualmente desde el módulo de Pagos
           showToast(`✓ ${datos.nombre} ${datos.apellido} creado correctamente`)
-          irADetalle((nuevo as any).id)
+          const nuevoId = (nuevo as any).id
+
+          // Comprobante de inscripción: se abre automáticamente (para guardar/imprimir)
+          // y, si hay teléfono cargado, se ofrece enviarlo por WhatsApp al padre/alumno
+          const urlComprobante = `${window.location.origin}/api/comprobante-inscripcion/${nuevoId}`
+          window.open(urlComprobante, '_blank')
+
+          const contacto = datos.es_menor ? (datos.padre_nombre || 'familia') : datos.nombre
+          const telContacto = datos.es_menor ? datos.padre_telefono : datos.telefono
+          const tel = normalizarTel(telContacto || '')
+          if (tel && tel.length >= 12) {
+            const msg = `¡Bienvenido/a a *Next Ezeiza English Institute*! 🎉\n\nConfirmamos la inscripción de *${datos.nombre} ${datos.apellido}* — Nivel *${datos.nivel}*.\n\n📄 Tu comprobante de inscripción: ${urlComprobante}\n\nCualquier consulta, estamos a disposición. ¡Gracias! 🙌`
+            setComprobanteInfo({ tel: telContacto, msg })
+            setModalComprobante(true)
+          }
+
+          irADetalle(nuevoId)
         } else {
           showToast('No se pudo crear el alumno. Revisá los datos o la conexión.', 'error')
           irALista()
@@ -910,6 +943,7 @@ export default function Alumnos() {
   if (vista === 'detalle') {
     if (!sel) return <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Cargando...</div>
     return (
+    <>
     <AlumnoDetalle
       alumno={sel}
       puedeVerPagos={puedeVerPagos}
@@ -927,6 +961,22 @@ export default function Alumnos() {
       pago={pago}
       setPago={setPago}
     />
+    {modalComprobante && comprobanteInfo && (
+      <ModalSheet title="Inscripción registrada ✓" onClose={() => setModalComprobante(false)}>
+        <div style={{textAlign:'center',padding:'8px 0 16px'}}>
+          <div style={{fontSize:'48px',marginBottom:'8px'}}>✅</div>
+          <div style={{fontSize:'15px',fontWeight:700,color:'var(--text)',marginBottom:'4px'}}>Comprobante generado</div>
+          <div style={{fontSize:'13px',color:'var(--text2)'}}>¿Querés enviarle el comprobante de inscripción por WhatsApp?</div>
+        </div>
+        <button onClick={() => { abrirWS(comprobanteInfo.tel, comprobanteInfo.msg); setModalComprobante(false) }}
+          style={{width:'100%',padding:'13px',background:'#25d366',color:'white',border:'none',borderRadius:'12px',fontSize:'14px',fontWeight:700,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',gap:'8px',marginBottom:'8px'}}>
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="white"><path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347z"/><path d="M12 0C5.373 0 0 5.373 0 12c0 2.126.553 4.122 1.523 5.857L0 24l6.338-1.503A11.962 11.962 0 0012 24c6.627 0 12-5.373 12-12S18.627 0 12 0zm0 22c-1.891 0-3.659-.5-5.191-1.375l-.371-.219-3.865.916.977-3.77-.24-.387A9.961 9.961 0 012 12C2 6.486 6.486 2 12 2s10 4.486 10 10-4.486 10-10 10z"/></svg>
+          Enviar por WhatsApp
+        </button>
+        <BtnG style={{width:'100%'}} onClick={() => setModalComprobante(false)}>Cerrar</BtnG>
+      </ModalSheet>
+    )}
+    </>
   )
   }
 
