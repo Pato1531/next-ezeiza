@@ -105,7 +105,7 @@ export default function Cursos() {
     setConfirmBorrarDef(null)
   }
 
-  const puedeEditar = ['director','coordinadora'].includes(usuario?.rol||'')
+  const puedeEditar = ['director','coordinadora','secretaria'].includes(usuario?.rol||'')
   // Planificación: la profesora también puede editar full
   const puedeEditarPlanif = ['director','coordinadora','profesora'].includes(usuario?.rol||'')
   const selLive = cursos.find(c => c.id === selId)
