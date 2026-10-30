@@ -122,20 +122,20 @@ export interface HorarioItem {
 export const PERMISOS: Record<Rol, string[]> = {
   director: [
     'dashboard', 'profesoras', 'alumnos', 'cursos', 'horarios',
-    'reportes', 'permisos', 'perfil', 'comunicados', 'agenda',
+    'reportes', 'permisos', 'perfil', 'agenda',
     'actividad', 'atencion', 'ejecutivo', 'cuotas', 'pagos',
   ],
   coordinadora: [
     'dashboard', 'profesoras', 'alumnos', 'cursos', 'horarios',
-    'reportes', 'perfil', 'comunicados', 'agenda', 'atencion',
+    'reportes', 'perfil', 'agenda', 'atencion',
   ],
   secretaria: [
     'dashboard', 'alumnos', 'cursos', 'horarios', 'reportes',
-    'perfil', 'comunicados', 'agenda', 'atencion', 'cuotas', 'pagos',
+    'perfil', 'agenda', 'atencion', 'cuotas', 'pagos',
   ],
   profesora: [
     'dashboard', 'alumnos', 'cursos', 'horarios',
-    'perfil', 'comunicados', 'agenda',
+    'perfil', 'agenda',
   ],
 }
 

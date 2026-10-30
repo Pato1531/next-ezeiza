@@ -23,7 +23,6 @@ const TODOS_MODULOS = [
   {id:'profesoras', label:'Docentes',          desc:'Legajos, asistencia y liquidación'},
   {id:'reportes',   label:'Reportes',          desc:'Cobranza, asistencia docente e ingresos'},
   {id:'agenda',     label:'Agenda',            desc:'Calendario compartido del instituto'},
-  {id:'comunicados',label:'Comunicados',       desc:'Mensajes internos por rol'},
   {id:'atencion',   label:'Atención al cliente',desc:'Consultas entrantes y lista de espera'},
   {id:'ejecutivo',  label:'Dashboard Ejecutivo',desc:'Cierre mensual financiero — solo director'},
   {id:'cuotas',     label:'Cuotas por curso',  desc:'Actualización masiva de cuotas'},

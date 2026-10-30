@@ -15,7 +15,6 @@ const LABEL_MODULOS: Record<string, string> = {
   reportes:              'Reportes',
   permisos:              'Permisos',
   perfil:                'Perfil',
-  comunicados:           'Comunicados',
   agenda:                'Agenda',
   actividad:             'Actividad',
   'atencion al cliente': 'Atención al cliente',

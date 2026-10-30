@@ -236,44 +236,6 @@ export default function Agenda() {
     if (res.ok) setEventos(prev => prev.filter(e => e.id !== id))
   }
 
-  const exportarICS = (ev: any) => {
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const [anio, mes, dia] = ev.fecha.split('-').map(Number)
-    let dtStart: string, dtEnd: string
-    if (ev.hora_inicio) {
-      const [h, m] = ev.hora_inicio.split(':').map(Number)
-      dtStart = `${anio}${pad(mes)}${pad(dia)}T${pad(h)}${pad(m)}00`
-      if (ev.hora_fin) {
-        const [hf, mf] = ev.hora_fin.split(':').map(Number)
-        dtEnd = `${anio}${pad(mes)}${pad(dia)}T${pad(hf)}${pad(mf)}00`
-      } else {
-        dtEnd = `${anio}${pad(mes)}${pad(dia)}T${pad(h+1)}${pad(m)}00`
-      }
-    } else {
-      dtStart = `${anio}${pad(mes)}${pad(dia)}`
-      const diaSig = new Date(anio, mes - 1, dia + 1)
-      dtEnd = `${diaSig.getFullYear()}${pad(diaSig.getMonth()+1)}${pad(diaSig.getDate())}`
-    }
-    const uid = `${ev.id || Date.now()}@edugest`
-    const ahora = new Date().toISOString().replace(/[-:]/g,'').split('.')[0] + 'Z'
-    const descripcion = (ev.descripcion || '').replace(/\n/g, '\\n')
-    const ics = [
-      'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//EduGest//Agenda//ES',
-      'CALSCALE:GREGORIAN','METHOD:PUBLISH','BEGIN:VEVENT',
-      `UID:${uid}`,`DTSTAMP:${ahora}`,
-      ev.hora_inicio ? `DTSTART:${dtStart}` : `DTSTART;VALUE=DATE:${dtStart}`,
-      ev.hora_inicio ? `DTEND:${dtEnd}`   : `DTEND;VALUE=DATE:${dtEnd}`,
-      `SUMMARY:${ev.titulo}`,
-      descripcion ? `DESCRIPTION:${descripcion}` : '',
-      'END:VEVENT','END:VCALENDAR',
-    ].filter(Boolean).join('\r\n')
-    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' })
-    const url  = URL.createObjectURL(blob)
-    const a    = document.createElement('a')
-    a.href = url; a.download = `${ev.titulo.replace(/[^a-z0-9]/gi, '_')}.ics`; a.click()
-    URL.revokeObjectURL(url)
-  }
-
   const convocadosLabel = (ev: any) => {
     if (ev.convocados === 'individual') {
       const n = ev.destinatarios_ids?.length || 0
@@ -374,12 +336,6 @@ export default function Agenda() {
                       {ev.descripcion && <div style={{fontSize:'12px',color:'var(--text2)',marginTop:'4px',lineHeight:1.4}}>{ev.descripcion}</div>}
                     </div>
                     <div style={{display:'flex',flexDirection:'column',gap:'4px',flexShrink:0,alignItems:'flex-end'}}>
-                      {!esVirtual && (
-                        <button onClick={() => exportarICS(ev)} title="Agregar a Google Calendar / Apple Calendar"
-                          style={{background:'var(--vl)',border:'1.5px solid var(--v)',borderRadius:'8px',cursor:'pointer',padding:'4px 8px',fontSize:'11px',fontWeight:700,color:'var(--v)',whiteSpace:'nowrap'}}>
-                          📅 +Cal
-                        </button>
-                      )}
                       {esCoord && !esVirtual && (
                         <button onClick={() => eliminar(ev.id)}
                           style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'16px',padding:'2px 4px',lineHeight:1}}
@@ -608,10 +564,6 @@ export default function Agenda() {
                         </div>
                         {!esVirtual && (
                           <div style={{display:'flex',flexDirection:'column',gap:'4px',alignItems:'flex-end',flexShrink:0}}>
-                            <button onClick={() => exportarICS(ev)}
-                              style={{background:'var(--vl)',border:'1px solid var(--v)',borderRadius:'6px',cursor:'pointer',padding:'3px 6px',fontSize:'10px',fontWeight:700,color:'var(--v)',whiteSpace:'nowrap'}}>
-                              +Cal
-                            </button>
                             {esCoord && (
                               <button onClick={() => eliminar(ev.id)}
                                 style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'14px',lineHeight:1}}

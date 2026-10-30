@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, lazy, Suspense } from 'react'
 import { useAuth } from '@/lib/auth-context'
-import { useComunicados } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
 import { ToastProvider, showToast } from './Toast'
 import { Skeleton } from './Skeleton'
@@ -16,7 +15,6 @@ import Reportes from './pages/Reportes'
 import Agenda from './pages/Agenda'
 import Permisos from './pages/Permisos'
 import Perfil from './pages/Perfil'
-import Comunicados from './pages/Comunicados'
 
 const Actividad = lazy(() => import('./pages/Actividad').catch(() => ({ default: () => <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Módulo no disponible</div> })))
 const AtencionCliente = lazy(() => import('./pages/AtencionCliente').catch(() => ({ default: () => <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Módulo no disponible</div> })))
@@ -33,7 +31,6 @@ const ALL_NAV = [
   { id: 'permisos',    label: 'Permisos',     icon: 'M10 2a4 4 0 014 4v1h2a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V9a2 2 0 012-2h2V6a4 4 0 014-4zM10 4a2 2 0 00-2 2v1h4V6a2 2 0 00-2-2z' },
   { id: 'agenda',      label: 'Agenda',       icon: 'M3 4h16v16H3zM16 2v4M8 2v4M3 10h16' },
   { id: 'pagos',       label: 'Pagos',        icon: 'M12 2H4a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM14 2v6h6M10 12v4M8 14h4' },
-  { id: 'comunicados', label: 'Comunicados',  icon: 'M18 8a6 6 0 01-6 6H8l-4 4V8a6 6 0 016-6h2a6 6 0 016 6z' },
   { id: 'actividad',   label: 'Actividad',    icon: 'M10 3a7 7 0 100 14A7 7 0 0010 3zM10 7v3l2 2M3 3l14 14' },
   { id: 'atencion',    label: 'Atención',     icon: 'M18 8a6 6 0 01-6 6H8l-4 4V8a6 6 0 016-6h2a6 6 0 016 6zM9 10h.01M12 10h.01M15 10h.01' },
   { id: 'ejecutivo',   label: 'Cierre',       icon: 'M2 2h16v16H2zM6 10h4M6 14h8M10 2v4M6 6h2M12 6h2M4 15l4-4 3 3 5-6' },
@@ -50,7 +47,6 @@ const PAGES: Record<string, React.ComponentType> = {
   permisos: Permisos,
   perfil: Perfil,
   agenda: Agenda,
-  comunicados: Comunicados,
   actividad: Actividad,
   atencion: AtencionCliente,
   ejecutivo: DashboardEjecutivo,
@@ -62,7 +58,7 @@ const PAGE_TITLES: Record<string, string> = {
   dashboard: 'Inicio', alumnos: 'Alumnos', cursos: 'Cursos',
   horarios: 'Horarios', profesoras: 'Colaboradores', reportes: 'Reportes',
   permisos: 'Permisos', perfil: 'Mi perfil', agenda: 'Agenda',
-  comunicados: 'Comunicados', actividad: 'Actividad',
+  actividad: 'Actividad',
   atencion: 'Atención al Cliente', ejecutivo: 'Dashboard Ejecutivo', cuotas: 'Cuotas por Curso',
   pagos: 'Pagos',
 }
@@ -241,9 +237,6 @@ export default function AppShell() {
 
   const [masOpen, setMasOpen] = useState(false)
   const [mounted, setMounted] = useState<Set<string>>(new Set(['dashboard']))
-  const [comunicadosBadge, setComunicadosBadge] = useState(0)
-  const { comunicados } = useComunicados()
-  const [vistosLocal, setVistosLocal] = useState<string[]>([])
   const [atencionBadge, setAtencionBadge] = useState(0)
   const [onboardingVisto, setOnboardingVisto] = useState<Set<string>>(new Set())
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -251,10 +244,6 @@ export default function AppShell() {
   const [onboardingChecks, setOnboardingChecks] = useState({ cursos: false, profesoras: false, alumnos: false, pagos: false })
   const [navCustom, setNavCustom] = useState<string[] | null>(null)
   const [navEditOpen, setNavEditOpen] = useState(false)
-  const [busqGlobalOpen, setBusqGlobalOpen] = useState(false)
-  const [busqGlobalQ, setBusqGlobalQ] = useState('')
-  const [busqResultados, setBusqResultados] = useState<{tipo:string;id:string;titulo:string;sub:string;color?:string;nav:string}[]>([])
-  const [busqLoading, setBusqLoading] = useState(false)
   const [confirmDialog, setConfirmDialog] = useState<{
     mensaje: string; detalle?: string; labelConfirm?: string; onConfirm: () => void
   } | null>(null)
@@ -325,39 +314,6 @@ export default function AppShell() {
   }, [])
 
   useEffect(() => {
-    if (!busqGlobalQ.trim() || busqGlobalQ.length < 2) { setBusqResultados([]); return }
-    const t = setTimeout(async () => {
-      setBusqLoading(true)
-      try {
-        const sb = createClient()
-        const q = busqGlobalQ.toLowerCase()
-        const [alRes, curRes, profRes] = await Promise.all([
-          sb.from('alumnos').select('id,nombre,apellido,nivel,color').eq('activo',true).ilike('apellido', `%${q}%`).limit(5),
-          sb.from('cursos').select('id,nombre,nivel').limit(5),
-          sb.from('profesoras').select('id,nombre,apellido,color').eq('activo',true).limit(3),
-        ])
-        const resultados: any[] = []
-        ;(alRes.data||[]).filter((a:any) => `${a.nombre} ${a.apellido}`.toLowerCase().includes(q)).forEach((a:any) =>
-          resultados.push({ tipo:'alumno', id:a.id, titulo:`${a.nombre} ${a.apellido}`, sub:a.nivel||'Alumno', color:a.color, nav:'alumnos' })
-        )
-        const alRes2 = await sb.from('alumnos').select('id,nombre,apellido,nivel,color').eq('activo',true).ilike('nombre', `%${q}%`).limit(5)
-        ;(alRes2.data||[]).filter((a:any) => !resultados.some(r=>r.id===a.id)).forEach((a:any) =>
-          resultados.push({ tipo:'alumno', id:a.id, titulo:`${a.nombre} ${a.apellido}`, sub:a.nivel||'Alumno', color:a.color, nav:'alumnos' })
-        )
-        ;(curRes.data||[]).filter((c:any) => c.nombre.toLowerCase().includes(q)).forEach((c:any) =>
-          resultados.push({ tipo:'curso', id:c.id, titulo:c.nombre, sub:c.nivel||'Curso', nav:'cursos' })
-        )
-        ;(profRes.data||[]).filter((p:any) => `${p.nombre} ${p.apellido}`.toLowerCase().includes(q)).forEach((p:any) =>
-          resultados.push({ tipo:'colaborador', id:p.id, titulo:`${p.nombre} ${p.apellido}`, sub:'Colaborador', color:p.color, nav:'profesoras' })
-        )
-        setBusqResultados(resultados.slice(0,8))
-      } catch {}
-      setBusqLoading(false)
-    }, 280)
-    return () => clearTimeout(t)
-  }, [busqGlobalQ])
-
-  useEffect(() => {
     if (!usuario) return
     try {
       const saved = sessionStorage.getItem('nav_page')
@@ -375,14 +331,6 @@ export default function AppShell() {
     }
     setPageReady(true)
   }, [usuario?.id]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!usuario) return
-    try {
-      const saved = JSON.parse(localStorage.getItem(`comunicados_vistos_${usuario.id}`) || '[]')
-      setVistosLocal(saved)
-    } catch { setVistosLocal([]) }
-  }, [usuario?.id])
 
   useEffect(() => {
     if (!usuario) return
@@ -421,49 +369,6 @@ export default function AppShell() {
     } catch {}
   }, [usuario?.id])
 
-  useEffect(() => {
-    if (!comunicados.length || !usuario) return
-    const misComunicados = comunicados.filter(c => {
-      if (c.rol_destino === 'todos') return true
-      if (c.rol_destino === 'individual') {
-        return Array.isArray(c.destinatarios_ids) &&
-          c.destinatarios_ids.length > 0 &&
-          c.destinatarios_ids.includes(usuario.id)
-      }
-      if (c.rol_destino === usuario.rol) return true
-      if (c.rol_destino === 'coordinacion' && usuario.rol === 'coordinadora') return true
-      return false
-    })
-    const noLeidos = misComunicados.filter(c => !vistosLocal.includes(c.id)).length
-    setComunicadosBadge(noLeidos)
-  }, [comunicados, vistosLocal, usuario?.id])
-
-  const irAComunicados = () => {
-    if (!usuario) return
-    const misComunicados = comunicados.filter(c => {
-      if (c.rol_destino === 'todos') return true
-      if (c.rol_destino === 'individual') {
-        return Array.isArray(c.destinatarios_ids) &&
-          c.destinatarios_ids.length > 0 &&
-          c.destinatarios_ids.includes(usuario.id)
-      }
-      if (c.rol_destino === usuario.rol) return true
-      if (c.rol_destino === 'coordinacion' && usuario.rol === 'coordinadora') return true
-      return false
-    })
-    const ids = misComunicados.map(c => c.id)
-    try { localStorage.setItem(`comunicados_vistos_${usuario.id}`, JSON.stringify(ids)) } catch {}
-    setVistosLocal(ids)
-    setComunicadosBadge(0)
-    if (page !== 'comunicados') {
-      try { window.history.pushState({ type: 'page', page: 'comunicados' }, '') } catch {}
-    }
-    setPage('comunicados')
-    setMounted(prev => new Set([...prev, 'comunicados']))
-    setMasOpen(false)
-    try { sessionStorage.setItem('nav_page', 'comunicados') } catch {}
-  }
-
   if (!usuario) return null
   if (!pageReady) return (
     <div style={{ minHeight: '100vh', background: 'var(--bg)' }} />
@@ -487,7 +392,6 @@ export default function AppShell() {
   const rs = ROLE_STYLES[usuario.rol] ?? ROLE_STYLES.profesora
 
   const navTo = (id: string) => {
-    if (id === 'comunicados') { irAComunicados(); return }
     if (id === 'atencion') setAtencionBadge(0)
     if (id !== page) {
       try { window.history.pushState({ type: 'page', page: id }, '') } catch {}
@@ -614,10 +518,6 @@ export default function AppShell() {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <button onClick={() => { setBusqGlobalOpen(true); setBusqGlobalQ(''); setBusqResultados([]) }}
-            style={{ width:'40px', height:'40px', borderRadius:'10px', background:'var(--bg)', border:'1px solid var(--border)', color:'var(--text2)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="9" cy="9" r="6"/><path d="M15 15l3 3"/></svg>
-          </button>
           <div style={{ padding: '5px 12px', borderRadius: '20px', fontSize: '12px', fontWeight: 600, background: rs.bg, color: rs.color }}>
             {ROLE_LABELS[usuario.rol]}
           </div>
@@ -641,7 +541,6 @@ export default function AppShell() {
         {mounted.has('permisos')    && <div style={{ padding: '16px 16px 24px', display: page === 'permisos'    ? 'block' : 'none' }}><PanelErrorBoundary name="Permisos">   <Permisos />          </PanelErrorBoundary></div>}
         {mounted.has('perfil')      && <div style={{ padding: '16px 16px 24px', display: page === 'perfil'      ? 'block' : 'none' }}><PanelErrorBoundary name="Perfil">     <Perfil />            </PanelErrorBoundary></div>}
         {mounted.has('agenda')      && <div style={{ padding: '16px 16px 24px', display: page === 'agenda'      ? 'block' : 'none' }}><PanelErrorBoundary name="Agenda">     <Agenda />            </PanelErrorBoundary></div>}
-        {mounted.has('comunicados') && <div style={{ padding: '16px 16px 24px', display: page === 'comunicados' ? 'block' : 'none' }}><PanelErrorBoundary name="Comunicados"><Comunicados />       </PanelErrorBoundary></div>}
         {mounted.has('actividad')   && <div style={{ padding: '16px 16px 24px', display: page === 'actividad'   ? 'block' : 'none' }}><Suspense fallback={<Skeleton padding="32px 16px" />}><Actividad /></Suspense></div>}
         {mounted.has('atencion')    && <div style={{ padding: '16px 16px 24px', display: page === 'atencion'    ? 'block' : 'none' }}><Suspense fallback={<Skeleton padding="32px 16px" />}><AtencionCliente /></Suspense></div>}
         {mounted.has('ejecutivo')   && <div style={{ padding: '16px 16px 24px', display: page === 'ejecutivo'   ? 'block' : 'none' }}><Suspense fallback={<Skeleton padding="32px 16px" />}><DashboardEjecutivo /></Suspense></div>}
@@ -660,9 +559,6 @@ export default function AppShell() {
                   {item.icon.split('M').filter(Boolean).map((d, i) => <path key={i} d={`M${d}`} />)}
                 </svg>
                 <span style={{ fontSize: '15px', fontWeight: 600, color: page === item.id ? 'var(--v)' : 'var(--text)', flex: 1, textAlign: 'left' }}>{item.label}</span>
-                {item.id === 'comunicados' && comunicadosBadge > 0 && (
-                  <div style={{ minWidth: '20px', height: '20px', borderRadius: '10px', background: 'var(--red)', color: '#fff', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>{comunicadosBadge}</div>
-                )}
                 {item.id === 'atencion' && atencionBadge > 0 && (
                   <div style={{ minWidth: '20px', height: '20px', borderRadius: '10px', background: '#1a6b8a', color: '#fff', fontSize: '11px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 5px' }}>{atencionBadge}</div>
                 )}
@@ -683,7 +579,7 @@ export default function AppShell() {
       {/* BOTTOM NAV */}
       <nav style={{ background: 'var(--white)', borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'stretch', position: 'sticky', bottom: 0, zIndex: 50, paddingBottom: 'var(--safe-bottom)' }}>
         {navItems.map(item => {
-          const badgeCount = item.id === 'comunicados' ? comunicadosBadge : item.id === 'atencion' ? atencionBadge : 0
+          const badgeCount = item.id === 'atencion' ? atencionBadge : 0
           return (
             <button key={item.id} onClick={() => navTo(item.id)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '10px 4px 12px', border: 'none', background: 'none', cursor: 'pointer', color: page === item.id ? 'var(--v)' : 'var(--text3)', gap: '4px', minHeight: '60px', transition: 'color .15s', position: 'relative' }}>
               {badgeCount > 0 && (
@@ -701,21 +597,12 @@ export default function AppShell() {
             </button>
           )
         })}
-        <button onClick={() => { setBusqGlobalOpen(true); setBusqGlobalQ(''); setBusqResultados([]) }} aria-label="Buscar" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '0 4px 12px', border: 'none', background: 'none', cursor: 'pointer', gap: '4px', minHeight: '60px' }}>
-          <div style={{ width: '38px', height: '38px', borderRadius: '50%', background: 'var(--v)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: '-12px', boxShadow: '0 2px 8px rgba(101,47,141,.35)' }}>
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="#fff" strokeWidth="2.2" strokeLinecap="round"><circle cx="9" cy="9" r="6" /><path d="M15 15l3 3" /></svg>
-          </div>
-          <span style={{ fontSize: '10px', fontWeight: 500, lineHeight: 1, color: 'var(--v)' }}>Buscar</span>
-        </button>
         {hayMas && (
           <button onClick={() => setMasOpen(!masOpen)} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '10px 4px 12px', border: 'none', background: 'none', cursor: 'pointer', color: masOpen || masItems.some(i => i.id === page) || page === 'perfil' ? 'var(--v)' : 'var(--text3)', gap: '4px', minHeight: '60px', transition: 'color .15s', position: 'relative' }}>
             {(masItems.some(i => i.id === page) || page === 'perfil') && (
               <div style={{ position: 'absolute', top: '8px', right: 'calc(50% - 14px)', width: '6px', height: '6px', borderRadius: '50%', background: 'var(--v)' }} />
             )}
-            {comunicadosBadge > 0 && masItems.some(i => i.id === 'comunicados') && (
-              <div style={{ position: 'absolute', top: '6px', right: 'calc(50% - 18px)', minWidth: '16px', height: '16px', borderRadius: '10px', background: 'var(--red)', color: '#fff', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{comunicadosBadge}</div>
-            )}
-            {atencionBadge > 0 && masItems.some(i => i.id === 'atencion') && comunicadosBadge === 0 && (
+            {atencionBadge > 0 && masItems.some(i => i.id === 'atencion') && (
               <div style={{ position: 'absolute', top: '6px', right: 'calc(50% - 18px)', minWidth: '16px', height: '16px', borderRadius: '10px', background: '#1a6b8a', color: '#fff', fontSize: '10px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px' }}>{atencionBadge}</div>
             )}
             <svg width="22" height="22" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
@@ -737,55 +624,6 @@ export default function AppShell() {
         )}
       </nav>
 
-      {/* BUSCADOR GLOBAL */}
-      {busqGlobalOpen && (
-        <div style={{ position:'fixed', inset:0, zIndex:300, background:'rgba(20,0,40,.5)' }} onClick={() => setBusqGlobalOpen(false)}>
-          <div style={{ position:'absolute', top:'calc(60px + var(--safe-top))', left:'50%', transform:'translateX(-50%)', width:'calc(100% - 32px)', maxWidth:'500px', background:'var(--white)', borderRadius:'16px', overflow:'hidden', boxShadow:'0 8px 32px rgba(0,0,0,.18)' }} onClick={e => e.stopPropagation()}>
-            <div style={{ display:'flex', alignItems:'center', gap:'10px', padding:'12px 16px', borderBottom:'1px solid var(--border)' }}>
-              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="var(--text3)" strokeWidth="2" strokeLinecap="round" style={{flexShrink:0}}><circle cx="9" cy="9" r="6"/><path d="M15 15l3 3"/></svg>
-              <input
-                autoFocus
-                type="text"
-                value={busqGlobalQ}
-                onChange={e => setBusqGlobalQ(e.target.value)}
-                placeholder="Buscar alumno, curso, colaborador..."
-                style={{ flex:1, border:'none', outline:'none', fontSize:'15px', background:'transparent', color:'var(--text)', fontFamily:'inherit' }}
-                onKeyDown={e => { if (e.key === 'Escape') setBusqGlobalOpen(false) }}
-              />
-              {busqLoading && <div style={{width:'14px',height:'14px',border:'2px solid var(--border)',borderTopColor:'var(--v)',borderRadius:'50%',animation:'spin .6s linear infinite',flexShrink:0}} />}
-              <button onClick={() => setBusqGlobalOpen(false)} style={{background:'none',border:'none',cursor:'pointer',color:'var(--text3)',fontSize:'18px',lineHeight:1,flexShrink:0}}>×</button>
-            </div>
-            {busqResultados.length > 0 && (
-              <div style={{ maxHeight:'320px', overflowY:'auto' }}>
-                {busqResultados.map((r, i) => (
-                  <button key={i} onClick={() => { navTo(r.nav); setBusqGlobalOpen(false) }}
-                    style={{ display:'flex', alignItems:'center', gap:'12px', width:'100%', padding:'12px 16px', border:'none', background:'transparent', cursor:'pointer', textAlign:'left', borderBottom: i<busqResultados.length-1 ? '1px solid var(--border)' : 'none' }}
-                    onMouseEnter={e => (e.currentTarget.style.background='var(--vl)')}
-                    onMouseLeave={e => (e.currentTarget.style.background='transparent')}
-                  >
-                    <div style={{ width:36, height:36, borderRadius:11, background:r.color||'var(--border)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, color:'#fff', flexShrink:0 }}>
-                      {r.tipo==='alumno' ? r.titulo.split(' ').map((n:string)=>n[0]).slice(0,2).join('').toUpperCase()
-                       : r.tipo==='curso' ? r.titulo.slice(0,2).toUpperCase()
-                       : r.titulo[0].toUpperCase()}
-                    </div>
-                    <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:'14px',fontWeight:600,color:'var(--text)'}}>{r.titulo}</div>
-                      <div style={{fontSize:'12px',color:'var(--text3)',marginTop:'1px'}}>{r.sub} · {r.tipo==='alumno'?'Alumno':r.tipo==='curso'?'Curso':'Colaborador'}</div>
-                    </div>
-                    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="var(--text3)" strokeWidth="2"><path d="M7 5l5 5-5 5"/></svg>
-                  </button>
-                ))}
-              </div>
-            )}
-            {busqGlobalQ.length >= 2 && !busqLoading && busqResultados.length === 0 && (
-              <div style={{ padding:'24px', textAlign:'center', color:'var(--text3)', fontSize:'13px' }}>Sin resultados para "{busqGlobalQ}"</div>
-            )}
-            {!busqGlobalQ && (
-              <div style={{ padding:'20px 16px', color:'var(--text3)', fontSize:'13px' }}>Escribí el nombre de un alumno, curso o docente</div>
-            )}
-          </div>
-        </div>
-      )}
       <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
 
       {navEditOpen && (
