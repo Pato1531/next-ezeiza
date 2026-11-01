@@ -1,4 +1,5 @@
 'use client'
+import { marca } from '@/lib/brand'
 import { useState, useEffect, useRef } from 'react'
 import { useProfesoras, useHorasHistorial, useLiquidaciones, useCursos, apiHeaders } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
@@ -293,9 +294,9 @@ export default function Profesoras() {
           if (!win) return
           win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Resumen de liquidaciones ${resumenMes} ${resumenAnio}</title><style>
             body{font-family:sans-serif;padding:24px;font-size:12px;color:#222}
-            h1{color:#652f8d;font-size:18px;margin-bottom:4px}
+            h1{color:${marca().color};font-size:18px;margin-bottom:4px}
             .sub{color:#9b8eaa;font-size:11px;margin-bottom:20px}
-            .logo{font-size:18px;font-weight:700;color:#652f8d}
+            .logo{font-size:18px;font-weight:700;color:${marca().color}}
             .fecha{font-size:11px;color:#9b8eaa;text-align:right}
             table{width:100%;border-collapse:collapse;margin-top:12px}
             th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.04em;color:#9b8eaa;padding:6px 8px;border-bottom:2px solid #e8e0f0}
@@ -303,8 +304,8 @@ export default function Profesoras() {
             .pill{padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700}
             @media print{body{padding:16px}}
           </style></head><body>
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #652f8d;padding-bottom:12px;margin-bottom:16px">
-            <div class="logo">Next Ezeiza</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid ${marca().color};padding-bottom:12px;margin-bottom:16px">
+            <div class="logo">${marca().nombre}</div>
             <div class="fecha">Generado: ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
           </div>
           <h1>Resumen de liquidaciones — ${resumenMes} ${resumenAnio}</h1>
@@ -421,22 +422,22 @@ export default function Profesoras() {
           win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Informe del Equipo</title>
           <style>
             body{font-family:sans-serif;padding:24px;font-size:12px;color:#222}
-            h1{color:#652f8d;font-size:18px;margin-bottom:4px}
+            h1{color:${marca().color};font-size:18px;margin-bottom:4px}
             .sub{color:#9b8eaa;font-size:11px;margin-bottom:24px}
-            .logo{font-size:18px;font-weight:700;color:#652f8d}
+            .logo{font-size:18px;font-weight:700;color:${marca().color}}
             .fecha{font-size:11px;color:#9b8eaa;text-align:right}
             .card{border:1px solid #e8e0f0;border-radius:10px;padding:14px 16px;margin-bottom:12px;break-inside:avoid}
-            .nombre{font-size:15px;font-weight:700;color:#652f8d;margin-bottom:6px}
+            .nombre{font-size:15px;font-weight:700;color:${marca().color};margin-bottom:6px}
             .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px}
             .field label{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#9b8eaa;display:block;margin-bottom:2px}
             .field span{font-size:12px;color:#333}
             .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
-            .chip{background:#f2e8f9;color:#652f8d;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
+            .chip{background:#f2e8f9;color:${marca().color};padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
             .rol{background:#e8f0fe;color:#1a73e8;padding:1px 7px;border-radius:8px;font-size:10px;font-weight:600;margin-left:8px}
             @media print{body{padding:16px}}
           </style></head><body>
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #652f8d;padding-bottom:12px;margin-bottom:16px">
-            <div class="logo">Next Ezeiza</div>
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid ${marca().color};padding-bottom:12px;margin-bottom:16px">
+            <div class="logo">${marca().nombre}</div>
             <div class="fecha">Generado: ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
           </div>
           <h1>Informe del Equipo</h1>
@@ -1290,15 +1291,15 @@ function LiquidacionTab({ prof, licencias, puedeEditar }: any) {
 
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Liquidacion ${prof.nombre} ${prof.apellido} ${mesLiqPDF} ${anioLiqPDF}</title><style>
       body{font-family:Arial,sans-serif;padding:32px;font-size:14px;color:#333}
-      h1{color:#652f8d;font-size:20px;margin:0 0 4px}
+      h1{color:${marca().color};font-size:20px;margin:0 0 4px}
       .sub{color:#888;font-size:13px;margin-bottom:20px}
-      .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid #652f8d;padding-bottom:14px;margin-bottom:20px}
-      .logo{font-size:20px;font-weight:700;color:#333}.logo span{color:#652f8d}
+      .hd{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid ${marca().color};padding-bottom:14px;margin-bottom:20px}
+      .logo{font-size:20px;font-weight:700;color:#333}.logo span{color:${marca().color}}
       table{width:100%;border-collapse:collapse;margin:16px 0}
       td{padding:11px 8px;border-bottom:1px solid #eee;font-size:14px}
       .total{background:#f2e8f9;padding:16px 20px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;margin-top:20px}
-      .total-label{font-size:16px;font-weight:600;color:#652f8d}
-      .total-value{font-size:24px;font-weight:700;color:#652f8d}
+      .total-label{font-size:16px;font-weight:600;color:${marca().color}}
+      .total-value{font-size:24px;font-weight:700;color:${marca().color}}
       @media print{body{padding:16px}}
     </style></head><body>
     <div class="hd">

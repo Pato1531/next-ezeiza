@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, lazy, Suspense } from 'react'
 import { useAuth } from '@/lib/auth-context'
-import { aplicarColorMarca } from '@/lib/brand'
+import { setMarca } from '@/lib/brand'
 import { createClient } from '@/lib/supabase'
 import { ToastProvider, showToast } from './Toast'
 import { Skeleton } from './Skeleton'
@@ -238,7 +238,7 @@ export default function AppShell() {
   const { usuario, instituto, puedeVer } = useAuth()
 
   // Color de marca del instituto: se aplica a toda la app al cargar y al cambiarlo
-  useEffect(() => { aplicarColorMarca(instituto?.color_primario) }, [instituto?.color_primario])
+  useEffect(() => { setMarca(instituto) }, [instituto])
 
   const [page, setPage] = useState<string>('dashboard')
   const [pageReady, setPageReady] = useState(false)
@@ -508,12 +508,16 @@ export default function AppShell() {
       {/* TOPBAR */}
       <div style={{ background: 'var(--white)', borderBottom: '1px solid var(--border)', padding: '0 20px', height: 'calc(60px + var(--safe-top))', paddingTop: 'var(--safe-top)', boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 40 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {instituto?.logo_url ? (
+            <img src={instituto.logo_url} alt="" style={{ width: '36px', height: '36px', objectFit: 'contain', borderRadius: '10px', flexShrink: 0 }} />
+          ) : (
           <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'var(--v)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             <svg width="20" height="20" viewBox="0 0 32 32" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M16 5L27 11v10L16 27 5 21V11L16 5z" />
               <path d="M16 5v22M5 11l11 10 11-10" />
             </svg>
           </div>
+          )}
           {/* ── Nombre del instituto desde DB — dinámico para todas las sedes ── */}
           <div style={{ fontSize: '16px', fontWeight: 700, letterSpacing: '-.2px' }}>
             {(() => {

@@ -1,4 +1,6 @@
 'use client'
+import { marca } from '@/lib/brand'
+import { renderPlantilla } from '@/lib/plantillas'
 import React from 'react'
 import { useState, useEffect, useRef } from 'react'
 import { useAlumnos, useProfesoras, useCursos, useLiquidaciones, apiHeaders } from '@/lib/hooks'
@@ -261,14 +263,14 @@ export default function Reportes() {
 
   const exportAusentesPDF = () => {
     const _rhtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Ausentes</title>
-    <style>body{font-family:sans-serif;padding:24px;font-size:13px}h1{color:#652f8d;font-size:18px}
-    .logo{font-size:18px;font-weight:700}.logo span{color:#652f8d}
-    .hd{display:flex;justify-content:space-between;border-bottom:2px solid #652f8d;padding-bottom:12px;margin-bottom:18px}
-    table{width:100%;border-collapse:collapse}th{border-bottom:2px solid #652f8d;padding:8px;text-align:left;font-size:10px;text-transform:uppercase;color:#652f8d;letter-spacing:.05em}
+    <style>body{font-family:sans-serif;padding:24px;font-size:13px}h1{color:${marca().color};font-size:18px}
+    .logo{font-size:18px;font-weight:700}.logo span{color:${marca().color}}
+    .hd{display:flex;justify-content:space-between;border-bottom:2px solid ${marca().color};padding-bottom:12px;margin-bottom:18px}
+    table{width:100%;border-collapse:collapse}th{border-bottom:2px solid ${marca().color};padding:8px;text-align:left;font-size:10px;text-transform:uppercase;color:${marca().color};letter-spacing:.05em}
     td{padding:9px 8px;border-bottom:1px solid #f0edf5}.alerta{background:#fdeaea;color:#c0392b;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
     .warn{background:#fdeaea;border:1px solid #f5c5c5;border-radius:8px;padding:10px 14px;margin-bottom:14px;color:#c0392b}
     </style></head><body>
-    <div class="hd"><div class="logo"><span>Next</span> Ezeiza</div><div style="font-size:12px;color:#9b8eaa">${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div></div>
+    <div class="hd"><div class="logo">${marca().logoHtml}</div><div style="font-size:12px;color:#9b8eaa">${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div></div>
     <h1>Reporte de Ausencias</h1>
     ${alertas2Cons.length>0?`<div class="warn">⚠ <strong>${alertas2Cons.length} alumno${alertas2Cons.length!==1?'s':''}</strong> con ${umbralRef.current} o más ausencias consecutivas</div>`:''}
     <table><tr><th>Alumno</th><th>Total ausencias</th><th>Alerta</th></tr>
@@ -429,7 +431,7 @@ export default function Reportes() {
       const conf = !!liqConfirmadas[p.id]
       return `<tr><td>${p.nombre} ${p.apellido}</td><td>${p.horas_semana}hs</td><td>$${p.tarifa_hora?.toLocaleString('es-AR')}</td><td style="font-weight:600">$${liq.toLocaleString('es-AR')}</td><td style="color:${conf?'#2d7a4f':'#b45309'}">${conf?'Confirmada':'Estimada'}</td></tr>`
     }).join('')}
-    <tr style="font-weight:bold;border-top:2px solid #652f8d"><td colspan="3">Total mensual</td><td>$${totalReal.toLocaleString('es-AR')}</td><td></td></tr>
+    <tr style="font-weight:bold;border-top:2px solid ${marca().color}"><td colspan="3">Total mensual</td><td>$${totalReal.toLocaleString('es-AR')}</td><td></td></tr>
     </table>`
     abrirPDF('Liquidación Docente', html)
   }
@@ -509,7 +511,7 @@ export default function Reportes() {
             // usar padre_telefono para menores, telefono para adultos
             const telRaw = alumnoData?.es_menor ? alumnoData?.padre_telefono : alumnoData?.telefono
             const celular = telRaw || alumnoData?.telefono || alumnoData?.padre_telefono
-            const wsLink = celular ? `https://wa.me/54${celular.replace(/\D/g,'')}?text=${encodeURIComponent(`Hola ${al.nombre}, te contactamos desde Next Ezeiza porque registramos ${al.total} ausencia${al.total!==1?'s':''} consecutiva${al.total!==1?'s':''} en el curso ${al.curso}. Queremos saber cómo estás. ¡Esperamos verte pronto!`)}` : null
+            const wsLink = celular ? `https://wa.me/54${celular.replace(/\D/g,'')}?text=${encodeURIComponent(renderPlantilla('ausencias', { nombre: al.nombre, ausencias_texto: `${al.total} ausencia${al.total!==1?'s':''} consecutiva${al.total!==1?'s':''}`, curso: al.curso }))}` : null
             return (
             <div key={i} style={{borderTop:'1px solid #f5c5c5',paddingTop:'10px',marginTop:'4px'}}>
               <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
@@ -675,8 +677,8 @@ export default function Reportes() {
                 const bgColor = estado.label === 'Pagado' ? 'var(--greenl)' : estado.label === 'Al día' ? '#fef3cd' : '#fdeaea'
                 const tel = a.es_menor ? (a.padre_telefono || a.telefono) : (a.telefono || a.padre_telefono)
                 const contacto = a.es_menor ? (a.padre_nombre || a.nombre) : a.nombre
-                const msgAlDia = `Hola ${contacto}, ¿cómo estás? 😄\nTe escribimos desde Next English Institute para consultarte si pudiste realizar el pago de la cuota de este mes.\n📌 En caso de ya haberlo abonado, podés ignorar este mensaje. 📲 Si aún no, estamos a disposición por cualquier consulta.\nMuchas gracias 🙌`
-                const msgDeudor = `Hola ${contacto}, ¿cómo estás? 😄\nTe escribimos desde Next English Institute ya que la cuota del mes se encuentra vencida.\n📌 A partir de ahora se aplica el recargo correspondiente, según política del instituto.\n📲 Cualquier consulta o si necesitás ayuda con el pago, estamos a disposición.\nMuchas gracias 🙌`
+                const msgAlDia = renderPlantilla('cobranza_consulta', { contacto })
+                const msgDeudor = renderPlantilla('cuota_vencida', { contacto })
                 const msg = estado.label === 'Deudor' ? msgDeudor : msgAlDia
                 const num = normalizarTelWS(tel || '')
                 return (
@@ -762,7 +764,7 @@ export default function Reportes() {
           abrirPDF('Movimientos de Alumnos', `
             <h2>${mesActualNombre} ${anioActual}</h2>
             <div style="display:flex;gap:16px;margin-bottom:20px">
-              <div style="background:#f2e8f9;padding:12px 20px;border-radius:10px;text-align:center"><div style="font-size:28px;font-weight:800;color:#652f8d">${alumnos.length}</div><div style="font-size:11px;color:#9b8eaa">Alumnos activos</div></div>
+              <div style="background:#f2e8f9;padding:12px 20px;border-radius:10px;text-align:center"><div style="font-size:28px;font-weight:800;color:${marca().color}">${alumnos.length}</div><div style="font-size:11px;color:#9b8eaa">Alumnos activos</div></div>
               <div style="background:#e6f4ec;padding:12px 20px;border-radius:10px;text-align:center"><div style="font-size:28px;font-weight:800;color:#2d7a4f">+${altasDelMes.length}</div><div style="font-size:11px;color:#2d7a4f">Altas</div></div>
               <div style="background:#fde8e8;padding:12px 20px;border-radius:10px;text-align:center"><div style="font-size:28px;font-weight:800;color:#c0392b">-${bajasDelMes.length}</div><div style="font-size:11px;color:#c0392b">Bajas</div></div>
             </div>
@@ -914,19 +916,19 @@ function abrirPDF(titulo: string, contenido: string) {
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${titulo}</title>
   <style>
     body{font-family:sans-serif;padding:24px;font-size:13px;color:#1a1020}
-    h1{color:#652f8d;font-size:20px;margin-bottom:4px}
-    h2{color:#652f8d;font-size:15px;margin:20px 0 8px;border-bottom:1px solid #e8dff2;padding-bottom:6px}
+    h1{color:${marca().color};font-size:20px;margin-bottom:4px}
+    h2{color:${marca().color};font-size:15px;margin:20px 0 8px;border-bottom:1px solid #e8dff2;padding-bottom:6px}
     p{font-size:12px;color:#9b8eaa;margin-bottom:16px}
     table{width:100%;border-collapse:collapse;margin:8px 0 16px}
-    th{font-size:10px;text-transform:uppercase;border-bottom:2px solid #652f8d;padding:8px 6px;text-align:left;color:#652f8d;letter-spacing:.05em}
+    th{font-size:10px;text-transform:uppercase;border-bottom:2px solid ${marca().color};padding:8px 6px;text-align:left;color:${marca().color};letter-spacing:.05em}
     td{padding:8px 6px;border-bottom:1px solid #f0edf5;font-size:13px}
     tr:hover td{background:#faf5fd}
-    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid #652f8d}
-    .logo{font-size:20px;font-weight:700}.logo span{color:#652f8d}
+    .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid ${marca().color}}
+    .logo{font-size:20px;font-weight:700}.logo span{color:${marca().color}}
     .fecha{font-size:12px;color:#9b8eaa}
   </style></head><body>
   <div class="header">
-    <div class="logo"><span>Next</span> Ezeiza</div>
+    <div class="logo">${marca().logoHtml}</div>
     <div class="fecha">Generado: ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
   </div>
   ${contenido}
@@ -1046,15 +1048,7 @@ function BoletinSection({ alumnos }: any) {
       const baseUrl = window.location.origin
       const link = `${baseUrl}/api/boletin-publico/${json.token}`
 
-      const texto = encodeURIComponent(
-        `Hola ${boletinGenerado.nombreContacto}! 👋\n\n` +
-        `Te enviamos el boletín de calificaciones de ${boletinGenerado.alumnoNombre} ` +
-        `correspondiente al período ${boletinGenerado.periodo}.\n\n` +
-        `Podés verlo aquí 👇\n${link}\n\n` +
-        `⏳ El link vence en 48 horas.\n\n` +
-        `Cualquier duda o inquietud, estamos a disposición.\n\n` +
-        `La Administración — Next Ezeiza`
-      )
+      const texto = encodeURIComponent(renderPlantilla('boletin', { contacto: boletinGenerado.nombreContacto, alumno: boletinGenerado.alumnoNombre, periodo: boletinGenerado.periodo, link }))
 
       // Si hay teléfono, abrir chat directo; si no, abrir selector de contactos
       const tel = boletinGenerado.telefonoContacto

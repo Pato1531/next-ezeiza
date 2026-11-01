@@ -13,9 +13,10 @@ function sb() {
 const HEX = /^#[0-9a-fA-F]{6}$/
 const UMBRAL_MIN = 1
 const UMBRAL_MAX = 10
+const NOMBRE_MAX = 80
 
-// POST /api/personalizaciones
-// Solo director. Actualiza color_primario y umbral_ausencias del instituto.
+// POST /api/personalizaciones · solo director
+// Actualiza nombre, color_primario y umbral_ausencias del instituto.
 export async function POST(req: NextRequest) {
   try {
     const authError = await verificarAuthRol(req, ['director'])
@@ -26,12 +27,18 @@ export async function POST(req: NextRequest) {
     if (!rl.ok) return rateLimitResponse(rl.resetMs)
 
     const institutoId = getInstitutoId(req)
-    if (!institutoId) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
-    }
+    if (!institutoId) return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
 
     const body = await req.json()
     const update: Record<string, string | number> = {}
+
+    if (body.nombre !== undefined) {
+      const nombre = typeof body.nombre === 'string' ? body.nombre.trim() : ''
+      if (!nombre || nombre.length > NOMBRE_MAX) {
+        return NextResponse.json({ error: `El nombre debe tener entre 1 y ${NOMBRE_MAX} caracteres` }, { status: 400 })
+      }
+      update.nombre = nombre
+    }
 
     if (body.color_primario !== undefined) {
       if (typeof body.color_primario !== 'string' || !HEX.test(body.color_primario)) {
@@ -52,18 +59,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No hay cambios para guardar' }, { status: 400 })
     }
 
-    const { data, error } = await sb()
-      .from('institutos')
-      .update(update)
-      .eq('id', institutoId)
-      .select('id, color_primario, umbral_ausencias')
-      .single()
-
+    const { data, error } = await sb().from('institutos').update(update).eq('id', institutoId)
+      .select('id, nombre, color_primario, umbral_ausencias').single()
     if (error) {
       console.error('[personalizaciones]', error)
       return NextResponse.json({ error: 'No se pudieron guardar los cambios' }, { status: 500 })
     }
-
     return NextResponse.json({ ok: true, data })
   } catch (error: any) {
     console.error('[personalizaciones]', error)

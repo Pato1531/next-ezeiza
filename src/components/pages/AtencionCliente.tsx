@@ -1,4 +1,6 @@
 'use client'
+import { marca } from '@/lib/brand'
+import { renderPlantilla } from '@/lib/plantillas'
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
@@ -194,20 +196,20 @@ function RegistroConsultas() {
     const mesNombre = MESES[mes]
     const filas = dias
       .filter(d => d.reg.ws || d.reg.instagram || d.reg.inscriptos)
-      .map(d => `<tr><td>${fmt(d.fecha)}</td><td style="text-align:center;color:#25D366;font-weight:600">${d.reg.ws||0}</td><td style="text-align:center;color:#E1306C;font-weight:600">${d.reg.instagram||0}</td><td style="text-align:center;color:#652f8d;font-weight:600">${d.reg.inscriptos||0}</td></tr>`).join('')
+      .map(d => `<tr><td>${fmt(d.fecha)}</td><td style="text-align:center;color:#25D366;font-weight:600">${d.reg.ws||0}</td><td style="text-align:center;color:#E1306C;font-weight:600">${d.reg.instagram||0}</td><td style="text-align:center;color:${marca().color};font-weight:600">${d.reg.inscriptos||0}</td></tr>`).join('')
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Consultas ${mesNombre} ${anio}</title>
     <style>body{font-family:Arial,sans-serif;padding:28px;font-size:13px;color:#1a1020}
-    .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #652f8d;padding-bottom:14px;margin-bottom:20px}
-    .logo{font-size:20px;font-weight:700}.logo span{color:#652f8d}
-    h1{color:#652f8d;font-size:16px;margin:0 0 4px}
+    .hd{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid ${marca().color};padding-bottom:14px;margin-bottom:20px}
+    .logo{font-size:20px;font-weight:700}.logo span{color:${marca().color}}
+    h1{color:${marca().color};font-size:16px;margin:0 0 4px}
     .kpis{display:flex;gap:12px;margin-bottom:20px}
     .kpi{flex:1;background:#f9f5fd;border-radius:10px;padding:12px;text-align:center}
-    .kpi-val{font-size:22px;font-weight:800;color:#652f8d}.kpi-lab{font-size:10px;color:#9b8eaa;font-weight:700;text-transform:uppercase;margin-top:2px}
+    .kpi-val{font-size:22px;font-weight:800;color:${marca().color}}.kpi-lab{font-size:10px;color:#9b8eaa;font-weight:700;text-transform:uppercase;margin-top:2px}
     table{width:100%;border-collapse:collapse}
-    th{border-bottom:2px solid #652f8d;padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:#652f8d;letter-spacing:.04em}
+    th{border-bottom:2px solid ${marca().color};padding:8px;text-align:left;font-size:11px;text-transform:uppercase;color:${marca().color};letter-spacing:.04em}
     td{padding:8px;border-bottom:1px solid #f0edf5}
     @media print{body{padding:16px}}</style></head><body>
-    <div class="hd"><div class="logo"><span>Next</span> Ezeiza</div>
+    <div class="hd"><div class="logo">${marca().logoHtml}</div>
     <div style="font-size:12px;color:#888">${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div></div>
     <h1>Consultas — ${mesNombre} ${anio}</h1>
     <div class="kpis">
@@ -616,7 +618,7 @@ function ListaEspera() {
 
   const wsLink = (cel: string, nombre: string) => {
     const num = cel.replace(/\D/g, '')
-    const texto = `Hola ${nombre}, te contactamos desde ${nombreInstituto}. Tenemos disponibilidad para el curso que consultaste. ¿Podemos coordinar?`
+    const texto = renderPlantilla('consulta_lista_espera', { nombre })
     return `https://wa.me/54${num}?text=${encodeURIComponent(texto)}`
   }
 

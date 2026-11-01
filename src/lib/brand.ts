@@ -64,3 +64,48 @@ export function aplicarColorMarca(hex?: string | null) {
   estilo.setProperty('--vl', hslAHex(h, clamp(s, 0, 80), 95))
   estilo.setProperty('--vll', hslAHex(h, clamp(s, 0, 80), 98))
 }
+
+// ── Marca del instituto (color, nombre y logo) ────────────────────────────────
+// Se carga desde auth-context al iniciar sesión (setMarca). Los documentos y mensajes
+// leen marca() en el momento de generarse, así que siempre usan lo último guardado.
+
+type Marca = {
+  color: string
+  nombre: string
+  logoUrl: string | null
+  plantillas: Record<string, string> | null
+}
+
+let _marca: Marca = {
+  color: COLOR_MARCA_DEFAULT,
+  nombre: 'Mi instituto',
+  logoUrl: null,
+  plantillas: null,
+}
+
+const escaparHtml = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+
+// "Next Ezeiza" → <span>Next</span> Ezeiza (mismo estilo que la barra superior)
+function logoHtmlDe(nombre: string) {
+  const partes = nombre.split(' ')
+  const primera = escaparHtml(partes[0])
+  const resto = partes.slice(1).map(escaparHtml).join(' ')
+  return `<span>${primera}</span>${resto ? ' ' + resto : ''}`
+}
+
+export function setMarca(inst: any) {
+  _marca = {
+    color: esHexValido(inst?.color_primario) ? inst.color_primario.toLowerCase() : COLOR_MARCA_DEFAULT,
+    nombre: (inst?.nombre || '').trim() || 'Mi instituto',
+    logoUrl: inst?.logo_url || null,
+    plantillas: inst?.plantillas_whatsapp && typeof inst.plantillas_whatsapp === 'object'
+      ? inst.plantillas_whatsapp
+      : null,
+  }
+  aplicarColorMarca(_marca.color)
+}
+
+export function marca() {
+  return { ..._marca, logoHtml: logoHtmlDe(_marca.nombre) }
+}

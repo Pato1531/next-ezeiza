@@ -1,4 +1,5 @@
 'use client'
+import { renderPlantilla } from '@/lib/plantillas'
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useAlumnos, useProfesoras, useCursos, useMiProfesora, store } from '@/lib/hooks'
@@ -31,7 +32,7 @@ function normalizarTelDash(tel?: string) {
 }
 
 function msgCumpleanos(nombre: string) {
-  return `🎉 ¡Feliz cumpleaños, ${nombre}! 🎂\n\nEsperamos que tengas un día maravilloso, rodeada de cariño y momentos felices.\n¡Que disfrutes mucho tu día!\n\nCon cariño,\n\nEl equipo de Next 🥳`
+  return renderPlantilla('cumpleanos', { nombre })
 }
 
 function abrirWSCumple(tel: string | undefined, nombre: string) {

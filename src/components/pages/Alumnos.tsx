@@ -1,4 +1,6 @@
 'use client'
+import { marca } from '@/lib/brand'
+import { renderPlantilla } from '@/lib/plantillas'
 import { useState, useEffect, useRef } from 'react'
 import { useAlumnos, usePagos, useMiProfesora, useHistorialCursos, useCuotasHistorial, useCursos, logActivity, apiHeaders } from '@/lib/hooks'
 import { useAuth } from '@/lib/auth-context'
@@ -262,10 +264,10 @@ export default function Alumnos() {
     win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Alumnos</title>
     <style>
       body{font-family:Arial,sans-serif;padding:32px;color:#1a1020}
-      h1{font-size:22px;font-weight:800;color:#652f8d;margin:0 0 4px}
+      h1{font-size:22px;font-weight:800;color:${marca().color};margin:0 0 4px}
       .sub{font-size:13px;color:#888;margin-bottom:24px}
       table{width:100%;border-collapse:collapse;font-size:13px}
-      th{background:#652f8d;color:#fff;padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
+      th{background:${marca().color};color:#fff;padding:9px 12px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em}
       td{padding:8px 12px;border-bottom:1px solid #f0edf5}
       tr:nth-child(even) td{background:#faf7fd}
       .total{margin-top:16px;font-size:13px;color:#888}
@@ -418,7 +420,7 @@ export default function Alumnos() {
           const telContacto = datos.es_menor ? datos.padre_telefono : datos.telefono
           const tel = normalizarTel(telContacto || '')
           if (tel && tel.length >= 12) {
-            const msg = `¡Bienvenido/a a *Next Ezeiza English Institute*! 🎉\n\nConfirmamos la inscripción de *${datos.nombre} ${datos.apellido}* — Nivel *${datos.nivel}*.\n\n📄 Tu comprobante de inscripción: ${urlComprobante}\n\nCualquier consulta, estamos a disposición. ¡Gracias! 🙌`
+            const msg = renderPlantilla('bienvenida', { alumno: `${datos.nombre} ${datos.apellido}`, nivel: datos.nivel, link: urlComprobante })
             setComprobanteInfo({ tel: telContacto, msg })
             setModalComprobante(true)
           }
@@ -610,7 +612,7 @@ export default function Alumnos() {
         </div>
         <div style={{display:'flex',gap:'8px'}}>
           {(usuario?.rol === 'director' || usuario?.rol === 'secretaria') && (
-            <button onClick={() => { setRenovacionSeleccionados(new Set()); setRenovacionResultado(null); setRenovacionMonto(''); setVista('renovacion_matricula') }} style={{padding:'9px 14px',background:'var(--white)',color:'#652f8d',border:'1.5px solid #652f8d',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
+            <button onClick={() => { setRenovacionSeleccionados(new Set()); setRenovacionResultado(null); setRenovacionMonto(''); setVista('renovacion_matricula') }} style={{padding:'9px 14px',background:'var(--white)',color:'#652f8d',border:'1.5px solid ' + marca().color + '',borderRadius:'10px',fontSize:'13px',fontWeight:600,cursor:'pointer',display:'flex',alignItems:'center',gap:'5px'}}>
               <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 9V7a5 5 0 00-10 0v2M5 9h10l1 9H4L5 9z"/></svg>
               Matrícula
             </button>
@@ -1132,15 +1134,15 @@ export default function Alumnos() {
         ? `Bajas — ${MESES_NOMBRES[parseInt(filtroMes)-1]} ${filtroAnio}`
         : filtroAnio !== 'todos' ? `Bajas — ${filtroAnio}` : 'Bajas Históricas'
       win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${titulo}</title>
-        <style>body{font-family:sans-serif;padding:24px;font-size:13px}h1{color:#652f8d;font-size:18px;margin-bottom:4px}
+        <style>body{font-family:sans-serif;padding:24px;font-size:13px}h1{color:${marca().color};font-size:18px;margin-bottom:4px}
         .sub{color:#9b8eaa;font-size:12px;margin-bottom:20px}
-        table{width:100%;border-collapse:collapse}th{border-bottom:2px solid #652f8d;padding:8px;text-align:left;font-size:10px;text-transform:uppercase;color:#652f8d;letter-spacing:.05em}
+        table{width:100%;border-collapse:collapse}th{border-bottom:2px solid ${marca().color};padding:8px;text-align:left;font-size:10px;text-transform:uppercase;color:${marca().color};letter-spacing:.05em}
         td{padding:10px 8px;border-bottom:1px solid #f0edf5;font-size:13px}
-        .logo{font-size:18px;font-weight:700;margin-bottom:4px}.logo span{color:#652f8d}
+        .logo{font-size:18px;font-weight:700;margin-bottom:4px}.logo span{color:${marca().color}}
         .fecha{color:#9b8eaa;font-size:12px;text-align:right}
         </style></head><body>
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #652f8d;padding-bottom:14px;margin-bottom:20px">
-          <div class="logo"><span>Next</span> Ezeiza</div>
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid ${marca().color};padding-bottom:14px;margin-bottom:20px">
+          <div class="logo">${marca().logoHtml}</div>
           <div class="fecha">Generado: ${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div>
         </div>
         <h1>${titulo}</h1>
@@ -1754,20 +1756,14 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
     const tel = a.es_menor ? a.padre_telefono : a.telefono
     if (!tel) { showToast('No hay teléfono cargado para este contacto', 'warning'); return }
     const urlComprobante = `${window.location.origin}/api/comprobante-inscripcion/${a.id}`
-    const msg = `Hola ${contacto}! 👋 Te escribimos de *Next Ezeiza English Institute*.\n\n📄 Aquí tenés el comprobante de inscripción de *${a.nombre} ${a.apellido}*: ${urlComprobante}\n\nCualquier consulta, estamos a disposición. ¡Gracias! 🙌`
+    const msg = renderPlantilla('comprobante', { contacto, alumno: `${a.nombre} ${a.apellido}`, link: urlComprobante })
     abrirWS(tel, msg)
   }
 
   const msgCuotaPendiente = () => {
     const contacto = a.es_menor ? a.padre_nombre || 'familia' : a.nombre
     const tel = a.es_menor ? a.padre_telefono : a.telefono
-    const msg = `Hola ${contacto}! 👋 Te escribimos de *Next Ezeiza English Institute*.
-
-Te recordamos que la cuota de *${pago.mes} ${pago.anio}* de *${a.nombre} ${a.apellido}* se encuentra pendiente de pago.
-${!ocultarMontos && !a.tarifa_clase ? `\n💰 Monto: *$${(a.cuota_mensual||0).toLocaleString('es-AR')}*` : ''}
-📚 Curso: *${cursoActual?.nombre || '—'}*
-
-Podés abonar en el instituto o por transferencia. Ante cualquier consulta estamos a disposición. ¡Muchas gracias! 🙏`
+    const msg = renderPlantilla('cuota_recordatorio', { contacto, periodo: `${pago.mes} ${pago.anio}`, alumno: `${a.nombre} ${a.apellido}`, monto_linea: !ocultarMontos && !a.tarifa_clase ? `💰 Monto: *$${(a.cuota_mensual||0).toLocaleString('es-AR')}*\n` : '', curso: cursoActual?.nombre || '—' })
     abrirWS(tel, msg)
   }
 
@@ -1806,7 +1802,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
       const urlRecibo = `${window.location.origin}/api/recibo/${p.id}`
       window.open(urlRecibo, '_blank')
       if (tel) {
-        const msgWS = `✅ *Recibo de pago — Next Ezeiza*\n\nHola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${a.nombre} ${a.apellido}*.\n\n💰 Monto: *$${monto}*\n📅 Fecha: ${fecha}\n💳 Método: ${p.metodo||'Efectivo'}\n\n📄 Tu recibo: ${urlRecibo}\n\n¡Gracias! 🙌`
+        const msgWS = renderPlantilla('recibo', { contacto, periodo: `${p.mes} ${p.anio}`, alumno: `${a.nombre} ${a.apellido}`, monto, fecha, metodo: p.metodo||'Efectivo', link: urlRecibo })
         setUltimoPago({ tel, msg: msgWS, urlRecibo })
         setModalRecibo(true)
       }
@@ -1816,7 +1812,7 @@ Podés abonar en el instituto o por transferencia. Ante cualquier consulta estam
     // Fallback: pago sin id todavía → HTML local con print automático
     const num = Math.floor(Math.random()*900000)+100000
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo ${a.nombre} ${a.apellido}</title>
-    <style>body{font-family:Arial,sans-serif;padding:0;margin:0;background:#f5f0fa}.wrap{max-width:400px;margin:20px auto;background:white;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(101,47,141,.15)}.hdr{background:#652f8d;padding:24px;color:white}.logo{font-size:20px;font-weight:900}.logo span{opacity:.7;font-weight:400}.rec-num{font-size:12px;opacity:.7;margin-top:2px}.monto-sec{background:#f2e8f9;padding:20px;text-align:center;border-bottom:2px dashed #d4a8e8}.monto-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}.monto{font-size:44px;font-weight:900;color:#652f8d;letter-spacing:-2px}.monto-mes{font-size:13px;color:#9b8eaa;margin-top:4px}.body{padding:20px}.fila{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0edf5}.fila:last-child{border-bottom:none}.fila-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.04em}.fila-val{font-size:13px;color:#1a1020;font-weight:700;text-align:right;max-width:60%}.badge{background:#e6f4ec;color:#2d7a4f;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}.footer{background:#faf7fd;padding:14px 20px;text-align:center;font-size:11px;color:#9b8eaa}@media print{body{background:white}.wrap{box-shadow:none;margin:0;border-radius:0}}</style></head><body>
+    <style>body{font-family:Arial,sans-serif;padding:0;margin:0;background:#f5f0fa}.wrap{max-width:400px;margin:20px auto;background:white;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(101,47,141,.15)}.hdr{background:${marca().color};padding:24px;color:white}.logo{font-size:20px;font-weight:900}.logo span{opacity:.7;font-weight:400}.rec-num{font-size:12px;opacity:.7;margin-top:2px}.monto-sec{background:#f2e8f9;padding:20px;text-align:center;border-bottom:2px dashed #d4a8e8}.monto-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}.monto{font-size:44px;font-weight:900;color:${marca().color};letter-spacing:-2px}.monto-mes{font-size:13px;color:#9b8eaa;margin-top:4px}.body{padding:20px}.fila{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0edf5}.fila:last-child{border-bottom:none}.fila-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.04em}.fila-val{font-size:13px;color:#1a1020;font-weight:700;text-align:right;max-width:60%}.badge{background:#e6f4ec;color:#2d7a4f;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}.footer{background:#faf7fd;padding:14px 20px;text-align:center;font-size:11px;color:#9b8eaa}@media print{body{background:white}.wrap{box-shadow:none;margin:0;border-radius:0}}</style></head><body>
     <div class="wrap"><div class="hdr"><div class="logo">${a.instituto_nombre || 'Instituto'}</div><div class="rec-num">Comprobante #${num} · ${fecha}</div></div>
     <div class="monto-sec"><div class="monto-lab">Total abonado</div><div class="monto">$${monto}</div><div class="monto-mes">Cuota ${p.mes} ${p.anio}</div></div>
     <div class="body"><div class="fila"><div class="fila-lab">Alumno</div><div class="fila-val">${a.nombre} ${a.apellido}</div></div><div class="fila"><div class="fila-lab">Método</div><div class="fila-val">${p.metodo||'Efectivo'}</div></div><div class="fila"><div class="fila-lab">Fecha</div><div class="fila-val">${fecha}</div></div><div class="fila"><div class="fila-lab">Estado</div><div class="fila-val"><span class="badge">✓ Pagado</span></div></div></div>

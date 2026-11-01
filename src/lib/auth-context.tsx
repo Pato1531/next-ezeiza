@@ -52,6 +52,8 @@ interface Instituto {
   slug: string
   color_primario: string
   umbral_ausencias?: number
+  logo_url?: string | null
+  plantillas_whatsapp?: Record<string, string> | null
 }
 
 interface AuthContextType {

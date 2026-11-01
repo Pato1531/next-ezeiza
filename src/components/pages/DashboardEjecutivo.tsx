@@ -1,4 +1,5 @@
 'use client'
+import { marca } from '@/lib/brand'
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useAlumnos, useProfesoras, useCursos, apiHeaders } from '@/lib/hooks'
@@ -739,7 +740,7 @@ export default function DashboardEjecutivo() {
   // ── Exportar PDF ──────────────────────────────────────────────────────────
   const exportarPDF = () => {
     const filasMetodos = metodosSorted.map(([m, v]) =>
-      `<tr><td>${m}</td><td style="text-align:right;font-weight:700;color:#652f8d">${fmt$(v)}</td><td style="text-align:right;color:#9b8eaa">${pct(v, totalCobrado)}%</td></tr>`
+      `<tr><td>${m}</td><td style="text-align:right;font-weight:700;color:${marca().color}">${fmt$(v)}</td><td style="text-align:right;color:#9b8eaa">${pct(v, totalCobrado)}%</td></tr>`
     ).join('')
 
     // Detalle de egresos — mismos conceptos y mismo total que la tab "Est. Resultado"
@@ -762,28 +763,28 @@ export default function DashboardEjecutivo() {
     <title>Cierre ${mesNombre} ${anio}</title>
     <style>
       body{font-family:Arial,sans-serif;padding:28px;font-size:13px;color:#1a1020;max-width:680px;margin:0 auto}
-      .hd{display:flex;justify-content:space-between;border-bottom:3px solid #652f8d;padding-bottom:14px;margin-bottom:20px}
-      .logo{font-size:20px;font-weight:800}.logo span{color:#652f8d}
-      h2{color:#652f8d;font-size:16px;margin:20px 0 10px;border-bottom:1px solid #ede8f5;padding-bottom:6px}
+      .hd{display:flex;justify-content:space-between;border-bottom:3px solid ${marca().color};padding-bottom:14px;margin-bottom:20px}
+      .logo{font-size:20px;font-weight:800}.logo span{color:${marca().color}}
+      h2{color:${marca().color};font-size:16px;margin:20px 0 10px;border-bottom:1px solid #ede8f5;padding-bottom:6px}
       .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px}
       .kpi{background:#f9f5fd;border-radius:10px;padding:12px;text-align:center}
-      .kpi-val{font-size:20px;font-weight:800;color:#652f8d}
+      .kpi-val{font-size:20px;font-weight:800;color:${marca().color}}
       .kpi-lab{font-size:10px;color:#9b8eaa;font-weight:600;text-transform:uppercase;margin-top:2px}
       table{width:100%;border-collapse:collapse;margin-bottom:14px}
-      th{border-bottom:2px solid #652f8d;padding:7px;text-align:left;font-size:11px;text-transform:uppercase;color:#652f8d;letter-spacing:.04em}
+      th{border-bottom:2px solid ${marca().color};padding:7px;text-align:left;font-size:11px;text-transform:uppercase;color:${marca().color};letter-spacing:.04em}
       td{padding:7px 8px;border-bottom:1px solid #f0edf5}
       .neto{background:${bgResultado};border-radius:10px;padding:14px;text-align:center;margin:14px 0}
       .neto-val{font-size:28px;font-weight:800;color:${colorResultado}}
       .neto-lab{font-size:11px;color:${colorResultado};font-weight:600;text-transform:uppercase;margin-top:3px}
       .neto-formula{font-size:11px;color:#9b8eaa;margin-top:4px}
       .margen{background:#f9f5fd;border-radius:10px;padding:12px 14px;display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-      .margen-lab{font-size:11px;font-weight:700;color:#652f8d;text-transform:uppercase}
+      .margen-lab{font-size:11px;font-weight:700;color:${marca().color};text-transform:uppercase}
       .margen-sub{font-size:10px;color:#9b8eaa;margin-top:2px}
-      .margen-val{font-size:20px;font-weight:800;color:#652f8d}
+      .margen-val{font-size:20px;font-weight:800;color:${marca().color}}
       @media print{body{padding:16px}}
     </style></head><body>
     <div class="hd">
-      <div class="logo"><span>Next</span> Ezeiza</div>
+      <div class="logo">${marca().logoHtml}</div>
       <div style="font-size:13px;color:#9b8eaa">Cierre mensual — ${mesNombre} ${anio}</div>
     </div>
     <div class="kpis">
@@ -815,7 +816,7 @@ export default function DashboardEjecutivo() {
     ${filasMetodos}</table>
     <h2>Movimientos del mes</h2>
     <table><tr><th>Altas</th><th>Bajas</th><th>Retención</th></tr>
-    <tr><td style="font-weight:700;color:#2d7a4f">+${altasMes.length} alumnos</td><td style="font-weight:700;color:#c0392b">-${bajasMes.length} alumnos</td><td style="font-weight:700;color:#652f8d">${pct(alumnos.length - bajasMes.length, alumnos.length + bajasMes.length)}%</td></tr>
+    <tr><td style="font-weight:700;color:#2d7a4f">+${altasMes.length} alumnos</td><td style="font-weight:700;color:#c0392b">-${bajasMes.length} alumnos</td><td style="font-weight:700;color:${marca().color}">${pct(alumnos.length - bajasMes.length, alumnos.length + bajasMes.length)}%</td></tr>
     </table>
     <script>setTimeout(function(){window.print()},400)</script></body></html>`
 
@@ -835,7 +836,7 @@ export default function DashboardEjecutivo() {
     setGenerandoAnual(true)
     const winRef = window.open('', '_blank')
     if (winRef) {
-      winRef.document.write('<p style="font-family:Arial,sans-serif;padding:40px;color:#652f8d">Generando informe anual…</p>')
+      winRef.document.write('<p style="font-family:Arial,sans-serif;padding:40px;color:' + marca().color + '">Generando informe anual…</p>')
     }
     try {
       const sb = createClient()
@@ -900,21 +901,21 @@ export default function DashboardEjecutivo() {
       <title>Informe Anual ${anio}</title>
       <style>
         body{font-family:Arial,sans-serif;padding:28px;font-size:13px;color:#1a1020;max-width:720px;margin:0 auto}
-        .hd{display:flex;justify-content:space-between;border-bottom:3px solid #652f8d;padding-bottom:14px;margin-bottom:20px}
-        .logo{font-size:20px;font-weight:800}.logo span{color:#652f8d}
-        h2{color:#652f8d;font-size:16px;margin:22px 0 10px;border-bottom:1px solid #ede8f5;padding-bottom:6px}
+        .hd{display:flex;justify-content:space-between;border-bottom:3px solid ${marca().color};padding-bottom:14px;margin-bottom:20px}
+        .logo{font-size:20px;font-weight:800}.logo span{color:${marca().color}}
+        h2{color:${marca().color};font-size:16px;margin:22px 0 10px;border-bottom:1px solid #ede8f5;padding-bottom:6px}
         .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:10px}
         .kpi{background:#f9f5fd;border-radius:10px;padding:12px;text-align:center}
-        .kpi-val{font-size:18px;font-weight:800;color:#652f8d}
+        .kpi-val{font-size:18px;font-weight:800;color:${marca().color}}
         .kpi-lab{font-size:10px;color:#9b8eaa;font-weight:600;text-transform:uppercase;margin-top:2px}
         .chart{display:flex;align-items:flex-end;gap:6px;background:#f9f5fd;border-radius:10px;padding:16px 12px 8px;margin-top:12px}
         table{width:100%;border-collapse:collapse;margin-bottom:14px}
-        th{border-bottom:2px solid #652f8d;padding:7px;text-align:left;font-size:11px;text-transform:uppercase;color:#652f8d;letter-spacing:.04em}
+        th{border-bottom:2px solid ${marca().color};padding:7px;text-align:left;font-size:11px;text-transform:uppercase;color:${marca().color};letter-spacing:.04em}
         td{padding:7px 8px;border-bottom:1px solid #f0edf5}
         @media print{body{padding:16px}}
       </style></head><body>
       <div class="hd">
-        <div class="logo"><span>Next</span> Ezeiza</div>
+        <div class="logo">${marca().logoHtml}</div>
         <div style="font-size:13px;color:#9b8eaa">Informe anual — ${anio}</div>
       </div>
       <div class="kpis">
@@ -2366,11 +2367,11 @@ function CierreDeMes({ mes, anio, totalCobrado, totalIngresosTotal, alumnos, cur
     <title>Cierre ${mes} ${anio}</title>
     <style>
       body{font-family:Arial,sans-serif;padding:32px;font-size:13px;color:#1a1020;max-width:700px;margin:0 auto}
-      h1{font-size:22px;color:#652f8d;margin-bottom:4px}
+      h1{font-size:22px;color:${marca().color};margin-bottom:4px}
       .sub{color:#9b8eaa;font-size:13px;margin-bottom:24px}
       .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
       .card{border:1px solid #e0d8f0;border-radius:10px;padding:14px}
-      .val{font-size:22px;font-weight:700;color:#652f8d}
+      .val{font-size:22px;font-weight:700;color:${marca().color}}
       .lbl{font-size:11px;color:#9b8eaa;margin-top:4px}
       table{width:100%;border-collapse:collapse;margin-top:8px}
       th{text-align:left;font-size:11px;color:#9b8eaa;text-transform:uppercase;padding:6px 0;border-bottom:1px solid #e0d8f0}

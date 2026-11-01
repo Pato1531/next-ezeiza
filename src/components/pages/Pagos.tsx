@@ -1,4 +1,6 @@
 'use client'
+import { marca } from '@/lib/brand'
+import { renderPlantilla } from '@/lib/plantillas'
 import { useState, useEffect, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { useAlumnos, apiHeaders, logActivity } from '@/lib/hooks'
@@ -456,12 +458,12 @@ export default function Pagos() {
     const totalMonto = deudores.reduce((s:number,a:any) => s + Math.max(0,(a.cuota_mensual||0)-(a._montoParcial||0)), 0)
     const rows = deudores.sort((a:any,b:any)=>a.apellido.localeCompare(b.apellido))
       .map((a:any) => `<tr><td>${a.apellido}, ${a.nombre}</td><td>${a.nivel||'—'}</td><td>${a._estadoPago === 'parcial' ? `Parcial ($${(a._montoParcial||0).toLocaleString('es-AR')})` : 'Sin pago'}</td><td>$${Math.max(0,(a.cuota_mensual||0)-(a._montoParcial||0)).toLocaleString('es-AR')}</td></tr>`).join('')
-    const html = `<h1 style="font-family:sans-serif;color:#652f8d">Deudores — ${deudMes} ${deudAnio}</h1>
+    const html = `<h1 style="font-family:sans-serif;color:${marca().color}">Deudores — ${deudMes} ${deudAnio}</h1>
       <p style="font-family:sans-serif;font-size:13px;color:#666">${deudores.length} deudores · Total: $${totalMonto.toLocaleString('es-AR')}</p>
       <table style="font-family:sans-serif;border-collapse:collapse;width:100%;font-size:13px">
-        <tr><th style="border-bottom:2px solid #652f8d;text-align:left;padding:6px">Alumno</th><th style="border-bottom:2px solid #652f8d;padding:6px">Nivel</th><th style="border-bottom:2px solid #652f8d;padding:6px">Estado</th><th style="border-bottom:2px solid #652f8d;text-align:right;padding:6px">Saldo</th></tr>
+        <tr><th style="border-bottom:2px solid ${marca().color};text-align:left;padding:6px">Alumno</th><th style="border-bottom:2px solid ${marca().color};padding:6px">Nivel</th><th style="border-bottom:2px solid ${marca().color};padding:6px">Estado</th><th style="border-bottom:2px solid ${marca().color};text-align:right;padding:6px">Saldo</th></tr>
         ${rows}
-        <tr style="border-top:2px solid #652f8d;font-weight:700"><td style="padding:6px">TOTAL</td><td></td><td></td><td style="text-align:right;padding:6px">$${totalMonto.toLocaleString('es-AR')}</td></tr>
+        <tr style="border-top:2px solid ${marca().color};font-weight:700"><td style="padding:6px">TOTAL</td><td></td><td></td><td style="text-align:right;padding:6px">$${totalMonto.toLocaleString('es-AR')}</td></tr>
       </table>`
     const w = window.open('','_blank')
     if (!w) return
@@ -755,31 +757,31 @@ export default function Pagos() {
       <tr>
         <td>${p.alumnos?.nombre} ${p.alumnos?.apellido}</td>
         <td>${p.alumnos?.es_menor ? (p.alumnos?.padre_dni || '—') : (p.alumnos?.dni || '—')}</td>
-        <td><span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#f4eefb;color:#652f8d">${p.tipo || 'cuota'}</span></td>
-        <td style="font-weight:600;color:#652f8d">$${p.monto?.toLocaleString('es-AR')}</td>
+        <td><span style="padding:2px 8px;border-radius:20px;font-size:10px;font-weight:700;background:#f4eefb;color:${marca().color}">${p.tipo || 'cuota'}</span></td>
+        <td style="font-weight:600;color:${marca().color}">$${p.monto?.toLocaleString('es-AR')}</td>
         <td>${p.metodo || '—'}</td>
         <td>${p.fecha_pago ? new Date(p.fecha_pago + 'T12:00:00').toLocaleDateString('es-AR') : '—'}</td>
       </tr>`).join('')
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Pagos ${repMes} ${repAnio}</title>
     <style>
       body{font-family:Arial,sans-serif;padding:28px;font-size:13px;color:#1a1020}
-      .hd{display:flex;justify-content:space-between;border-bottom:3px solid #652f8d;padding-bottom:14px;margin-bottom:20px}
-      .logo{font-size:20px;font-weight:700}.logo span{color:#652f8d}
-      h1{color:#652f8d;font-size:18px;margin:0 0 4px}
+      .hd{display:flex;justify-content:space-between;border-bottom:3px solid ${marca().color};padding-bottom:14px;margin-bottom:20px}
+      .logo{font-size:20px;font-weight:700}.logo span{color:${marca().color}}
+      h1{color:${marca().color};font-size:18px;margin:0 0 4px}
       .total{background:#f2e8f9;padding:12px 16px;border-radius:10px;display:flex;justify-content:space-between;margin-bottom:16px}
       table{width:100%;border-collapse:collapse}
-      th{border-bottom:2px solid #652f8d;padding:9px 8px;text-align:left;font-size:11px;text-transform:uppercase;color:#652f8d;letter-spacing:.04em}
+      th{border-bottom:2px solid ${marca().color};padding:9px 8px;text-align:left;font-size:11px;text-transform:uppercase;color:${marca().color};letter-spacing:.04em}
       td{padding:9px 8px;border-bottom:1px solid #f0edf5}
       @media print{body{padding:16px}}
     </style></head><body>
     <div class="hd">
-      <div class="logo"><span>Next</span> Ezeiza</div>
+      <div class="logo">${marca().logoHtml}</div>
       <div style="font-size:12px;color:#888">${new Date().toLocaleDateString('es-AR', { day:'numeric', month:'long', year:'numeric' })}</div>
     </div>
     <h1>Reporte de Pagos — ${repMes} ${repAnio}</h1>
     <div class="total">
-      <span style="font-weight:600;color:#652f8d">${pagosReporte.length} pagos registrados</span>
-      <span style="font-size:18px;font-weight:700;color:#652f8d">Total: $${totalRecaudado.toLocaleString('es-AR')}</span>
+      <span style="font-weight:600;color:${marca().color}">${pagosReporte.length} pagos registrados</span>
+      <span style="font-size:18px;font-weight:700;color:${marca().color}">Total: $${totalRecaudado.toLocaleString('es-AR')}</span>
     </div>
     <table><tr><th>Alumno</th><th>DNI</th><th>Concepto</th><th>Monto</th><th>Método</th><th>Fecha</th></tr>
     ${filas}
@@ -900,7 +902,7 @@ export default function Pagos() {
                       : new Date().toLocaleDateString('es-AR', { day:'numeric', month:'long', year:'numeric' })
                     const urlRecibo = typeof window !== 'undefined' ? `${window.location.origin}/api/recibo/${p.id}` : ''
                     const montoTotal = (p._montoTotal || p.monto) || 0
-                    const textoWS = `✅ *Recibo de pago*\n\nHola ${contacto}! Confirmamos el pago de *${p.mes} ${p.anio}* de *${p.alumnos?.nombre} ${p.alumnos?.apellido}*.\n\n💰 Monto: *$${montoTotal.toLocaleString('es-AR')}*\n📅 Fecha: ${fechaFmt}\n💳 Método: ${p.metodo || 'Efectivo'}\n\n📄 Tu recibo: ${urlRecibo}\n\n¡Gracias! 🙌`
+                    const textoWS = renderPlantilla('recibo', { contacto, periodo: `${p.mes} ${p.anio}`, alumno: `${p.alumnos?.nombre} ${p.alumnos?.apellido}`, monto: montoTotal.toLocaleString('es-AR'), fecha: fechaFmt, metodo: p.metodo || 'Efectivo', link: urlRecibo })
                     return (
                       <div key={p.id} style={{ padding:'12px 16px', borderBottom: i < pagosAgrupados.length - 1 ? '1px solid var(--border)' : 'none' }}>
                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
@@ -1071,7 +1073,7 @@ export default function Pagos() {
                     const tel = a.es_menor ? (a.padre_telefono || a.telefono) : (a.telefono || a.padre_telefono)
                     const cel = tel?.replace(/\D/g, '')
                     const contacto = a.es_menor ? (a.padre_nombre || a.nombre) : a.nombre
-                    const msgDeudor = `Hola ${contacto} 👋, te escribimos desde Next English Institute. Notamos que la cuota de *${deudMes} ${deudAnio}* de *${a.nombre} ${a.apellido}* aún no fue registrada.\n📌 Si ya realizaste el pago, por favor ignorá este mensaje. Cualquier consulta estamos disponibles. ¡Muchas gracias! 🙌`
+                    const msgDeudor = renderPlantilla('cobranza_deudor', { contacto, periodo: `${deudMes} ${deudAnio}`, alumno: `${a.nombre} ${a.apellido}` })
                     return (
                       <div key={a.id} style={{ padding:'12px 16px', borderBottom: i < deudores.length - 1 ? '1px solid var(--border)' : 'none', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
