@@ -7,8 +7,11 @@
 
 export type EstadoUnidadCalc = 'pendiente' | 'en_curso' | 'atrasada' | 'dictada'
 
+// Fecha de hoy en hora local (YYYY-MM-DD). No usar toISOString: en Argentina, después de las 21:00,
+// daría la fecha de mañana y las unidades aparecerían mal como atrasadas o en curso.
 export function hoyISO(): string {
-  return new Date().toISOString().split('T')[0]
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
 export function calcularEstadoUnidad(u: {

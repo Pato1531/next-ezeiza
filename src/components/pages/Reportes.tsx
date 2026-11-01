@@ -1,6 +1,7 @@
 'use client'
 import { marca } from '@/lib/brand'
 import { renderPlantilla } from '@/lib/plantillas'
+import { configAlertas } from '@/lib/alertas'
 import React from 'react'
 import { useState, useEffect, useRef } from 'react'
 import { useAlumnos, useProfesoras, useCursos, useLiquidaciones, apiHeaders } from '@/lib/hooks'
@@ -498,7 +499,7 @@ export default function Reportes() {
     <div className="fade-in">
 
       {/* ALERTAS 2 AUSENCIAS CONSECUTIVAS */}
-      {!loadingAusentes && alertas2Cons.length > 0 && (
+      {!loadingAusentes && configAlertas(instituto?.config_alertas).ausencias.activa && alertas2Cons.length > 0 && (
         <div style={{background:'var(--redl)',border:'1.5px solid #f5c5c5',borderRadius:'14px',padding:'14px 16px',marginBottom:'16px'}}>
           <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'10px'}}>
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="var(--red)" strokeWidth="2"><circle cx="10" cy="10" r="8"/><path d="M10 6v4M10 14h.01"/></svg>

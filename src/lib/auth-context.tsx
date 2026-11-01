@@ -54,6 +54,7 @@ interface Instituto {
   umbral_ausencias?: number
   logo_url?: string | null
   plantillas_whatsapp?: Record<string, string> | null
+  config_alertas?: Record<string, any> | null
 }
 
 interface AuthContextType {

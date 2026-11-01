@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase'
 import { showToast } from '../Toast'
 import { apiHeaders } from '@/lib/hooks'
 import { calcularEstadoUnidad } from '@/lib/planificacion'
+import { configAlertas } from '@/lib/alertas'
 
 const MESES = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
 
@@ -15,9 +16,10 @@ function hoyISOLocal() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
-function en14DiasLocal() {
+// Fecha local dentro de N días (no UTC)
+function enDiasLocal(dias: number) {
   const d = new Date()
-  d.setDate(d.getDate() + 14)
+  d.setDate(d.getDate() + dias)
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
@@ -63,6 +65,8 @@ export default function Dashboard() {
   const { usuario, puedeVer, instituto } = useAuth()
   const umbralRef = useRef<number>(instituto?.umbral_ausencias ?? 2)
   umbralRef.current = instituto?.umbral_ausencias ?? 2
+  // Configuración de alertas del instituto (Personalizaciones → Alertas)
+  const AL = configAlertas(instituto?.config_alertas)
   const { alumnos, loading: loadA } = useAlumnos()
   const { profesoras } = useProfesoras()
   const { cursos } = useCursos()
@@ -178,13 +182,13 @@ export default function Dashboard() {
         }).slice(0, 5))
       }
 
-      // 5. Exámenes próximos sin notas cargadas (próximos 30 días)
-      const en30 = new Date(); en30.setDate(en30.getDate() + 30)
-      const { data: exams } = await sb.from('examenes').select('id,nombre,fecha,tipo,cursos(nombre)').in('curso_id', cursoIds).gte('fecha', hoyStr).lte('fecha', en30.toISOString().split('T')[0]).order('fecha').limit(5)
+      // 5. Exámenes próximos (cantidad de días configurable en Personalizaciones → Alertas)
+      if (!AL.examen_proximo.activa) { setExamensPendientes([]); return }
+      const { data: exams } = await sb.from('examenes').select('id,nombre,fecha,tipo,cursos(nombre)').in('curso_id', cursoIds).gte('fecha', hoyStr).lte('fecha', enDiasLocal(AL.examen_proximo.dias)).order('fecha').limit(5)
       setExamensPendientes(exams || [])
     }
     cargarDatosProf()
-  }, [miProfesora?.id, usuario?.rol])
+  }, [miProfesora?.id, usuario?.rol, AL.examen_proximo.activa, AL.examen_proximo.dias, instituto?.umbral_ausencias])
 
   // Actualizar cuotas pendientes en tiempo real
   useEffect(() => {
@@ -275,7 +279,7 @@ export default function Dashboard() {
   useEffect(() => {
     if (!alumnos.length) return
     cargarAlertas()
-  }, [alumnos.length, usuario?.instituto_id])
+  }, [alumnos.length, usuario?.instituto_id, instituto?.umbral_ausencias])
 
   // Alertas de test: useEffect propio, no depende de alumnos.length
   // Para profesora espera a que miProfesora esté cargada y filtra server-side
@@ -352,12 +356,13 @@ export default function Dashboard() {
 
   // ── Alerta de atraso de planificación por profesora ──────────────────────
   // Cruza planificacion_cursos (fecha_cierre vs hoy) con agenda_eventos tipo
-  // Examen para escalar a "crítico" cuando hay un examen a menos de 14 días
+  // Examen para escalar a "crítico" cuando hay un examen dentro de los días configurados (por defecto 14)
   // y todavía queda contenido sin dictar.
   useEffect(() => {
     if (!usuario?.rol || !['director','coordinadora'].includes(usuario.rol)) return
     if (!cursos.length || !profesoras.length) return
     if (!usuario?.instituto_id) return
+    if (!AL.planificacion_atrasada.activa) { setAlertasPlanificacion([]); return }
     const cargar = async () => {
       const sb = createClient()
       const cursoIds = cursos.map((c: any) => c.id)
@@ -371,7 +376,7 @@ export default function Dashboard() {
           .eq('instituto_id', usuario.instituto_id)
           .eq('tipo', 'Examen')
           .gte('fecha', hoyISOLocal())
-          .lte('fecha', en14DiasLocal()),
+          .lte('fecha', enDiasLocal(AL.planificacion_atrasada.dias_examen_critico)),
       ])
       const unidades = planifRes.data || []
       const examenes = examsRes.data || []
@@ -403,13 +408,13 @@ export default function Dashboard() {
         }
         porProfesora[c.profesora_id].atrasadas += atrasadas
         porProfesora[c.profesora_id].cursos.push(`${c.nombre} (${atrasadas})`)
-        if (atrasadas >= 2 || examenProximo) porProfesora[c.profesora_id].critico = true
+        if (atrasadas >= AL.planificacion_atrasada.unidades_criticas || examenProximo) porProfesora[c.profesora_id].critico = true
       })
 
       setAlertasPlanificacion(Object.values(porProfesora).sort((a, b) => b.atrasadas - a.atrasadas))
     }
     cargar()
-  }, [usuario?.rol, usuario?.instituto_id, cursos.length, profesoras.length])
+  }, [usuario?.rol, usuario?.instituto_id, cursos.length, profesoras.length, AL.planificacion_atrasada.activa, AL.planificacion_atrasada.unidades_criticas, AL.planificacion_atrasada.dias_examen_critico])
 
   const abrirAsistencia = async (curso: any) => {
     const sb = createClient()
@@ -585,7 +590,10 @@ export default function Dashboard() {
   if (usuario?.rol === 'profesora') {
     const clasesHoyProf = cursosHoy.length
     const clasesRegistradas = cursosHoy.filter(c => clasesYaRegistradas.has(c.id)).length
-    const clasesPendientes = clasesHoyProf - clasesRegistradas
+    // Si la opción "solo_iniciadas" está activa, solo cuentan las clases que ya empezaron
+    const minutoAhora = today.getHours() * 60 + today.getMinutes()
+    const yaIniciada = (c: any) => { const [h, m] = (c.hora_inicio || '00:00').split(':').map(Number); return minutoAhora >= h * 60 + m }
+    const clasesPendientes = cursosHoy.filter(c => (!AL.clases_sin_registrar.solo_iniciadas || yaIniciada(c)) && !clasesYaRegistradas.has(c.id)).length
 
     return (
       <div className="fade-in">
@@ -604,7 +612,7 @@ export default function Dashboard() {
         </div>
 
         {/* Estado asistencia del día */}
-        {cursosHoy.length > 0 && (
+        {AL.clases_sin_registrar.activa && cursosHoy.length > 0 && (
           <div style={{padding:'13px 16px',background: clasesPendientes === 0 ? 'var(--greenl)' : 'var(--amberl)',border:`1.5px solid ${clasesPendientes === 0 ? '#a3e0bc' : '#e8d080'}`,borderRadius:'14px',marginBottom:'18px',display:'flex',alignItems:'center',gap:'10px'}}>
             <span style={{fontSize:'18px'}}>{clasesPendientes === 0 ? '✅' : '📋'}</span>
             <div style={{flex:1}}>
@@ -651,7 +659,7 @@ export default function Dashboard() {
         )}
 
         {/* Alumnos con ausencias consecutivas */}
-        {alumnosAusentesProf.length > 0 && (
+        {AL.ausencias.activa && alumnosAusentesProf.length > 0 && (
           <div style={{marginBottom:'20px'}}>
             <SL style={{marginBottom:'10px'}}>Ausencias a seguir</SL>
             {alumnosAusentesProf.map((al: any, i: number) => (
@@ -668,7 +676,7 @@ export default function Dashboard() {
         )}
 
         {/* Alertas de test de unidades — solo para la profesora */}
-        {alertasTest.length > 0 && (
+        {AL.evaluaciones_pendientes.activa && alertasTest.length > 0 && (
           <div style={{marginBottom:'20px'}}>
             <SL style={{marginBottom:'10px'}}>Evaluaciones pendientes</SL>
             {alertasTest.map((a: any) => (
@@ -734,7 +742,7 @@ export default function Dashboard() {
         )}
 
         {/* Cumpleaños próximos de sus alumnos */}
-        {cumpleanos.length > 0 && (
+        {AL.cumpleanos.activa && cumpleanos.length > 0 && (
           <div style={{marginBottom:'20px'}}>
             <SL style={{marginBottom:'10px'}}>Cumpleaños de mis alumnos</SL>
             <div style={{background:'var(--white)',border:'1.5px solid #fce7f3',borderRadius:'16px',overflow:'hidden'}}>
@@ -831,11 +839,20 @@ export default function Dashboard() {
     setResolviendoTest(null)
   }
 
-  // Alertas de test filtradas por rol
-  const alertasTestDocente = alertasTest.filter((a: any) => a.profesora_id === miProfesora?.id)
-  const alertasTestGestion = alertasTest // director, coordinadora y secretaria ven todas
+  // ── Alertas visibles según la configuración (Personalizaciones → Alertas) ──
+  const ausenciasVis = AL.ausencias.activa ? alertasAusencia : []
+  const sinCursoVis = AL.alumnos_sin_curso.activa ? alumnosSinCurso : 0
+  const cuotasVis = AL.cuotas_sin_pago.activa && today.getDate() >= AL.cuotas_sin_pago.dia_desde ? cuotasPendientes : 0
+  const planifVis = AL.planificacion_atrasada.activa ? alertasPlanificacion : []
+  const testVis = AL.evaluaciones_pendientes.activa ? alertasTest : []
+  const cumplesVis = AL.cumpleanos.activa ? cumpleanos.filter((c:any) => c.diasParaCumple <= AL.cumpleanos.dias_anticipacion) : []
+  const totalAlertas = [ausenciasVis.length > 0, sinCursoVis > 0, cuotasVis > 0].filter(Boolean).length + cumplesVis.length + testVis.length + planifVis.length
 
-  const alertasUrgentes = alertasAusencia.length > 0 || alumnosSinCurso > 0 || cuotasPendientes > 0 || cumpleanos.some((c:any) => c.diasParaCumple === 0) || alertasTest.length > 0 || alertasPlanificacion.length > 0
+  // Alertas de test filtradas por rol
+  const alertasTestDocente = testVis.filter((a: any) => a.profesora_id === miProfesora?.id)
+  const alertasTestGestion = testVis // director, coordinadora y secretaria ven todas
+
+  const alertasUrgentes = totalAlertas > 0
 
   return (
     <div className="fade-in">
@@ -853,18 +870,18 @@ export default function Dashboard() {
           <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:'10px'}}>
             <SL>Alertas</SL>
             <span style={{padding:'2px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:700,background:'var(--redl)',color:'var(--red)'}}>
-              {[alertasAusencia.length>0,alumnosSinCurso>0,cuotasPendientes>0].filter(Boolean).length + cumpleanos.filter((c:any)=>c.diasParaCumple===0).length + alertasTest.length + alertasPlanificacion.length} pendiente{[alertasAusencia.length>0,alumnosSinCurso>0,cuotasPendientes>0].filter(Boolean).length + cumpleanos.filter((c:any)=>c.diasParaCumple===0).length + alertasTest.length + alertasPlanificacion.length !== 1 ? 's' : ''}
+              {totalAlertas} pendiente{totalAlertas !== 1 ? 's' : ''}
             </span>
           </div>
           <div style={{display:'flex',flexDirection:'column',gap:'8px'}}>
-            {alertasAusencia.length > 0 && (
+            {ausenciasVis.length > 0 && (
               <GrupoAlerta
                 tipo="red" icono="⚠"
-                resumen={<><strong>{alertasAusencia.length} alumno{alertasAusencia.length!==1?'s':''}</strong> con ausencias consecutivas</>}
+                resumen={<><strong>{ausenciasVis.length} alumno{ausenciasVis.length!==1?'s':''}</strong> con ausencias consecutivas</>}
                 abierto={!!grupoAbierto.ausencias}
                 onToggle={() => toggleGrupo('ausencias')}
               >
-                {(usuario?.rol === 'director' || usuario?.rol === 'secretaria' || usuario?.rol === 'coordinadora') && alertasAusencia.map((al:any, i:number) => (
+                {(usuario?.rol === 'director' || usuario?.rol === 'secretaria' || usuario?.rol === 'coordinadora') && ausenciasVis.map((al:any, i:number) => (
                   <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 14px',background:'var(--white)',border:'1.5px solid #f5c5c5',borderRadius:'14px'}}>
                     <Av color={al.color} nombre={al.nombre} apellido={al.apellido} size={36} />
                     <div style={{flex:1,minWidth:0}}>
@@ -880,21 +897,21 @@ export default function Dashboard() {
                 ))}
               </GrupoAlerta>
             )}
-            {alumnosSinCurso > 0 && (
+            {sinCursoVis > 0 && (
               <Alerta tipo="amber" icono="📋">
-                <strong>{alumnosSinCurso} alumno{alumnosSinCurso!==1?'s':''}</strong> sin curso asignado
+                <strong>{sinCursoVis} alumno{sinCursoVis!==1?'s':''}</strong> sin curso asignado
               </Alerta>
             )}
 
             {/* ── Atraso de planificación — cruzado con fechas de Agenda ── */}
-            {alertasPlanificacion.length > 0 && (
+            {planifVis.length > 0 && (
               <GrupoAlerta
-                tipo={alertasPlanificacion.some((a:any)=>a.critico) ? 'red' : 'amber'} icono="📚"
-                resumen={<><strong>{alertasPlanificacion.length} profesora{alertasPlanificacion.length!==1?'s':''}</strong> con atraso de planificación</>}
+                tipo={planifVis.some((a:any)=>a.critico) ? 'red' : 'amber'} icono="📚"
+                resumen={<><strong>{planifVis.length} profesora{planifVis.length!==1?'s':''}</strong> con atraso de planificación</>}
                 abierto={!!grupoAbierto.planificacion}
                 onToggle={() => toggleGrupo('planificacion')}
               >
-                {alertasPlanificacion.map((a:any, i:number) => (
+                {planifVis.map((a:any, i:number) => (
                   <div key={i} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 14px',background:'var(--white)',border:`1.5px solid ${a.critico?'#f5c5c5':'#e8d080'}`,borderRadius:'14px'}}>
                     <Av color={a.color} nombre={a.nombre} apellido={a.apellido} size={36} />
                     <div style={{flex:1,minWidth:0}}>
@@ -910,15 +927,15 @@ export default function Dashboard() {
                 ))}
               </GrupoAlerta>
             )}
-            {(usuario?.rol === 'director' || usuario?.rol === 'secretaria') && cuotasPendientes > 0 && (
+            {(usuario?.rol === 'director' || usuario?.rol === 'secretaria') && cuotasVis > 0 && (
               <Alerta tipo="amber" icono="💰">
-                <strong>{cuotasPendientes} alumno{cuotasPendientes!==1?'s':''}</strong> sin pago en {mesActual}
+                <strong>{cuotasVis} alumno{cuotasVis!==1?'s':''}</strong> sin pago en {mesActual}
               </Alerta>
             )}
-            {cumpleanos.filter((c:any) => c.diasParaCumple === 0).map((c:any) => (
-              <div key={c.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'11px 14px',background:'var(--redl)',border:'1.5px solid #f5c5c5',borderRadius:'12px',fontSize:'13px',color:'var(--red)'}}>
+            {cumplesVis.map((c:any) => (
+              <div key={c.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'11px 14px',background: c.diasParaCumple === 0 ? 'var(--redl)' : 'var(--amberl)',border: c.diasParaCumple === 0 ? '1.5px solid #f5c5c5' : '1.5px solid #e8d080',borderRadius:'12px',fontSize:'13px',color: c.diasParaCumple === 0 ? 'var(--red)' : 'var(--amber)'}}>
                 <span style={{fontSize:'16px'}}>🎂</span>
-                <div style={{flex:1}}><strong>¡Hoy cumple años!</strong> {c.nombre} {c.apellido}</div>
+                <div style={{flex:1}}>{c.diasParaCumple === 0 ? <strong>¡Hoy cumple años!</strong> : <strong>Cumple en {c.diasParaCumple} día{c.diasParaCumple !== 1 ? 's' : ''}</strong>} {c.nombre} {c.apellido}</div>
                 <button
                   onClick={() => abrirWSCumple(c.es_menor ? c.padre_telefono : c.telefono, c.nombre)}
                   title="Saludar por WhatsApp"

@@ -127,7 +127,7 @@ export const PERMISOS: Record<Rol, string[]> = {
   ],
   coordinadora: [
     'dashboard', 'profesoras', 'alumnos', 'cursos', 'horarios',
-    'reportes', 'perfil', 'agenda', 'atencion',
+    'reportes', 'perfil', 'agenda', 'atencion', 'personalizaciones',
   ],
   secretaria: [
     'dashboard', 'alumnos', 'cursos', 'horarios', 'reportes',
