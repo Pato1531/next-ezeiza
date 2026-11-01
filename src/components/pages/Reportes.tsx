@@ -6,7 +6,9 @@ import { createClient } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth-context'
 
 export default function Reportes() {
-  const { usuario } = useAuth()
+  const { usuario, instituto } = useAuth()
+  const umbralRef = useRef<number>(instituto?.umbral_ausencias ?? 2)
+  umbralRef.current = instituto?.umbral_ausencias ?? 2
   const esSecretaria = usuario?.rol === 'secretaria'
   const esCoordinadora = usuario?.rol === 'coordinadora'
   const esDirector = usuario?.rol === 'director'
@@ -237,7 +239,7 @@ export default function Reportes() {
             fechasAusentes.forEach(f => ausentesMap[alumno_id].ausencias.push({ fecha: f, curso: cursoNombre, curso_id }))
           }
 
-          if (consecutivas >= 2 && !alertasMap[alumno_id]) {
+          if (consecutivas >= umbralRef.current && !alertasMap[alumno_id]) {
             alertasMap[alumno_id] = {
               nombre: datos.nombre, apellido: datos.apellido,
               color: datos.color, consecutivas,
@@ -268,11 +270,11 @@ export default function Reportes() {
     </style></head><body>
     <div class="hd"><div class="logo"><span>Next</span> Ezeiza</div><div style="font-size:12px;color:#9b8eaa">${new Date().toLocaleDateString('es-AR',{day:'numeric',month:'long',year:'numeric'})}</div></div>
     <h1>Reporte de Ausencias</h1>
-    ${alertas2Cons.length>0?`<div class="warn">⚠ <strong>${alertas2Cons.length} alumno${alertas2Cons.length!==1?'s':''}</strong> con 2 o más ausencias consecutivas</div>`:''}
+    ${alertas2Cons.length>0?`<div class="warn">⚠ <strong>${alertas2Cons.length} alumno${alertas2Cons.length!==1?'s':''}</strong> con ${umbralRef.current} o más ausencias consecutivas</div>`:''}
     <table><tr><th>Alumno</th><th>Total ausencias</th><th>Alerta</th></tr>
     ${ausentes.filter(a=>a.ausencias.length>0).sort((a,b)=>b.ausencias.length-a.ausencias.length).map(a=>{
       const alerta=alertas2Cons.find(al=>al.alumno_id===a.alumno_id)
-      return `<tr><td>${a.nombre} ${a.apellido}</td><td>${a.ausencias.length}</td><td>${alerta?'<span class="alerta">⚠ 2+ consecutivas</span>':'—'}</td></tr>`
+      return `<tr><td>${a.nombre} ${a.apellido}</td><td>${a.ausencias.length}</td><td>${alerta?`<span class="alerta">⚠ ${umbralRef.current}+ consecutivas</span>`:'—'}</td></tr>`
     }).join('')}
     </table><script>window.onload=()=>window.print()<\/script></body></html>`
     const _rb = new Blob([_rhtml], {type:'text/html;charset=utf-8'})
@@ -498,7 +500,7 @@ export default function Reportes() {
         <div style={{background:'var(--redl)',border:'1.5px solid #f5c5c5',borderRadius:'14px',padding:'14px 16px',marginBottom:'16px'}}>
           <div style={{display:'flex',alignItems:'center',gap:'8px',marginBottom:'10px'}}>
             <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="var(--red)" strokeWidth="2"><circle cx="10" cy="10" r="8"/><path d="M10 6v4M10 14h.01"/></svg>
-            <span style={{fontSize:'14px',fontWeight:700,color:'var(--red)'}}>⚠ {alertas2Cons.length} alumno{alertas2Cons.length!==1?'s':''} con 2 o más ausencias consecutivas</span>
+            <span style={{fontSize:'14px',fontWeight:700,color:'var(--red)'}}>⚠ {alertas2Cons.length} alumno{alertas2Cons.length!==1?'s':''} con {umbralRef.current} o más ausencias consecutivas</span>
           </div>
           {alertas2Cons.map((al:any,i:number) => {
             const est = alertaEstados[al.alumno_id] || { enviado: false, obs: '' }
@@ -555,7 +557,7 @@ export default function Reportes() {
             ['NEXT EZEIZA — REPORTE DE AUSENCIAS'],
             ['Generado:', new Date().toLocaleDateString('es-AR')],
             [''],
-            ['Alumno','Total ausencias','Alerta 2 consecutivas'],
+            ['Alumno','Total ausencias',`Alerta ${umbralRef.current} consecutivas`],
             ...ausentes.filter(a=>a.ausencias.length>0).sort((a:any,b:any)=>b.ausencias.length-a.ausencias.length).map((a:any) => {
               const alerta = alertas2Cons.find(al=>al.alumno_id===a.alumno_id)
               return [`${a.nombre} ${a.apellido}`, a.ausencias.length, alerta?'⚠ SÍ':'No']
@@ -588,7 +590,7 @@ export default function Reportes() {
               </div>
               {tieneAlerta && (
                 <span style={{padding:'3px 10px',borderRadius:'20px',fontSize:'11px',fontWeight:600,background:'var(--redl)',color:'var(--red)',border:'1px solid #f5c5c5'}}>
-                  ⚠ 2+ consecutivas
+                  ⚠ {umbralRef.current}+ consecutivas
                 </span>
               )}
             </div>

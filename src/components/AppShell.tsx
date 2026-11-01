@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, lazy, Suspense } from 'react'
 import { useAuth } from '@/lib/auth-context'
+import { aplicarColorMarca } from '@/lib/brand'
 import { createClient } from '@/lib/supabase'
 import { ToastProvider, showToast } from './Toast'
 import { Skeleton } from './Skeleton'
@@ -15,6 +16,7 @@ import Reportes from './pages/Reportes'
 import Agenda from './pages/Agenda'
 import Permisos from './pages/Permisos'
 import Perfil from './pages/Perfil'
+import Personalizaciones from './pages/Personalizaciones'
 
 const Actividad = lazy(() => import('./pages/Actividad').catch(() => ({ default: () => <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Módulo no disponible</div> })))
 const AtencionCliente = lazy(() => import('./pages/AtencionCliente').catch(() => ({ default: () => <div style={{padding:'40px',textAlign:'center',color:'var(--text3)'}}>Módulo no disponible</div> })))
@@ -31,6 +33,7 @@ const ALL_NAV = [
   { id: 'permisos',    label: 'Permisos',     icon: 'M10 2a4 4 0 014 4v1h2a2 2 0 012 2v7a2 2 0 01-2 2H4a2 2 0 01-2-2V9a2 2 0 012-2h2V6a4 4 0 014-4zM10 4a2 2 0 00-2 2v1h4V6a2 2 0 00-2-2z' },
   { id: 'agenda',      label: 'Agenda',       icon: 'M3 4h16v16H3zM16 2v4M8 2v4M3 10h16' },
   { id: 'pagos',       label: 'Pagos',        icon: 'M12 2H4a2 2 0 00-2 2v12a2 2 0 002 2h12a2 2 0 002-2V8l-6-6zM14 2v6h6M10 12v4M8 14h4' },
+  { id: 'personalizaciones', label: 'Personalizaciones', icon: 'M10 2a8 8 0 100 16c1.1 0 1.6-.9 1.6-1.6 0-.4-.2-.8-.4-1.1-.2-.3-.4-.7-.4-1.1 0-.9.7-1.6 1.6-1.6H14a4 4 0 004-4c0-4.4-3.6-8.6-8-8.6z' },
   { id: 'actividad',   label: 'Actividad',    icon: 'M10 3a7 7 0 100 14A7 7 0 0010 3zM10 7v3l2 2M3 3l14 14' },
   { id: 'atencion',    label: 'Atención',     icon: 'M18 8a6 6 0 01-6 6H8l-4 4V8a6 6 0 016-6h2a6 6 0 016 6zM9 10h.01M12 10h.01M15 10h.01' },
   { id: 'ejecutivo',   label: 'Cierre',       icon: 'M2 2h16v16H2zM6 10h4M6 14h8M10 2v4M6 6h2M12 6h2M4 15l4-4 3 3 5-6' },
@@ -47,6 +50,7 @@ const PAGES: Record<string, React.ComponentType> = {
   permisos: Permisos,
   perfil: Perfil,
   agenda: Agenda,
+  personalizaciones: Personalizaciones,
   actividad: Actividad,
   atencion: AtencionCliente,
   ejecutivo: DashboardEjecutivo,
@@ -58,6 +62,7 @@ const PAGE_TITLES: Record<string, string> = {
   dashboard: 'Inicio', alumnos: 'Alumnos', cursos: 'Cursos',
   horarios: 'Horarios', profesoras: 'Colaboradores', reportes: 'Reportes',
   permisos: 'Permisos', perfil: 'Mi perfil', agenda: 'Agenda',
+  personalizaciones: 'Personalizaciones',
   actividad: 'Actividad',
   atencion: 'Atención al Cliente', ejecutivo: 'Dashboard Ejecutivo', cuotas: 'Cuotas por Curso',
   pagos: 'Pagos',
@@ -231,6 +236,9 @@ function NavEditor({ allAllowed, navOrdered, MAX_NAV, saveNavCustom, onClose }: 
 export default function AppShell() {
   // ── instituto agregado al destructuring para leer el nombre desde DB ─────
   const { usuario, instituto, puedeVer } = useAuth()
+
+  // Color de marca del instituto: se aplica a toda la app al cargar y al cambiarlo
+  useEffect(() => { aplicarColorMarca(instituto?.color_primario) }, [instituto?.color_primario])
 
   const [page, setPage] = useState<string>('dashboard')
   const [pageReady, setPageReady] = useState(false)
@@ -541,6 +549,7 @@ export default function AppShell() {
         {mounted.has('permisos')    && <div style={{ padding: '16px 16px 24px', display: page === 'permisos'    ? 'block' : 'none' }}><PanelErrorBoundary name="Permisos">   <Permisos />          </PanelErrorBoundary></div>}
         {mounted.has('perfil')      && <div style={{ padding: '16px 16px 24px', display: page === 'perfil'      ? 'block' : 'none' }}><PanelErrorBoundary name="Perfil">     <Perfil />            </PanelErrorBoundary></div>}
         {mounted.has('agenda')      && <div style={{ padding: '16px 16px 24px', display: page === 'agenda'      ? 'block' : 'none' }}><PanelErrorBoundary name="Agenda">     <Agenda />            </PanelErrorBoundary></div>}
+        {mounted.has('personalizaciones') && <div style={{ padding: '16px 16px 24px', display: page === 'personalizaciones' ? 'block' : 'none' }}><PanelErrorBoundary name="Personalizaciones"><Personalizaciones /></PanelErrorBoundary></div>}
         {mounted.has('actividad')   && <div style={{ padding: '16px 16px 24px', display: page === 'actividad'   ? 'block' : 'none' }}><Suspense fallback={<Skeleton padding="32px 16px" />}><Actividad /></Suspense></div>}
         {mounted.has('atencion')    && <div style={{ padding: '16px 16px 24px', display: page === 'atencion'    ? 'block' : 'none' }}><Suspense fallback={<Skeleton padding="32px 16px" />}><AtencionCliente /></Suspense></div>}
         {mounted.has('ejecutivo')   && <div style={{ padding: '16px 16px 24px', display: page === 'ejecutivo'   ? 'block' : 'none' }}><Suspense fallback={<Skeleton padding="32px 16px" />}><DashboardEjecutivo /></Suspense></div>}

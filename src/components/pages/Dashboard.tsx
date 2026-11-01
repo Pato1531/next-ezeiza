@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import { useAlumnos, useProfesoras, useCursos, useMiProfesora, store } from '@/lib/hooks'
 import { createClient } from '@/lib/supabase'
@@ -59,7 +59,9 @@ const TIPOS_AGENDA = [
 ]
 
 export default function Dashboard() {
-  const { usuario, puedeVer } = useAuth()
+  const { usuario, puedeVer, instituto } = useAuth()
+  const umbralRef = useRef<number>(instituto?.umbral_ausencias ?? 2)
+  umbralRef.current = instituto?.umbral_ausencias ?? 2
   const { alumnos, loading: loadA } = useAlumnos()
   const { profesoras } = useProfesoras()
   const { cursos } = useCursos()
@@ -161,7 +163,7 @@ export default function Dashboard() {
             if (estado === 'A') cons++
             else if (estado === 'P' || estado === 'T') break
           }
-          if (cons >= 2 && !alertasProf.find(a => a.id === alumno_id)) {
+          if (cons >= umbralRef.current && !alertasProf.find(a => a.id === alumno_id)) {
             alertasProf.push({ id: alumno_id, consecutivas: cons })
           }
         })
@@ -514,7 +516,7 @@ export default function Dashboard() {
             else if (estado === 'P' || estado === 'T') break
             // si no hay registro para esa clase, no interrumpir (clase sin datos)
           }
-          if (consecutivas >= 2 && !alertasMap[alumno_id]) {
+          if (consecutivas >= umbralRef.current && !alertasMap[alumno_id]) {
             const al = alumnos.find(a => a.id === alumno_id)
             const cur = cursos.find(c => c.id === curso_id)
             if (al) {

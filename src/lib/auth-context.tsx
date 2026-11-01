@@ -51,6 +51,7 @@ interface Instituto {
   nombre: string
   slug: string
   color_primario: string
+  umbral_ausencias?: number
 }
 
 interface AuthContextType {
