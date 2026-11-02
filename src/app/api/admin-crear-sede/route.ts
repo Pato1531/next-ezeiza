@@ -25,7 +25,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
-    const { instituto_nombre, director_nombre, director_email, director_password } = await req.json()
+    const { instituto_nombre, instituto_ciudad, instituto_plan, director_nombre, director_email, director_password } = await req.json()
+    const PLANES_ADMIN = ['standard', 'premium']
+    const plan = PLANES_ADMIN.includes(instituto_plan) ? instituto_plan : 'standard'
+    const ciudad = typeof instituto_ciudad === 'string' && instituto_ciudad.trim() ? instituto_ciudad.trim().slice(0, 60) : null
 
     if (!instituto_nombre?.trim()) return NextResponse.json({ error: 'Nombre del instituto obligatorio' }, { status: 400 })
     if (!director_nombre?.trim()) return NextResponse.json({ error: 'Nombre del director obligatorio' }, { status: 400 })
@@ -43,7 +46,7 @@ export async function POST(req: NextRequest) {
     // 2. Crear instituto
     const { data: instituto, error: errInst } = await supabase
       .from('institutos')
-      .insert({ nombre: instituto_nombre.trim(), slug, plan: 'standard', activo: true })
+      .insert({ nombre: instituto_nombre.trim(), slug, plan, ciudad, activo: true })
       .select().single()
 
     if (errInst) {

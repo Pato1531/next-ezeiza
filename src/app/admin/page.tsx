@@ -78,6 +78,8 @@ export default function AdminPage() {
         headers: { 'Content-Type': 'application/json', 'x-admin-key': clave },
         body: JSON.stringify({
           instituto_nombre: instNombre.trim(),
+          instituto_ciudad: instCiudad.trim(),
+          instituto_plan: instPlan,
           director_nombre: `${dirNombre.trim()} ${dirApellido.trim()}`,
           director_email: dirEmail.trim().toLowerCase(),
           director_password: dirPass,
@@ -264,7 +266,6 @@ export default function AdminPage() {
             <div>
               <div style={{ fontSize: '11px', fontWeight: 600, color: '#9b8eaa', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '4px' }}>Plan</div>
               <select style={SEL} value={instPlan} onChange={e => setInstPlan(e.target.value)}>
-                <option value="basico">Básico</option>
                 <option value="standard">Standard</option>
                 <option value="premium">Premium</option>
               </select>
