@@ -19,7 +19,8 @@ export function createClient() {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
-        detectSessionInUrl: false,
+        // true: el cliente lee los tokens del link de invitación / recuperación
+        detectSessionInUrl: true,
       },
     })
   }

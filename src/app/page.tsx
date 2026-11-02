@@ -4,13 +4,21 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '@/lib/auth-context'
 import LoginPage from '@/components/LoginPage'
 import AppShell from '@/components/AppShell'
+import CrearClave from '@/components/CrearClave'
 
 export default function Home() {
   const { usuario, loading } = useAuth()
   const [mostrarApp, setMostrarApp] = useState(false)
   const [hadSession, setHadSession] = useState(false)
   const [timedOut, setTimedOut] = useState(false)
+  // Link de invitación o de recuperación: pide elegir contraseña antes de entrar
+  const [flujoClave, setFlujoClave] = useState<'invite' | 'recovery' | null>(null)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  useEffect(() => {
+    const tipo = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('type')
+    if (tipo === 'invite' || tipo === 'recovery') setFlujoClave(tipo)
+  }, [])
 
   // Leer localStorage solo en el cliente — NUNCA en el initializer de useState
   useEffect(() => {
@@ -34,6 +42,10 @@ export default function Home() {
     timerRef.current = setTimeout(() => setTimedOut(true), 7000)
     return () => { if (timerRef.current) clearTimeout(timerRef.current) }
   }, [loading, mostrarApp])
+
+  if (flujoClave) {
+    return <CrearClave tipo={flujoClave} />
+  }
 
   if (loading && !mostrarApp) {
     return <Spinner timedOut={timedOut} />
