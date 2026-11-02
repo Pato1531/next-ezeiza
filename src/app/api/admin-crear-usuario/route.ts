@@ -12,6 +12,19 @@ function sb() {
 
 // getInstitutoId imported from @/lib/server-utils
 
+// URL de la sede desde la que se hace el alta (todas las sedes comparten proyecto de Supabase,
+// así que el link de la invitación tiene que apuntar a la app de cada instituto).
+// Solo se aceptan dominios propios de la app (*.vercel.app) y localhost; si no, se usa la Site URL.
+function urlSede(req: NextRequest): string | undefined {
+  const host = (req.headers.get('x-forwarded-host') || req.headers.get('host') || '').split(',')[0].trim().toLowerCase()
+  if (!host) return undefined
+  const esLocal = /^localhost(:\d+)?$/.test(host)
+  const esVercel = /^[a-z0-9-]+\.vercel\.app$/.test(host)
+  if (!esLocal && !esVercel) return undefined
+  const proto = esLocal ? 'http' : 'https'
+  return `${proto}://${host}/`
+}
+
 // POST /api/admin-crear-usuario
 // Crea un usuario en Supabase Auth + tabla usuarios + tabla profesoras (si rol === profesora)
 // Solo puede ser llamado por el director (validado por instituto_id en header)
@@ -44,10 +57,12 @@ export async function POST(req: NextRequest) {
 
     // 1. Invitar usuario por email real — Supabase envía el link de activación
     // El usuario elige su propia contraseña al activar la cuenta
+    const redirectTo = urlSede(req)
     const { data: authData, error: authUserError } = await supabase.auth.admin.inviteUserByEmail(
       email,
       {
         data: { nombre, rol }, // metadata accesible en el trigger de onboarding
+        ...(redirectTo ? { redirectTo } : {}),
       }
     )
 
