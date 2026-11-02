@@ -84,7 +84,7 @@ export default function Perfil() {
 
       {/* ── Cabecera ── */}
       <div style={s.heroCard}>
-        <div style={{ ...s.avatar, background: usuario.color || '#652f8d' }}>
+        <div style={{ ...s.avatar, background: usuario.color || 'var(--v)' }}>
           {usuario.initials || usuario.nombre.slice(0, 2).toUpperCase()}
         </div>
         <div>

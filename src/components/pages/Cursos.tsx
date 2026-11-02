@@ -815,7 +815,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, puedeEditarPl
       .logo{font-size:20px;font-weight:800}.logo span{color:${marca().color}}
       h1{color:${marca().color};font-size:18px;margin:0 0 4px}
       .alumno-box{background:#f9f5fd;border-radius:12px;padding:14px;margin-bottom:18px;display:flex;gap:14px;align-items:center}
-      .av{width:48px;height:48px;border-radius:14px;background:${a.color||'#652f8d'};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:white;flex-shrink:0}
+      .av{width:48px;height:48px;border-radius:14px;background:${a.color||marca().color};display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:800;color:white;flex-shrink:0}
       .kpis{display:flex;gap:10px;margin-bottom:18px}
       .kpi{flex:1;background:#f9f5fd;border-radius:10px;padding:12px;text-align:center}
       .kpi-val{font-size:22px;font-weight:800;color:${marca().color}}
@@ -1596,7 +1596,7 @@ function CursoDetalle({ curso:c, profesoras, alumnos, puedeEditar, puedeEditarPl
               <span style={{fontSize:'16px',flexShrink:0}}>📚</span>
               <div style={{fontSize:'13.5px',color:'var(--text)',lineHeight:1.5}}>
                 {tonoRecordatorio === 'inicio' ? (
-                  <>Según la planificación, <strong style={{color:'#652f8d'}}>{unidadSugerida?.titulo}</strong> está en curso. Recordá cerrar el contenido antes del <strong>{fmtFecha(unidadSugerida?.fecha_cierre)}</strong>.</>
+                  <>Según la planificación, <strong style={{color:'var(--v)'}}>{unidadSugerida?.titulo}</strong> está en curso. Recordá cerrar el contenido antes del <strong>{fmtFecha(unidadSugerida?.fecha_cierre)}</strong>.</>
                 ) : (
                   <><strong style={{color:'var(--amber)'}}>{unidadSugerida?.titulo}</strong> cierra en <strong>{diasParaCierre} día{diasParaCierre!==1?'s':''}</strong> ({fmtFecha(unidadSugerida?.fecha_cierre)}) y todavía no está marcada como dictada.</>
                 )}
@@ -2616,10 +2616,10 @@ function PlanificacionTab({ cursoId, puedeEditar, clasesDictadas, profesoraId, c
         <div style={{background:'var(--white)',border:'1.5px solid var(--border)',borderRadius:'12px',padding:'12px 16px',marginBottom:'14px'}}>
           <div style={{display:'flex',justifyContent:'space-between',fontSize:'12px',color:'var(--text2)',marginBottom:'7px'}}>
             <span style={{fontWeight:600}}>Progreso del año</span>
-            <span style={{color:'#652f8d',fontWeight:700}}>{pct}% completado</span>
+            <span style={{color:'var(--v)',fontWeight:700}}>{pct}% completado</span>
           </div>
           <div style={{height:'8px',background:'var(--border)',borderRadius:'10px',overflow:'hidden'}}>
-            <div style={{height:'100%',width:`${pct}%`,background:'#652f8d',borderRadius:'10px',transition:'width .4s ease'}} />
+            <div style={{height:'100%',width:`${pct}%`,background:'var(--v)',borderRadius:'10px',transition:'width .4s ease'}} />
           </div>
           {clasesDictadas > 0 && (
             <div style={{fontSize:'11px',color:'var(--text3)',marginTop:'6px'}}>

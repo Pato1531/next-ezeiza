@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logoImgHtml } from '@/lib/logo-doc'
 import { createClient } from '@supabase/supabase-js'
 
 function getSupabase() {
@@ -23,7 +24,7 @@ export async function GET(
         telefono, email, cuota_mensual, matricula, es_menor,
         padre_nombre, padre_apellido, padre_dni, padre_telefono, padre_email,
         instituto_id,
-        institutos ( nombre, ciudad, color_primario, firma_director_url )
+        institutos ( nombre, ciudad, color_primario, firma_director_url, logo_url )
       `)
       .eq('id', params.id)
       .single()
@@ -165,7 +166,7 @@ export async function GET(
 <body>
   <div class="wrap">
     <div class="hdr">
-      <div class="logo">${nombrePrimera}${nombreResto ? ` <span>${nombreResto}</span>` : ''}</div>
+      ${logoImgHtml(inst?.logo_url) || `<div class="logo">${nombrePrimera}${nombreResto ? ` <span>${nombreResto}</span>` : ''}</div>`}
       <div class="rec-num">Comprobante #${num} &middot; ${fechaEmision}</div>
     </div>
 

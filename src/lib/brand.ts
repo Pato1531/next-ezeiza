@@ -1,3 +1,5 @@
+import { logoImgHtml } from './logo-doc'
+
 // Color de marca del instituto.
 // A partir de un color base se derivan los tonos de la paleta (variables CSS --v, --v2, --v3, --vl, --vll).
 
@@ -104,8 +106,12 @@ export function setMarca(inst: any) {
       : null,
   }
   aplicarColorMarca(_marca.color)
+  if (typeof document !== 'undefined') {
+    document.title = `${_marca.nombre} — Panel de gestión`
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', _marca.color)
+  }
 }
 
 export function marca() {
-  return { ..._marca, logoHtml: logoHtmlDe(_marca.nombre) }
+  return { ..._marca, logoHtml: logoImgHtml(_marca.logoUrl) ?? logoHtmlDe(_marca.nombre) }
 }

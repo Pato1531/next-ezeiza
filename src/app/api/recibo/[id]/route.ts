@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logoImgHtml } from '@/lib/logo-doc'
 import { createClient } from '@supabase/supabase-js'
 import { verificarAuth } from '@/lib/server-utils'
 
@@ -25,7 +26,7 @@ export async function GET(
         alumnos (
           nombre, apellido, dni, nivel,
           cuota_mensual, padre_nombre, es_menor,
-          institutos ( nombre, ciudad )
+          institutos ( nombre, ciudad, color_primario, logo_url )
         )
       `)
       .eq('id', params.id)
@@ -40,6 +41,7 @@ export async function GET(
 
     // ── Datos del instituto — dinámico para cualquier sede ───────────────────
     const institutoNombre    = inst?.nombre || 'EduGest'
+    const colorPrimario      = inst?.color_primario || '#652f8d'
     const ciudad             = inst?.ciudad || 'Buenos Aires'
     const institutoSubtitulo = inst?.nombre
       ? `${inst.nombre} English Institute · ${ciudad}`
@@ -142,19 +144,19 @@ export async function GET(
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: Arial, Helvetica, sans-serif; background: #f5f0fa; min-height: 100vh; display: flex; align-items: flex-start; justify-content: center; padding: 24px 16px; }
     .wrap { width: 100%; max-width: 420px; background: white; border-radius: 20px; overflow: hidden; box-shadow: 0 8px 32px rgba(101,47,141,.15); }
-    .hdr { background: #652f8d; padding: 24px; color: white; }
+    .hdr { background: ${colorPrimario}; padding: 24px; color: white; }
     .logo { font-size: 20px; font-weight: 900; }
     .logo span { opacity: .65; font-weight: 400; }
     .rec-num { font-size: 12px; opacity: .65; margin-top: 4px; }
     .monto-sec { background: #f2e8f9; padding: 20px 24px; border-bottom: 2px dashed #d4a8e8; }
     .monto-lab { font-size: 11px; color: #9b8eaa; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; margin-bottom: 8px; }
-    .monto { font-size: 44px; font-weight: 900; color: #652f8d; letter-spacing: -2px; line-height: 1; }
+    .monto { font-size: 44px; font-weight: 900; color: ${colorPrimario}; letter-spacing: -2px; line-height: 1; }
     .monto-mes { font-size: 13px; color: #9b8eaa; margin-top: 6px; }
     .detalle-pagos { padding: 12px 24px 0; }
     .linea-pago { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px dashed #e8dff2; }
     .linea-pago:last-child { border-bottom: none; }
     .linea-label { font-size: 13px; color: #5a4d6a; }
-    .linea-monto { font-size: 14px; font-weight: 700; color: #652f8d; }
+    .linea-monto { font-size: 14px; font-weight: 700; color: ${colorPrimario}; }
     .badge-matricula { font-size: 10px; background: #e0f0f7; color: #1a6b8a; padding: 2px 8px; border-radius: 10px; font-weight: 700; margin-left: 6px; }
     .body { padding: 16px 20px 4px; }
     .fila { display: flex; justify-content: space-between; align-items: center; padding: 11px 0; border-bottom: 1px solid #f0edf5; }
@@ -162,7 +164,7 @@ export async function GET(
     .fila-lab { font-size: 11px; color: #9b8eaa; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
     .fila-val { font-size: 14px; color: #1a1020; font-weight: 600; text-align: right; max-width: 60%; }
     .badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; }
-    .print-btn { display: block; width: calc(100% - 40px); margin: 16px 20px; padding: 14px; background: #652f8d; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: Arial; }
+    .print-btn { display: block; width: calc(100% - 40px); margin: 16px 20px; padding: 14px; background: ${colorPrimario}; color: white; border: none; border-radius: 12px; font-size: 15px; font-weight: 700; cursor: pointer; font-family: Arial; }
     .footer { background: #faf7fd; padding: 16px 20px; text-align: center; font-size: 12px; color: #9b8eaa; border-top: 1px solid #f0edf5; }
     @media print { body { background: white; padding: 0; } .wrap { box-shadow: none; border-radius: 0; } .print-btn { display: none; } }
   </style>
@@ -170,7 +172,7 @@ export async function GET(
 <body>
   <div class="wrap">
     <div class="hdr">
-      <div class="logo">${nombrePrimera}${nombreResto ? ` <span>${nombreResto}</span>` : ''}</div>
+      ${logoImgHtml(inst?.logo_url) || `<div class="logo">${nombrePrimera}${nombreResto ? ` <span>${nombreResto}</span>` : ''}</div>`}
       <div class="rec-num">Comprobante #${num} &middot; ${fecha}</div>
     </div>
     <div class="monto-sec">

@@ -186,7 +186,7 @@ export default function Reportes() {
           alumnosDatos[ca.alumno_id] = {
             nombre: ca.alumnos.nombre || '—',
             apellido: ca.alumnos.apellido || '',
-            color: ca.alumnos.color || '#652f8d',
+            color: ca.alumnos.color || 'var(--v)',
           }
         }
       })
@@ -809,7 +809,7 @@ export default function Reportes() {
                 {altasDelMes.map((a:any, i:number) => (
                   <div key={i} style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'9px 0',borderBottom:'1px solid var(--border)'}}>
                     <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
-                      <div style={{width:32,height:32,borderRadius:'9px',background:a.color||'#652f8d',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}}>
+                      <div style={{width:32,height:32,borderRadius:'9px',background:a.color||'var(--v)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}}>
                         {a.nombre?.[0]}{a.apellido?.[0]}
                       </div>
                       <div>

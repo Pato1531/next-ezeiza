@@ -907,7 +907,7 @@ export default function Pagos() {
                       <div key={p.id} style={{ padding:'12px 16px', borderBottom: i < pagosAgrupados.length - 1 ? '1px solid var(--border)' : 'none' }}>
                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                           <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
-                            <div style={{ width:32, height:32, borderRadius:8, background:p.alumnos?.color || '#652f8d', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, color:'#fff', flexShrink:0 }}>
+                            <div style={{ width:32, height:32, borderRadius:8, background:p.alumnos?.color || 'var(--v)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, color:'#fff', flexShrink:0 }}>
                               {p.alumnos?.nombre?.[0]}{p.alumnos?.apellido?.[0]}
                             </div>
                             <div>
@@ -1077,7 +1077,7 @@ export default function Pagos() {
                     return (
                       <div key={a.id} style={{ padding:'12px 16px', borderBottom: i < deudores.length - 1 ? '1px solid var(--border)' : 'none', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
-                          <div style={{ width:32, height:32, borderRadius:8, background:a.color || '#652f8d', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, color:'#fff', flexShrink:0 }}>
+                          <div style={{ width:32, height:32, borderRadius:8, background:a.color || 'var(--v)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, color:'#fff', flexShrink:0 }}>
                             {a.nombre?.[0]}{a.apellido?.[0]}
                           </div>
                           <div>

@@ -245,7 +245,7 @@ export default function CuotasPorCurso() {
                       style={{width:16,height:16,cursor:'pointer'}}
                     />
                     <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
-                      <div style={{width:32,height:32,borderRadius:'10px',background:a.color||'#652f8d',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}}>
+                      <div style={{width:32,height:32,borderRadius:'10px',background:a.color||'var(--v)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}}>
                         {a.nombre?.[0]}{a.apellido?.[0]}
                       </div>
                       <div>

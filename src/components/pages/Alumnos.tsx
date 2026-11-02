@@ -1813,17 +1813,17 @@ function AlumnoDetalle({ alumno:a, puedeVerPagos, puedeEditar, tab, setTab, onVo
     const num = Math.floor(Math.random()*900000)+100000
     const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Recibo ${a.nombre} ${a.apellido}</title>
     <style>body{font-family:Arial,sans-serif;padding:0;margin:0;background:#f5f0fa}.wrap{max-width:400px;margin:20px auto;background:white;border-radius:20px;overflow:hidden;box-shadow:0 8px 32px rgba(101,47,141,.15)}.hdr{background:${marca().color};padding:24px;color:white}.logo{font-size:20px;font-weight:900}.logo span{opacity:.7;font-weight:400}.rec-num{font-size:12px;opacity:.7;margin-top:2px}.monto-sec{background:#f2e8f9;padding:20px;text-align:center;border-bottom:2px dashed #d4a8e8}.monto-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px}.monto{font-size:44px;font-weight:900;color:${marca().color};letter-spacing:-2px}.monto-mes{font-size:13px;color:#9b8eaa;margin-top:4px}.body{padding:20px}.fila{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0edf5}.fila:last-child{border-bottom:none}.fila-lab{font-size:11px;color:#9b8eaa;font-weight:700;text-transform:uppercase;letter-spacing:.04em}.fila-val{font-size:13px;color:#1a1020;font-weight:700;text-align:right;max-width:60%}.badge{background:#e6f4ec;color:#2d7a4f;padding:3px 10px;border-radius:20px;font-size:11px;font-weight:700}.footer{background:#faf7fd;padding:14px 20px;text-align:center;font-size:11px;color:#9b8eaa}@media print{body{background:white}.wrap{box-shadow:none;margin:0;border-radius:0}}</style></head><body>
-    <div class="wrap"><div class="hdr"><div class="logo">${a.instituto_nombre || 'Instituto'}</div><div class="rec-num">Comprobante #${num} · ${fecha}</div></div>
+    <div class="wrap"><div class="hdr"><div class="logo">${marca().logoHtml}</div><div class="rec-num">Comprobante #${num} · ${fecha}</div></div>
     <div class="monto-sec"><div class="monto-lab">Total abonado</div><div class="monto">$${monto}</div><div class="monto-mes">Cuota ${p.mes} ${p.anio}</div></div>
     <div class="body"><div class="fila"><div class="fila-lab">Alumno</div><div class="fila-val">${a.nombre} ${a.apellido}</div></div><div class="fila"><div class="fila-lab">Método</div><div class="fila-val">${p.metodo||'Efectivo'}</div></div><div class="fila"><div class="fila-lab">Fecha</div><div class="fila-val">${fecha}</div></div><div class="fila"><div class="fila-lab">Estado</div><div class="fila-val"><span class="badge">✓ Pagado</span></div></div></div>
-    <div class="footer">${a.instituto_nombre || 'Instituto de Inglés'}</div></div>
+    <div class="footer">${marca().nombre}</div></div>
     <script>setTimeout(function(){window.print()},400)</script></body></html>`
     const blob = new Blob([html], {type:'text/html;charset=utf-8'})
     const url = URL.createObjectURL(blob)
     window.open(url, '_blank')
     setTimeout(() => URL.revokeObjectURL(url), 15000)
     if (tel) {
-      const msgWS = `✅ *Recibo de pago — ${a.instituto_nombre || 'Instituto de Inglés'}*\n\nHola ${contacto}! Confirmamos el pago de la cuota de *${p.mes} ${p.anio}* de *${a.nombre} ${a.apellido}*.\n\n💰 Monto: *$${monto}*\n📅 Fecha: ${fecha}\n💳 Método: ${p.metodo||'Efectivo'}\n\n¡Gracias! 🙌`
+      const msgWS = renderPlantilla('recibo_sin_link', { contacto, alumno: `${a.nombre} ${a.apellido}`, periodo: `${p.mes} ${p.anio}`, monto, fecha, metodo: p.metodo || 'Efectivo' })
       setUltimoPago({ tel, msg: msgWS, urlRecibo: null })
       setModalRecibo(true)
     }

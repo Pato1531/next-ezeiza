@@ -8,7 +8,7 @@ const ROLE_LABELS: Record<string,string> = {
   director:'Director', coordinadora:'Coordinadora', secretaria:'Secretaria', profesora:'Profesora'
 }
 const ROL_COL: Record<string,{bg:string,color:string}> = {
-  director:     {bg:'#f2e8f9',color:'#652f8d'},
+  director:     {bg:'var(--vl)',color:'var(--v)'},
   coordinadora: {bg:'#E0F0F7',color:'#1a6b8a'},
   secretaria:   {bg:'#E0F0F7',color:'#1a6b8a'},
   profesora:    {bg:'#f1eef8',color:'#5a4d6a'},
@@ -28,6 +28,7 @@ const TODOS_MODULOS = [
   {id:'cuotas',     label:'Cuotas por curso',  desc:'Actualización masiva de cuotas'},
   {id:'actividad',  label:'Actividad',         desc:'Auditoría de acciones del sistema'},
   {id:'permisos',   label:'Permisos',          desc:'Gestión de usuarios y accesos'},
+  {id:'personalizaciones', label:'Personalizaciones', desc:'Identidad, alertas, feriados y plantillas de WhatsApp'},
   {id:'perfil',     label:'Perfil',            desc:'Datos personales y contraseña'},
 ]
 
@@ -314,7 +315,7 @@ export default function Permisos() {
                     }}
                   >
                     {/* Avatar */}
-                    <div style={{width:36,height:36,borderRadius:'11px',background:u.color||'#652f8d',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}}>
+                    <div style={{width:36,height:36,borderRadius:'11px',background:u.color||'var(--v)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}}>
                       {u.initials || u.nombre?.[0]}
                     </div>
                     <div style={{flex:1,minWidth:0}}>
@@ -348,7 +349,7 @@ export default function Permisos() {
               {/* Encabezado del panel */}
               <div style={{padding:'14px 16px',borderBottom:'1.5px solid var(--border)',background:'var(--vl)',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:'8px'}}>
                 <div style={{display:'flex',alignItems:'center',gap:'10px'}}>
-                  <div style={{width:32,height:32,borderRadius:'10px',background:usuarioSel.color||'#652f8d',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'#fff',flexShrink:0}}>
+                  <div style={{width:32,height:32,borderRadius:'10px',background:usuarioSel.color||'var(--v)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'#fff',flexShrink:0}}>
                     {usuarioSel.initials || usuarioSel.nombre?.[0]}
                   </div>
                   <div>
@@ -473,7 +474,7 @@ export default function Permisos() {
                     borderBottom: idx<usuarios.length-1?'1px solid var(--border)':'none',
                     opacity: u.activo ? 1 : 0.5,
                   }}>
-                    <div style={{width:36,height:36,borderRadius:'11px',background:u.color||'#652f8d',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}}>
+                    <div style={{width:36,height:36,borderRadius:'11px',background:u.color||'var(--v)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'12px',fontWeight:700,color:'#fff',flexShrink:0}}>
                       {u.initials || u.nombre?.[0]}
                     </div>
                     <div style={{flex:1,minWidth:0}}>

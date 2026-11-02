@@ -55,7 +55,7 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
   if (!prof) return new NextResponse('Docente no encontrada', { status: 404 })
 
   // 2. Instituto
-  const { data: inst } = await db.from('institutos').select('nombre, color_primario').eq('id', prof.instituto_id).single()
+  const { data: inst } = await db.from('institutos').select('nombre, color_primario, logo_url').eq('id', prof.instituto_id).single()
   const colorPrimario = inst?.color_primario || '#652f8d'
   const institutoNombre = inst?.nombre || 'Instituto'
 
@@ -329,7 +329,7 @@ export async function GET(req: NextRequest, { params }: { params: { profesoraId:
 
   <div class="head">
     <div style="display:flex;align-items:center;gap:12px">
-      <div class="logo">${initials}</div>
+      ${inst?.logo_url ? `<div class="logo" style="background:#fff;padding:0;overflow:hidden"><img src="${inst.logo_url}" alt="" style="width:100%;height:100%;object-fit:contain"></div>` : `<div class="logo">${initials}</div>`}
       <div>
         <div class="inst-nombre">${institutoNombre}</div>
         <div class="inst-sub">Informe Docente Mensual</div>

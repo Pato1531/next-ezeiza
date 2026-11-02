@@ -178,7 +178,7 @@ export default function Dashboard() {
         const { data: als } = await sb.from('alumnos').select('id,nombre,apellido,color').in('id', alertasProf.map(a => a.id))
         setAlumnosAusentesProf(alertasProf.map(a => {
           const al = als?.find((x: any) => x.id === a.id)
-          return { ...a, nombre: al?.nombre || '—', apellido: al?.apellido || '', color: al?.color || '#652f8d' }
+          return { ...a, nombre: al?.nombre || '—', apellido: al?.apellido || '', color: al?.color || 'var(--v)' }
         }).slice(0, 5))
       }
 
@@ -343,7 +343,7 @@ export default function Dashboard() {
               horas += ((h2*60+m2) - (h1*60+m1)) / 60
             }
           })
-          return { id: prof.id, nombre: prof.nombre, apellido: prof.apellido, color: prof.color||'#652f8d', clases: clasesDeProd.length, horas: Math.round(horas*10)/10, asistPct, cursos: cursosDeProd.length }
+          return { id: prof.id, nombre: prof.nombre, apellido: prof.apellido, color: prof.color||'var(--v)', clases: clasesDeProd.length, horas: Math.round(horas*10)/10, asistPct, cursos: cursosDeProd.length }
         })
         .filter(Boolean)
         .sort((a:any,b:any) => b.clases - a.clases)
@@ -403,7 +403,7 @@ export default function Dashboard() {
         if (!porProfesora[c.profesora_id]) {
           porProfesora[c.profesora_id] = {
             profesora_id: c.profesora_id, nombre: prof.nombre, apellido: prof.apellido,
-            color: prof.color || '#652f8d', atrasadas: 0, cursos: [], critico: false,
+            color: prof.color || 'var(--v)', atrasadas: 0, cursos: [], critico: false,
           }
         }
         porProfesora[c.profesora_id].atrasadas += atrasadas
@@ -528,7 +528,7 @@ export default function Dashboard() {
             if (al) {
               alertasMap[alumno_id] = {
                 nombre: al.nombre, apellido: al.apellido,
-                color: al.color || '#652f8d',
+                color: al.color || 'var(--v)',
                 consecutivas,
                 curso: cur?.nombre || '',
               }
@@ -536,7 +536,7 @@ export default function Dashboard() {
               // Alumno no está en el store aún — guardarlo con datos mínimos para buscarlo después
               alertasMap[alumno_id] = {
                 nombre: alumno_id, apellido: '',
-                color: '#652f8d', consecutivas,
+                color: 'var(--v)', consecutivas,
                 curso: cur?.nombre || '',
                 _pendingLookup: true,
               } as any
@@ -552,7 +552,7 @@ export default function Dashboard() {
         const { data: alumnosDB } = await sb.from('alumnos').select('id,nombre,apellido,color').in('id', ids)
         alumnosDB?.forEach((a: any) => {
           if (alertasMap[a.id]) {
-            alertasMap[a.id] = { ...alertasMap[a.id], nombre: a.nombre, apellido: a.apellido, color: a.color || '#652f8d' }
+            alertasMap[a.id] = { ...alertasMap[a.id], nombre: a.nombre, apellido: a.apellido, color: a.color || 'var(--v)' }
             delete (alertasMap[a.id] as any)._pendingLookup
           }
         })
@@ -1234,7 +1234,7 @@ function fmt(fecha: string) {
 const SL = ({children,style}:any) => <div style={{fontSize:'11px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.07em',...style}}>{children}</div>
 
 const Av = ({color,nombre,apellido,size}:any) => (
-  <div style={{width:size,height:size,borderRadius:Math.round(size*.32)+'px',background:color||'#652f8d',display:'flex',alignItems:'center',justifyContent:'center',fontSize:size*.3+'px',fontWeight:700,color:'#fff',flexShrink:0}}>
+  <div style={{width:size,height:size,borderRadius:Math.round(size*.32)+'px',background:color||'var(--v)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:size*.3+'px',fontWeight:700,color:'#fff',flexShrink:0}}>
     {nombre?.[0]}{apellido?.[0]}
   </div>
 )
@@ -1348,7 +1348,7 @@ function ModalAsistencia({ modal, estados, setEstados, tema, setTema, guardando,
             const est = estados[a.id] || 'P'
             return (
               <div key={a.id} style={{display:'flex',alignItems:'center',gap:'10px',padding:'10px 12px',borderRadius:'12px',border:'1.5px solid var(--border)',background:'var(--white)'}}>
-                <div style={{width:34,height:34,borderRadius:10,background:a.color||'#652f8d',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'#fff',flexShrink:0}}>
+                <div style={{width:34,height:34,borderRadius:10,background:a.color||'var(--v)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:'11px',fontWeight:700,color:'#fff',flexShrink:0}}>
                   {a.nombre[0]}{a.apellido[0]}
                 </div>
                 <div style={{flex:1,minWidth:0}}>

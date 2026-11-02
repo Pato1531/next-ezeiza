@@ -12,7 +12,7 @@ function sb() {
 
 const KEYS = [
   'bienvenida', 'comprobante', 'recibo', 'cuota_recordatorio', 'cobranza_deudor',
-  'cuota_vencida', 'cobranza_consulta', 'ausencias', 'boletin', 'consulta_lista_espera', 'cumpleanos',
+  'cuota_vencida', 'cobranza_consulta', 'ausencias', 'boletin', 'consulta_lista_espera', 'cumpleanos', 'recibo_sin_link',
 ]
 const TEXTO_MAX = 1500
 

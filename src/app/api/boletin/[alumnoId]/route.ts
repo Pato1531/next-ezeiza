@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { logoImgHtml } from '@/lib/logo-doc'
 import { createClient } from '@supabase/supabase-js'
 import { verificarAuth } from '@/lib/server-utils'
 
@@ -66,18 +67,20 @@ export async function GET(
     }
 
     // 2. Instituto
-    let institutoNombre    = 'Next English Institute'
+    let institutoNombre    = 'Instituto'
     let institutoSub       = 'Instituto de Inglés'
     let colorPrimario      = '#652f8d'
+    let instLogoUrl: string | null = null
     let firmaDirectorUrl   = ''
     let firmaBase64        = ''
     if (alumno.instituto_id) {
       const { data: inst } = await sb
-        .from('institutos').select('nombre, color_primario, firma_director_url').eq('id', alumno.instituto_id).single()
+        .from('institutos').select('nombre, color_primario, firma_director_url, logo_url').eq('id', alumno.instituto_id).single()
       if (inst?.nombre) {
         institutoNombre      = inst.nombre
         institutoSub         = 'Instituto de Inglés'
         if (inst.color_primario)     colorPrimario     = inst.color_primario
+        instLogoUrl = inst.logo_url || null
         if (inst.firma_director_url) firmaDirectorUrl  = inst.firma_director_url
       }
     }
@@ -388,7 +391,7 @@ export async function GET(
     <div class="head">
       <div class="head-inner">
         <div class="inst-block">
-          <div class="inst-logo">${initials}</div>
+          ${instLogoUrl ? `<div class="inst-logo" style="background:#fff;padding:4px"><img src="${instLogoUrl}" alt="" style="width:100%;height:100%;object-fit:contain"></div>` : `<div class="inst-logo">${initials}</div>`}
           <div>
             <div class="inst-nombre">${institutoNombre}</div>
             <div class="inst-sub">${institutoSub}</div>

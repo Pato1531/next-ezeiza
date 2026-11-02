@@ -62,6 +62,13 @@ export const PLANTILLAS: PlantillaDef[] = [
     texto: '✅ *Recibo de pago — {instituto}*\n\nHola {contacto}! Confirmamos el pago de *{periodo}* de *{alumno}*.\n\n💰 Monto: *${monto}*\n📅 Fecha: {fecha}\n💳 Método: {metodo}\n\n📄 Tu recibo: {link}\n\n¡Gracias! 🙌',
   },
   {
+    key: 'recibo_sin_link',
+    titulo: 'Recibo sin link',
+    descripcion: 'Se envía al registrar un pago cuando no hay link de recibo',
+    vars: ['contacto', 'alumno', 'periodo', 'monto', 'fecha', 'metodo', 'instituto'],
+    texto: '✅ *Recibo de pago — {instituto}*\n\nHola {contacto}! Confirmamos el pago de *{periodo}* de *{alumno}*.\n\n💰 Monto: *${monto}*\n📅 Fecha: {fecha}\n💳 Método: {metodo}\n\n¡Gracias! 🙌',
+  },
+  {
     key: 'bienvenida',
     titulo: 'Bienvenida',
     descripcion: 'Se envía al inscribir un alumno nuevo',

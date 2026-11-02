@@ -1,7 +1,7 @@
 {
-  "name": "Next Ezeiza — Gestión",
-  "short_name": "Next Ezeiza",
-  "description": "Panel de gestión del Instituto de Inglés Next Ezeiza",
+  "name": "EduGest — Gestión",
+  "short_name": "EduGest",
+  "description": "Panel de gestión para institutos de inglés",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#652f8d",
