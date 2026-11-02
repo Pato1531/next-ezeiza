@@ -6,6 +6,13 @@ import LoginPage from '@/components/LoginPage'
 import AppShell from '@/components/AppShell'
 import CrearClave from '@/components/CrearClave'
 
+// Se lee el link al cargar el módulo, antes de que el cliente de Supabase procese y limpie el hash.
+const TIPO_LINK_INICIAL: 'invite' | 'recovery' | null = (() => {
+  if (typeof window === 'undefined') return null
+  const tipo = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('type')
+  return tipo === 'invite' || tipo === 'recovery' ? tipo : null
+})()
+
 export default function Home() {
   const { usuario, loading } = useAuth()
   const [mostrarApp, setMostrarApp] = useState(false)
@@ -16,8 +23,7 @@ export default function Home() {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
-    const tipo = new URLSearchParams(window.location.hash.replace(/^#/, '')).get('type')
-    if (tipo === 'invite' || tipo === 'recovery') setFlujoClave(tipo)
+    if (TIPO_LINK_INICIAL) setFlujoClave(TIPO_LINK_INICIAL)
   }, [])
 
   // Leer localStorage solo en el cliente — NUNCA en el initializer de useState
