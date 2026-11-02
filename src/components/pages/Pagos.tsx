@@ -123,6 +123,7 @@ export default function Pagos() {
   const [loadingReporte, setLoadingReporte] = useState(false)
   const [filtroRepDia, setFiltroRepDia] = useState('')
   const [filtroRepMetodo, setFiltroRepMetodo] = useState('')
+  const [busquedaRep, setBusquedaRep] = useState('')
   const [pagoEditando, setPagoEditando] = useState<any>(null)
   const [guardandoEditPago, setGuardandoEditPago] = useState(false)
   const [eliminandoPago, setEliminandoPago] = useState(false)
@@ -139,6 +140,23 @@ export default function Pagos() {
   const [cobrarCuota, setCobrarCuota] = useState(true)
   const [cobrarDescuento, setCobrarDescuento] = useState(false)
   const [montoDescuento, setMontoDescuento] = useState<Record<string, number>>({})
+  const [descuentoTipo, setDescuentoTipo] = useState<'monto' | 'porcentaje'>('porcentaje')
+  const [descuentoValor, setDescuentoValor] = useState(0)
+
+  // Monto de la cuota con descuento de un alumno: el valor editado a mano tiene prioridad;
+  // si no, se aplica el descuento general (monto fijo o porcentaje) sobre su cuota cargada.
+  const montoCuotaDescuento = (a: any): number => {
+    if (montoDescuento[a.id] !== undefined) return montoDescuento[a.id]
+    const base = a.cuota_mensual ?? 0
+    if (descuentoValor <= 0) return base
+    const calculo = descuentoTipo === 'porcentaje' ? base * (1 - descuentoValor / 100) : base - descuentoValor
+    return Math.max(0, Math.round(calculo))
+  }
+  // Aclaración en la observación del pago cuando el descuento es general (no editado a mano)
+  const aclaracionDescuento = (a: any): string =>
+    montoDescuento[a.id] === undefined && descuentoValor > 0
+      ? ` (${descuentoTipo === 'porcentaje' ? descuentoValor + '% de descuento' : '$' + descuentoValor + ' de descuento'})`
+      : ''
   const [cobrarRecargo, setCobrarRecargo] = useState(false)
   const [montoRecargo, setMontoRecargo] = useState('')
   const [cobrarMatricula, setCobrarMatricula] = useState(false)
@@ -433,6 +451,16 @@ export default function Pagos() {
 
   const totalRecaudado = pagosReporteFiltrados.reduce((s, p) => s + (p.monto || 0), 0)
 
+  // ── Búsqueda dentro del reporte (sin tildes; por nombre, apellido o DNI) ──
+  const normBusqueda = (s: string) => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  const qRep = normBusqueda(busquedaRep.trim())
+  const pagosVista = qRep
+    ? pagosAgrupados.filter((p: any) => normBusqueda(`${p.alumnos?.nombre || ''} ${p.alumnos?.apellido || ''} ${p.alumnos?.dni || ''}`).includes(qRep))
+    : pagosAgrupados
+  const idsVista = new Set(pagosVista.map((p: any) => p.alumno_id))
+  const cobrosVista = qRep ? pagosReporteFiltrados.filter(p => idsVista.has(p.alumno_id)).length : pagosReporteFiltrados.length
+  const totalVista = qRep ? pagosReporteFiltrados.filter(p => idsVista.has(p.alumno_id)).reduce((s, p) => s + (p.monto || 0), 0) : totalRecaudado
+
   // Helper: índice numérico de un nombre de mes (1-based)
 
 
@@ -538,7 +566,7 @@ export default function Pagos() {
     if (!a) return sum
     let t = 0
     if (cobrarCuota) t += (a.cuota_mensual || 0)
-    if (cobrarDescuento) t += (montoDescuento[id] ?? a.cuota_mensual ?? 0)
+    if (cobrarDescuento) t += montoCuotaDescuento(a)
     if (cobrarRecargo) t += (parseFloat(montoRecargo) || 0)
     if (cobrarMatricula) t += (a.matricula || 0)
     if (cobrarProporcional) t += (parseFloat(montoProporcional) || 0)
@@ -603,8 +631,8 @@ export default function Pagos() {
       })
       if (cobrarDescuento) inserts.push({
         alumno_id: a.id, mes, anio: anioActual, metodo, fecha_pago: fecha,
-        monto: montoDescuento[a.id] ?? a.cuota_mensual ?? 0,
-        tipo: 'cuota_descuento', observaciones: `Cuota con descuento ${mes} ${anioActual}`,
+        monto: montoCuotaDescuento(a),
+        tipo: 'cuota_descuento', observaciones: `Cuota con descuento ${mes} ${anioActual}${aclaracionDescuento(a)}`,
       })
       if (cobrarRecargo) inserts.push({
         alumno_id: a.id, mes, anio: anioActual, metodo, fecha_pago: fecha,
@@ -704,7 +732,7 @@ export default function Pagos() {
   const guardar = () => {
     if (seleccionados.size === 0) return showToast('Seleccioná al menos un alumno', 'warning')
     if (!cobrarCuota && !cobrarDescuento && !cobrarRecargo && !cobrarMatricula && !cobrarProporcional && !cobrarExamen && !cobrarClaseParticular) return showToast('Seleccioná al menos un concepto', 'warning')
-    if (cobrarDescuento && [...seleccionados].some(id => (montoDescuento[id] ?? alumnos.find((a:any)=>a.id===id)?.cuota_mensual ?? 0) <= 0)) return showToast('Ingresá el monto con descuento para cada alumno seleccionado', 'warning')
+    if (cobrarDescuento && [...seleccionados].some(id => montoCuotaDescuento(alumnos.find((a:any)=>a.id===id) || { id }) <= 0)) return showToast('Ingresá el monto con descuento para cada alumno seleccionado', 'warning')
     if (cobrarProporcional && (!montoProporcional || parseFloat(montoProporcional) <= 0)) return showToast('Ingresá el monto proporcional', 'warning')
     if (cobrarRecargo && (!montoRecargo || parseFloat(montoRecargo) <= 0)) return showToast('Ingresá el monto del recargo', 'warning')
 
@@ -872,12 +900,26 @@ export default function Pagos() {
             <div style={{ textAlign:'center', padding:'32px', color:'var(--text3)' }}>Cargando...</div>
           ) : (
             <>
+                <div style={{ position:'relative', marginBottom:'12px' }}>
+                <input
+                  type="text"
+                  value={busquedaRep}
+                  onChange={e => setBusquedaRep(e.target.value)}
+                  placeholder="🔍 Buscar alumno en el reporte (nombre, apellido o DNI)..."
+                  autoComplete="off"
+                  style={{ ...IS, width:'100%', fontSize:'14px', borderRadius:'12px', boxSizing:'border-box' }}
+                />
+                {busquedaRep && (
+                  <button onClick={() => setBusquedaRep('')}
+                    style={{ position:'absolute', right:'12px', top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', fontSize:'16px', color:'var(--text3)', lineHeight:1, padding:'0 4px' }}>×</button>
+                )}
+              </div>
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'12px', flexWrap:'wrap', gap:'8px' }}>
                 <div>
                   <div style={{ fontSize:'15px', fontWeight:700 }}>
-                    {pagosAgrupados.length} alumnos · {pagosReporteFiltrados.length} cobros{filtroRepDia ? ` · ${new Date(filtroRepDia + 'T12:00:00').toLocaleDateString('es-AR')}` : ` · ${repMes} ${repAnio}`}
+                    {pagosVista.length} alumnos · {cobrosVista} cobros{filtroRepDia ? ` · ${new Date(filtroRepDia + 'T12:00:00').toLocaleDateString('es-AR')}` : ` · ${repMes} ${repAnio}`}
                   </div>
-                  <div style={{ fontSize:'13px', color:'var(--v)', fontWeight:600 }}>Total: ${totalRecaudado.toLocaleString('es-AR')}</div>
+                  <div style={{ fontSize:'13px', color:'var(--v)', fontWeight:600 }}>Total: ${totalVista.toLocaleString('es-AR')}</div>
                 </div>
                 <div style={{ display:'flex', gap:'8px' }}>
                   <button onClick={descargarExcel} style={{ padding:'9px 14px', background:'var(--white)', color:'var(--green)', border:'1.5px solid var(--green)', borderRadius:'10px', fontSize:'12px', fontWeight:600, cursor:'pointer' }}>⬇ Excel</button>
@@ -891,7 +933,7 @@ export default function Pagos() {
                 </div>
               ) : (
                 <div style={{ background:'var(--white)', border:'1.5px solid var(--border)', borderRadius:'14px', overflow:'hidden' }}>
-                  {pagosAgrupados.map((p: any, i: number) => {
+                  {pagosVista.map((p: any, i: number) => {
                     const tel = p.alumnos?.es_menor
                       ? (p.alumnos.padre_telefono || p.alumnos.telefono)
                       : (p.alumnos?.telefono || p.alumnos?.padre_telefono)
@@ -904,7 +946,7 @@ export default function Pagos() {
                     const montoTotal = (p._montoTotal || p.monto) || 0
                     const textoWS = renderPlantilla('recibo', { contacto, periodo: `${p.mes} ${p.anio}`, alumno: `${p.alumnos?.nombre} ${p.alumnos?.apellido}`, monto: montoTotal.toLocaleString('es-AR'), fecha: fechaFmt, metodo: p.metodo || 'Efectivo', link: urlRecibo })
                     return (
-                      <div key={p.id} style={{ padding:'12px 16px', borderBottom: i < pagosAgrupados.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                      <div key={p.id} style={{ padding:'12px 16px', borderBottom: i < pagosVista.length - 1 ? '1px solid var(--border)' : 'none' }}>
                         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
                           <div style={{ display:'flex', alignItems:'center', gap:'10px' }}>
                             <div style={{ width:32, height:32, borderRadius:8, background:p.alumnos?.color || 'var(--v)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'12px', fontWeight:700, color:'#fff', flexShrink:0 }}>
@@ -1328,10 +1370,42 @@ export default function Pagos() {
               <div style={{ flex:1 }}>
                 <div style={{ fontSize:'13px', fontWeight:600 }}>Cuota con descuento</div>
                 <div style={{ fontSize:'11px', color:'var(--text3)', marginTop:'1px' }}>
-                  {mes} {anioActual} · monto editable por alumno — cuenta como cuota pagada
+                  {mes} {anioActual} · descuento en $ o % sobre la cuota de cada alumno — cuenta como cuota pagada
                 </div>
               </div>
             </div>
+
+            {/* Descuento general para la cuota con descuento: monto fijo o porcentaje sobre la cuota de cada alumno */}
+            {cobrarDescuento && (
+              <div style={{ background:'#f0fbf9', border:'1.5px solid #0f766e', borderRadius:'10px', padding:'10px 12px', marginTop:'-2px', marginBottom:'8px' }}>
+                <div style={{ display:'flex', gap:'10px', alignItems:'center', flexWrap:'wrap' }}>
+                  <div style={{ display:'flex', border:'1.5px solid #0f766e', borderRadius:'8px', overflow:'hidden' }}>
+                    {(['porcentaje', 'monto'] as const).map(t => (
+                      <button key={t} type="button"
+                        onClick={() => { setDescuentoTipo(t); setMontoDescuento({}) }}
+                        style={{ padding:'6px 12px', border:'none', fontSize:'12px', fontWeight:700, cursor:'pointer',
+                          background: descuentoTipo === t ? '#0f766e' : '#fff', color: descuentoTipo === t ? '#fff' : '#0f766e' }}>
+                        {t === 'porcentaje' ? '% Porcentaje' : '$ Monto'}
+                      </button>
+                    ))}
+                  </div>
+                  <input type="number" min={0} placeholder={descuentoTipo === 'porcentaje' ? 'Ej: 10' : 'Ej: 5000'}
+                    value={descuentoValor || ''}
+                    onChange={e => {
+                      const v = Math.max(0, +e.target.value || 0)
+                      setDescuentoValor(descuentoTipo === 'porcentaje' ? Math.min(100, v) : v)
+                      setMontoDescuento({})
+                    }}
+                    style={{ width:'110px', padding:'6px 8px', border:'1.5px solid #0f766e', borderRadius:'8px', fontSize:'13px', fontWeight:700, color:'#0f766e', textAlign:'right' }} />
+                  <span style={{ fontSize:'11.5px', color:'#0f766e' }}>
+                    {descuentoTipo === 'porcentaje' ? '% menos sobre la cuota de cada alumno' : '$ menos sobre la cuota de cada alumno'}
+                  </span>
+                </div>
+                <div style={{ fontSize:'11px', color:'var(--text3)', marginTop:'6px' }}>
+                  Se aplica a los alumnos seleccionados. Si editás un monto a mano en la lista, ese valor tiene prioridad.
+                </div>
+              </div>
+            )}
 
             {/* Cuota con recargo */}
             <div style={{ borderRadius:'10px', marginBottom:'8px', border: `1.5px solid ${cobrarRecargo ? 'var(--amber)' : 'var(--border)'}`, background: cobrarRecargo ? 'var(--amberl)' : 'var(--white)' }}>
@@ -1483,7 +1557,7 @@ export default function Pagos() {
                 const sel = seleccionados.has(a.id)
                 let monto = 0
                 if (cobrarCuota) monto += (a.cuota_mensual || 0)
-                if (cobrarDescuento) monto += (montoDescuento[a.id] ?? a.cuota_mensual ?? 0)
+                if (cobrarDescuento) monto += montoCuotaDescuento(a)
                 if (cobrarRecargo) monto += (parseFloat(montoRecargo) || 0)
                 if (cobrarMatricula) monto += (a.matricula || 0)
                 if (cobrarProporcional) monto += (parseFloat(montoProporcional) || 0)
@@ -1528,7 +1602,7 @@ export default function Pagos() {
                     {cobrarDescuento && sel ? (
                       <input
                         type="number"
-                        value={montoDescuento[a.id] ?? a.cuota_mensual ?? 0}
+                        value={montoCuotaDescuento(a)}
                         onClick={e => e.stopPropagation()}
                         onChange={e => setMontoDescuento(prev => ({ ...prev, [a.id]: +e.target.value }))}
                         style={{ width:'86px', padding:'6px 8px', border:'1.5px solid #0f766e', borderRadius:'8px', fontSize:'13px', fontWeight:700, color:'#0f766e', textAlign:'right', flexShrink:0 }}
