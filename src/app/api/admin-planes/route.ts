@@ -83,10 +83,10 @@ export async function POST(req: NextRequest) {
     // Recalcula los módulos activos de los clientes de este plan, respetando sus ajustes de soporte
     const { data: clientes } = await supabase
       .from('institutos')
-      .select('id, modulos_override')
+      .select('id, modulos_override, prueba_hasta')
       .eq('plan', codigo)
     await Promise.all(
-      (clientes || []).map((c: any) =>
+      (clientes || []).filter((c: any) => !c.prueba_hasta).map((c: any) =>
         supabase
           .from('institutos')
           .update({ modulos_activos: modulosEfectivos(modulosNuevos, ajusteValido(c.modulos_override) ? c.modulos_override : {}) })

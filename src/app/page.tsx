@@ -5,6 +5,7 @@ import { useAuth } from '@/lib/auth-context'
 import LoginPage from '@/components/LoginPage'
 import AppShell from '@/components/AppShell'
 import CrearClave from '@/components/CrearClave'
+import BannerPrueba from '@/components/BannerPrueba'
 
 // Se lee el link al cargar el módulo, antes de que el cliente de Supabase procese y limpie el hash.
 const TIPO_LINK_INICIAL: 'invite' | 'recovery' | null = (() => {
@@ -63,7 +64,7 @@ export default function Home() {
 
   return (
     <>
-      {mostrarApp && <AppShell />}
+      {mostrarApp && <><BannerPrueba /><AppShell /></>}
       {!mostrarApp && !usuario && <LoginPage />}
     </>
   )

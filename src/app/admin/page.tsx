@@ -1,13 +1,14 @@
 'use client'
 import { useState } from 'react'
 import TableroClientes from '@/components/admin/TableroClientes'
+import PlanesPrecios from '@/components/admin/PlanesPrecios'
 
 // ─── SEGURIDAD: La clave ya NO se verifica en el cliente.
 // El botón "Entrar" llama a /api/admin-verificar-clave que compara
 // contra process.env.ADMIN_KEY (server-side, nunca expuesta al browser).
 // Si la clave es correcta, el servidor responde { ok: true } y se avanza.
 
-type Step = 'login' | 'form' | 'success' | 'clientes'
+type Step = 'login' | 'form' | 'success' | 'clientes' | 'planes'
 type Estado = 'idle' | 'loading' | 'done' | 'error'
 
 interface Resultado {
@@ -48,6 +49,7 @@ export default function AdminPage() {
   const [instSlug, setInstSlug] = useState('')
   const [slugManual, setSlugManual] = useState(false)
   const [instPlan, setInstPlan] = useState('standard')
+  const [conPrueba, setConPrueba] = useState(true)
   const [instCiudad, setInstCiudad] = useState('')
   const [dirNombre, setDirNombre] = useState('')
   const [dirApellido, setDirApellido] = useState('')
@@ -81,6 +83,7 @@ export default function AdminPage() {
           instituto_nombre: instNombre.trim(),
           instituto_ciudad: instCiudad.trim(),
           instituto_plan: instPlan,
+          con_prueba: conPrueba,
           director_nombre: `${dirNombre.trim()} ${dirApellido.trim()}`,
           director_email: dirEmail.trim().toLowerCase(),
           director_password: dirPass,
@@ -128,7 +131,7 @@ export default function AdminPage() {
   }
 
   const reset = () => {    setInstNombre(''); setInstSlug(''); setSlugManual(false)
-    setInstPlan('standard'); setInstCiudad('')
+    setInstPlan('standard'); setInstCiudad(''); setConPrueba(true)
     setDirNombre(''); setDirApellido(''); setDirEmail('')
     setDirPass(genPass()); setError(''); setEstado('idle')
     setResultado(null); setStep('form')
@@ -229,6 +232,7 @@ export default function AdminPage() {
 
   // ── TABLERO ──────────────────────────────────────────────────────────────
   if (step === 'clientes') return <TableroClientes clave={clave} onVolver={() => setStep('form')} />
+  if (step === 'planes') return <PlanesPrecios clave={clave} onVolver={() => setStep('form')} />
 
   // ── FORM ──────────────────────────────────────────────────────────────────
   return (
@@ -248,6 +252,9 @@ export default function AdminPage() {
           </div>
           <button onClick={() => setStep('clientes')} style={{ marginLeft: '8px', padding: '6px 12px', background: '#652f8d', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
             Tablero de clientes →
+          </button>
+          <button onClick={() => setStep('planes')} style={{ marginLeft: '8px', padding: '6px 12px', background: '#fff', color: '#652f8d', border: '1.5px solid #652f8d', borderRadius: '10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+            Planes y precios →
           </button>
         </div>
 
@@ -283,6 +290,13 @@ export default function AdminPage() {
             <div style={{ fontSize: '11px', fontWeight: 600, color: '#9b8eaa', textTransform: 'uppercase', letterSpacing: '.04em', marginBottom: '4px' }}>Ciudad (opcional)</div>
             <input style={IS} value={instCiudad} onChange={e => setInstCiudad(e.target.value)} placeholder="Buenos Aires" />
           </div>
+
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', marginTop: '14px', padding: '12px 14px', background: '#f9f5fd', border: '1.5px solid #e0d8f0', borderRadius: '10px', cursor: 'pointer' }}>
+            <input type="checkbox" checked={conPrueba} onChange={e => setConPrueba(e.target.checked)} style={{ marginTop: '3px' }} />
+            <span style={{ fontSize: '13px', color: '#1a1020', lineHeight: 1.5 }}>
+              <b>Prueba gratuita de 7 días</b> con todos los módulos de Premium. Al terminar, la sede pasa a solo lectura hasta que elija un plan.
+            </span>
+          </label>
         </div>
 
         {/* Sección: Director */}

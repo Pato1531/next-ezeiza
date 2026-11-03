@@ -32,10 +32,14 @@ export async function POST(req: NextRequest) {
     const supabase = sb()
     const { data: inst, error: errInst } = await supabase
       .from('institutos')
-      .select('id, plan, modulos_override')
+      .select('id, plan, modulos_override, prueba_hasta')
       .eq('id', institutoId)
       .single()
     if (errInst || !inst) return NextResponse.json({ error: 'Instituto no encontrado' }, { status: 404 })
+
+    if (inst.prueba_hasta) {
+      return NextResponse.json({ error: 'Durante la prueba todos los módulos están activos' }, { status: 400 })
+    }
 
     const { data: plan } = await supabase
       .from('planes')

@@ -1,9 +1,10 @@
 'use client'
 
-// Tablero de clientes del panel admin: sedes, plan, alumnos activos y módulos activos por cliente.
+// Tablero de clientes del panel admin: sedes, plan, prueba, alumnos activos y módulos por cliente.
 import { useEffect, useMemo, useState } from 'react'
 import { MODULOS_PLAN } from '@/lib/modulos-plan'
 import { MODULOS_SIEMPRE } from '@/lib/modulos-efectivos'
+import { estadoPrueba, DIAS_PRUEBA } from '@/lib/prueba'
 
 type Cliente = {
   id: string
@@ -15,6 +16,7 @@ type Cliente = {
   alumnos_activos: number
   modulos_activos: string[]
   modulos_override: Record<string, boolean>
+  prueba_hasta: string | null
 }
 
 const NOMBRE_PLAN: Record<string, string> = { standard: 'Standard', premium: 'Premium', basico: 'Básico' }
@@ -26,7 +28,7 @@ export default function TableroClientes({ clave, onVolver }: { clave: string; on
   const [filtroPlan, setFiltroPlan] = useState<'todos' | 'standard' | 'premium'>('todos')
   const [abierto, setAbierto] = useState<string | null>(null)
   const [guardando, setGuardando] = useState('')
-  const [errorModulo, setErrorModulo] = useState('')
+  const [errorAccion, setErrorAccion] = useState('')
 
   useEffect(() => {
     fetch('/api/admin-resumen', { headers: { 'x-admin-key': clave } })
@@ -48,35 +50,43 @@ export default function TableroClientes({ clave, onVolver }: { clave: string; on
   const totalAlumnos = clientes.reduce((s, c) => s + c.alumnos_activos, 0)
   const activos = clientes.filter(c => c.activo).length
   const porPlan = (p: string) => clientes.filter(c => c.plan === p).length
+  const enPrueba = clientes.filter(c => estadoPrueba(c.prueba_hasta).estado === 'en_prueba').length
 
-  // Guarda un módulo (o vuelve todo al plan) y actualiza el cliente con la respuesta del servidor
-  const enviarAjuste = async (c: Cliente, body: Record<string, unknown>, clave2: string) => {
-    setGuardando(clave2)
-    setErrorModulo('')
+  // Llamada genérica al servidor; actualiza el cliente con la respuesta
+  const llamar = async (c: Cliente, ruta: string, body: Record<string, unknown>, clavePendiente: string, actualizar: (json: any) => Partial<Cliente>) => {
+    setGuardando(clavePendiente)
+    setErrorAccion('')
     try {
-      const res = await fetch('/api/admin-modulos-cliente', {
+      const res = await fetch(ruta, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'x-admin-key': clave },
         body: JSON.stringify({ instituto_id: c.id, ...body }),
       })
       const json = await res.json()
       if (!res.ok) throw new Error(json.error || 'No se pudo guardar')
-      setClientes(prev => prev.map(x => x.id === c.id
-        ? { ...x, modulos_activos: json.modulos_activos, modulos_override: json.modulos_override }
-        : x))
+      setClientes(prev => prev.map(x => (x.id === c.id ? { ...x, ...actualizar(json) } : x)))
     } catch (e: any) {
-      setErrorModulo(e.message)
+      setErrorAccion(e.message)
     } finally {
       setGuardando('')
     }
   }
 
-  const toggleModulo = (c: Cliente, modulo: string) => {
-    const activoAhora = c.modulos_activos.includes(modulo)
-    enviarAjuste(c, { modulo, activo: !activoAhora }, c.id + ':' + modulo)
-  }
+  const toggleModulo = (c: Cliente, modulo: string) =>
+    llamar(c, '/api/admin-modulos-cliente', { modulo, activo: !c.modulos_activos.includes(modulo) }, c.id + ':' + modulo,
+      json => ({ modulos_activos: json.modulos_activos, modulos_override: json.modulos_override }))
 
-  const volverAlPlan = (c: Cliente) => enviarAjuste(c, { reset: true }, c.id + ':reset')
+  const volverAlPlan = (c: Cliente) =>
+    llamar(c, '/api/admin-modulos-cliente', { reset: true }, c.id + ':reset',
+      json => ({ modulos_activos: json.modulos_activos, modulos_override: json.modulos_override }))
+
+  const extenderPrueba = (c: Cliente) =>
+    llamar(c, '/api/admin-prueba', { accion: 'extender' }, c.id + ':extender',
+      json => ({ prueba_hasta: json.prueba_hasta, modulos_activos: MODULOS_PLAN.map(m => m.id) }))
+
+  const pasarAPlan = (c: Cliente, plan: 'standard' | 'premium') =>
+    llamar(c, '/api/admin-prueba', { accion: 'convertir', plan }, c.id + ':convertir',
+      json => ({ plan: json.plan, prueba_hasta: null, modulos_activos: json.modulos_activos }))
 
   const card = { background: '#fff', borderRadius: '14px', padding: '16px', border: '1px solid #e8e0f4' } as const
   const label = { fontSize: '11px', fontWeight: 700, color: '#9b8eaa', textTransform: 'uppercase' as const, letterSpacing: '.05em' }
@@ -102,7 +112,7 @@ export default function TableroClientes({ clave, onVolver }: { clave: string; on
           <div style={card}>
             <div style={label}>Clientes</div>
             <div style={{ fontSize: '28px', fontWeight: 800, color: '#1a1020' }}>{clientes.length}</div>
-            <div style={{ fontSize: '12px', color: '#9b8eaa' }}>{activos} activos</div>
+            <div style={{ fontSize: '12px', color: '#9b8eaa' }}>{activos} activos · {enPrueba} en prueba</div>
           </div>
           <div style={card}>
             <div style={label}>Alumnos activos</div>
@@ -131,8 +141,8 @@ export default function TableroClientes({ clave, onVolver }: { clave: string; on
           ))}
         </div>
 
-        {errorModulo && (
-          <div style={{ ...card, marginBottom: '12px', color: '#c0392b', fontSize: '13px' }}>⚠ {errorModulo}</div>
+        {errorAccion && (
+          <div style={{ ...card, marginBottom: '12px', color: '#c0392b', fontSize: '13px' }}>⚠ {errorAccion}</div>
         )}
 
         <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
@@ -153,16 +163,15 @@ export default function TableroClientes({ clave, onVolver }: { clave: string; on
                   </tr>
                 </thead>
                 <tbody>
-                  {visibles.map(c => {
-                    const ajustados = Object.keys(c.modulos_override || {}).length
-                    return (
-                      <FilaCliente key={c.id} c={c} abierto={abierto === c.id} ajustados={ajustados}
-                        onAbrir={() => setAbierto(abierto === c.id ? null : c.id)}
-                        onToggle={modulo => toggleModulo(c, modulo)}
-                        onReset={() => volverAlPlan(c)}
-                        guardando={guardando} />
-                    )
-                  })}
+                  {visibles.map(c => (
+                    <FilaCliente key={c.id} c={c} abierto={abierto === c.id}
+                      onAbrir={() => setAbierto(abierto === c.id ? null : c.id)}
+                      onToggle={modulo => toggleModulo(c, modulo)}
+                      onReset={() => volverAlPlan(c)}
+                      onExtender={() => extenderPrueba(c)}
+                      onPasarAPlan={plan => pasarAPlan(c, plan)}
+                      guardando={guardando} />
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -173,10 +182,31 @@ export default function TableroClientes({ clave, onVolver }: { clave: string; on
   )
 }
 
-function FilaCliente({ c, abierto, ajustados, onAbrir, onToggle, onReset, guardando }: {
-  c: Cliente; abierto: boolean; ajustados: number
-  onAbrir: () => void; onToggle: (modulo: string) => void; onReset: () => void; guardando: string
+function Badge({ c }: { c: Cliente }) {
+  const st = estadoPrueba(c.prueba_hasta)
+  if (st.estado === 'sin_prueba') return null
+  const vencida = st.estado === 'vencida'
+  return (
+    <span style={{ marginLeft: '6px', padding: '2px 8px', borderRadius: '20px', fontSize: '10px', fontWeight: 700,
+      background: vencida ? '#fdeaea' : '#f0e6fa', color: vencida ? '#9b1c1c' : '#652f8d' }}>
+      {vencida ? 'PRUEBA VENCIDA' : `PRUEBA · ${st.diasRestantes} ${st.diasRestantes === 1 ? 'día' : 'días'}`}
+    </span>
+  )
+}
+
+function FilaCliente({ c, abierto, onAbrir, onToggle, onReset, onExtender, onPasarAPlan, guardando }: {
+  c: Cliente; abierto: boolean
+  onAbrir: () => void; onToggle: (modulo: string) => void; onReset: () => void
+  onExtender: () => void; onPasarAPlan: (plan: 'standard' | 'premium') => void
+  guardando: string
 }) {
+  const st = estadoPrueba(c.prueba_hasta)
+  const enPrueba = st.estado !== 'sin_prueba'
+  const ajustados = Object.keys(c.modulos_override || {}).length
+  const btn = (extra: Record<string, string>) => ({
+    padding: '6px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+    border: '1.5px solid #652f8d', background: '#fff', color: '#652f8d', ...extra,
+  })
   return (
     <>
       <tr style={{ borderTop: '1px solid #f0eaf8' }}>
@@ -191,6 +221,7 @@ function FilaCliente({ c, abierto, ajustados, onAbrir, onToggle, onReset, guarda
           <span style={{ fontSize: '12px', fontWeight: 600, color: c.activo ? '#2d7a4f' : '#9b8eaa' }}>
             {c.activo ? '● Activo' : '○ Inactivo'}
           </span>
+          <Badge c={c} />
         </td>
         <td style={{ padding: '11px 14px', textAlign: 'right', fontWeight: 700, color: '#1a1020' }}>
           {c.alumnos_activos.toLocaleString('es-AR')}
@@ -198,20 +229,44 @@ function FilaCliente({ c, abierto, ajustados, onAbrir, onToggle, onReset, guarda
         <td style={{ padding: '11px 14px' }}>
           <button onClick={onAbrir}
             style={{ padding: '5px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', border: '1.5px solid #652f8d', background: abierto ? '#652f8d' : '#fff', color: abierto ? '#fff' : '#652f8d' }}>
-            {abierto ? 'Cerrar' : 'Módulos'}{ajustados > 0 ? ` · ${ajustados} ajuste${ajustados > 1 ? 's' : ''}` : ''}
+            {abierto ? 'Cerrar' : 'Gestionar'}{ajustados > 0 ? ` · ${ajustados} ajuste${ajustados > 1 ? 's' : ''}` : ''}
           </button>
         </td>
       </tr>
       {abierto && (
         <tr>
-          <td colSpan={6} style={{ padding: '12px 18px 16px', background: '#faf7fd' }}>
+          <td colSpan={6} style={{ padding: '14px 18px 16px', background: '#faf7fd' }}>
+
+            <div style={{ marginBottom: '14px', paddingBottom: '12px', borderBottom: '1px solid #ece4f5' }}>
+              <div style={{ fontSize: '11px', fontWeight: 700, color: '#9b8eaa', textTransform: 'uppercase', letterSpacing: '.05em', marginBottom: '8px' }}>Prueba y plan</div>
+              {enPrueba ? (
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: '12px', color: '#6b5e7b', marginRight: '4px' }}>
+                    {st.estado === 'vencida' ? 'La prueba venció: el cliente está en solo lectura.' : `Prueba de ${DIAS_PRUEBA} días con todos los módulos.`}
+                  </span>
+                  <button onClick={onExtender} disabled={guardando === c.id + ':extender'} style={btn({})}>
+                    Extender {DIAS_PRUEBA} días
+                  </button>
+                  <button onClick={() => onPasarAPlan('standard')} disabled={guardando === c.id + ':convertir'} style={btn({})}>
+                    Pasar a Standard
+                  </button>
+                  <button onClick={() => onPasarAPlan('premium')} disabled={guardando === c.id + ':convertir'} style={btn({})}>
+                    Pasar a Premium
+                  </button>
+                </div>
+              ) : (
+                <span style={{ fontSize: '12px', color: '#6b5e7b' }}>Plan pagado: {NOMBRE_PLAN[c.plan || ''] || 'sin plan'}. No está en prueba.</span>
+              )}
+            </div>
+
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
               <div style={{ fontSize: '12px', color: '#6b5e7b' }}>
-                Activá o desactivá módulos para este cliente. Lo que no toques sigue el plan {NOMBRE_PLAN[c.plan || ''] || ''}.
+                {enPrueba
+                  ? 'Durante la prueba todos los módulos están activos. Para ajustarlos, primero pasá la sede a un plan.'
+                  : `Activá o desactivá módulos para este cliente. Lo que no toques sigue el plan ${NOMBRE_PLAN[c.plan || ''] || ''}.`}
               </div>
-              {ajustados > 0 && (
-                <button onClick={onReset} disabled={guardando === c.id + ':reset'}
-                  style={{ padding: '5px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', border: '1.5px solid #e0d8f0', background: '#fff', color: '#652f8d' }}>
+              {ajustados > 0 && !enPrueba && (
+                <button onClick={onReset} disabled={guardando === c.id + ':reset'} style={btn({ background: '#fff' })}>
                   Volver todo al plan
                 </button>
               )}
@@ -219,15 +274,15 @@ function FilaCliente({ c, abierto, ajustados, onAbrir, onToggle, onReset, guarda
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '8px 14px' }}>
               {MODULOS_PLAN.map(m => {
                 const activo = c.modulos_activos.includes(m.id)
-                const fijo = MODULOS_SIEMPRE.includes(m.id)
+                const fijo = MODULOS_SIEMPRE.includes(m.id) || enPrueba
                 const ajustado = c.modulos_override && c.modulos_override[m.id] !== undefined
                 const cargando = guardando === c.id + ':' + m.id
                 return (
                   <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#1a1020', cursor: fijo ? 'default' : 'pointer', opacity: cargando ? 0.5 : 1 }}>
                     <input type="checkbox" checked={activo} disabled={fijo || cargando} onChange={() => onToggle(m.id)} />
                     <span style={{ flex: 1 }}>{m.label}</span>
-                    {ajustado && <span style={{ fontSize: '10px', fontWeight: 700, color: '#b45309', background: '#fef3cd', padding: '1px 6px', borderRadius: '6px' }}>AJUSTADO</span>}
-                    {fijo && <span style={{ fontSize: '10px', color: '#9b8eaa' }}>siempre</span>}
+                    {ajustado && !enPrueba && <span style={{ fontSize: '10px', fontWeight: 700, color: '#b45309', background: '#fef3cd', padding: '1px 6px', borderRadius: '6px' }}>AJUSTADO</span>}
+                    {MODULOS_SIEMPRE.includes(m.id) && <span style={{ fontSize: '10px', color: '#9b8eaa' }}>siempre</span>}
                   </label>
                 )
               })}

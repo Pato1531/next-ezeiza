@@ -6,6 +6,23 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 // en build time. Se crea la primera vez que se llama createClient().
 let _client: ReturnType<typeof createSupabaseClient> | null = null
 
+// Bloqueo de escrituras directas a la base (prueba vencida): lo activa auth-context.
+let _soloLectura = false
+export function setSoloLectura(v: boolean) { _soloLectura = v }
+
+const fetchConBloqueo: typeof fetch = (input, init) => {
+  const metodo = (init?.method || (input instanceof Request ? input.method : 'GET')).toUpperCase()
+  const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
+  const esEscrituraDeDatos = metodo !== 'GET' && metodo !== 'HEAD' && /\/(rest|storage|functions)\/v1\//.test(url)
+  if (_soloLectura && esEscrituraDeDatos) {
+    return Promise.resolve(new Response(
+      JSON.stringify({ message: 'Tu prueba terminó: el instituto está en modo solo lectura', code: 'PRUEBA_VENCIDA' }),
+      { status: 403, headers: { 'Content-Type': 'application/json' } }
+    ))
+  }
+  return fetch(input, init)
+}
+
 export function createClient() {
   if (!_client) {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -16,6 +33,7 @@ export function createClient() {
       throw new Error('[Supabase] Variables de entorno no disponibles. Verificar NEXT_PUBLIC_SUPABASE_URL y NEXT_PUBLIC_SUPABASE_ANON_KEY en Vercel.')
     }
     _client = createSupabaseClient(url, key, {
+      global: { fetch: fetchConBloqueo },
       auth: {
         persistSession: true,
         autoRefreshToken: true,

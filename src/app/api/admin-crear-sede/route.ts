@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { modulosEfectivos } from '@/lib/modulos-efectivos'
+import { MODULOS_IDS } from '@/lib/modulos-plan'
+import { fechaFinPrueba } from '@/lib/prueba'
 
 function sb() {
   return createClient(
@@ -26,7 +28,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'No autorizado' }, { status: 401 })
     }
 
-    const { instituto_nombre, instituto_ciudad, instituto_plan, director_nombre, director_email, director_password } = await req.json()
+    const { instituto_nombre, instituto_ciudad, instituto_plan, con_prueba, director_nombre, director_email, director_password } = await req.json()
     const PLANES_ADMIN = ['standard', 'premium']
     const plan = PLANES_ADMIN.includes(instituto_plan) ? instituto_plan : 'standard'
     const ciudad = typeof instituto_ciudad === 'string' && instituto_ciudad.trim() ? instituto_ciudad.trim().slice(0, 60) : null
@@ -46,12 +48,14 @@ export async function POST(req: NextRequest) {
 
     // Módulos del plan elegido (sin ajustes al crear)
     const { data: planRow } = await supabase.from('planes').select('modulos').eq('codigo', plan).single()
-    const modulosActivos = planRow ? modulosEfectivos(planRow.modulos || [], {}) : null
+    // Con prueba: todos los módulos de Premium durante 7 días. Después queda el plan elegido.
+    const pruebaHasta = con_prueba === true ? fechaFinPrueba() : null
+    const modulosActivos = pruebaHasta ? MODULOS_IDS : (planRow ? modulosEfectivos(planRow.modulos || [], {}) : null)
 
     // 2. Crear instituto
     const { data: instituto, error: errInst } = await supabase
       .from('institutos')
-      .insert({ nombre: instituto_nombre.trim(), slug, plan, ciudad, activo: true, modulos_activos: modulosActivos })
+      .insert({ nombre: instituto_nombre.trim(), slug, plan, ciudad, activo: true, modulos_activos: modulosActivos, prueba_hasta: pruebaHasta })
       .select().single()
 
     if (errInst) {

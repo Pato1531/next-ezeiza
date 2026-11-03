@@ -2,7 +2,8 @@
 
 import { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
-import { PERMISOS, type Rol } from '@/lib/supabase'
+import { PERMISOS, type Rol, setSoloLectura } from '@/lib/supabase'
+import { estadoPrueba } from '@/lib/prueba'
 import {
   setCurrentUserName as hooksSetUserName,
   setInstitutoId     as hooksSetInstitutoId,
@@ -57,6 +58,8 @@ interface Instituto {
   config_alertas?: Record<string, any> | null
   // Módulos activos del cliente (plan + ajustes de soporte). Si no viene, no se restringe.
   modulos_activos?: string[] | null
+  // Fin de la prueba gratuita (null = sede con plan pagado)
+  prueba_hasta?: string | null
 }
 
 interface AuthContextType {
@@ -185,6 +188,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       setUsuario(u)
       setInstituto(inst)
+      // Prueba vencida: se bloquean las escrituras directas a la base
+      setSoloLectura(estadoPrueba((inst as any)?.prueba_hasta).estado === 'vencida')
       // hooksSetSessionReady(true) ya se llamó arriba junto con hooksSetInstitutoId
       if (typeof window !== 'undefined') localStorage.setItem('ne_session_uid', uid)
     } catch (e) {
@@ -255,6 +260,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (typeof window !== 'undefined') localStorage.removeItem('ne_session_uid')
           setUsuario(null)
           setInstituto(null)
+          setSoloLectura(false)
           hooksSetInstitutoId('')
           hooksSetUserName('Sistema')
           hooksSetSessionReady(false)
