@@ -117,8 +117,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     (modulo: string) => {
       if (!usuario) return false
       // Primero: el módulo tiene que estar activo para el cliente (plan + ajustes de soporte)
+      // Pagos es parte del módulo Alumnos en el control de módulos del cliente
+      const moduloCliente = modulo === 'pagos' ? 'alumnos' : modulo
       const activosCliente = instituto?.modulos_activos
-      if (Array.isArray(activosCliente) && !activosCliente.includes(modulo)) return false
+      if (Array.isArray(activosCliente) && !activosCliente.includes(moduloCliente)) return false
       const custom = permisosCustomPorUsuario[usuario.id]
       if (Array.isArray(custom) && custom.length > 0) return custom.includes(modulo)
       return PERMISOS[usuario.rol]?.includes(modulo) ?? false
