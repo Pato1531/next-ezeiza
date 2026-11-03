@@ -1,12 +1,13 @@
 'use client'
 import { useState } from 'react'
+import TableroClientes from '@/components/admin/TableroClientes'
 
 // ─── SEGURIDAD: La clave ya NO se verifica en el cliente.
 // El botón "Entrar" llama a /api/admin-verificar-clave que compara
 // contra process.env.ADMIN_KEY (server-side, nunca expuesta al browser).
 // Si la clave es correcta, el servidor responde { ok: true } y se avanza.
 
-type Step = 'login' | 'form' | 'success'
+type Step = 'login' | 'form' | 'success' | 'clientes'
 type Estado = 'idle' | 'loading' | 'done' | 'error'
 
 interface Resultado {
@@ -226,6 +227,9 @@ export default function AdminPage() {
     </div>
   )
 
+  // ── TABLERO ──────────────────────────────────────────────────────────────
+  if (step === 'clientes') return <TableroClientes clave={clave} onVolver={() => setStep('form')} />
+
   // ── FORM ──────────────────────────────────────────────────────────────────
   return (
     <div style={{ minHeight: '100vh', background: '#f4f0fa', padding: '24px 16px' }}>
@@ -242,6 +246,9 @@ export default function AdminPage() {
           <div style={{ fontSize: '12px', color: '#9b8eaa', background: '#fff', padding: '4px 12px', borderRadius: '20px', border: '1px solid #e0d8f0' }}>
             Acceso privado
           </div>
+          <button onClick={() => setStep('clientes')} style={{ marginLeft: '8px', padding: '6px 12px', background: '#652f8d', color: '#fff', border: 'none', borderRadius: '10px', fontSize: '12px', fontWeight: 600, cursor: 'pointer' }}>
+            Tablero de clientes →
+          </button>
         </div>
 
         {/* Sección: Instituto */}
