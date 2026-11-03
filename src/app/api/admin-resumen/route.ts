@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     const supabase = sb()
     const { data: institutos, error: errInst } = await supabase
       .from('institutos')
-      .select('id, nombre, ciudad, plan, activo, created_at')
+      .select('id, nombre, ciudad, plan, activo, created_at, modulos_activos, modulos_override')
       .order('nombre')
     if (errInst) return NextResponse.json({ error: errInst.message }, { status: 500 })
 
@@ -50,6 +50,8 @@ export async function GET(req: NextRequest) {
         activo: i.activo,
         created_at: i.created_at,
         alumnos_activos: porInstituto.get(i.id) ?? 0,
+        modulos_activos: Array.isArray(i.modulos_activos) ? i.modulos_activos : [],
+        modulos_override: i.modulos_override || {},
       })),
     })
   } catch (error: any) {

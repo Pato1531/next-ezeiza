@@ -1,8 +1,9 @@
 'use client'
 
-// Tablero de clientes del panel admin: qué sedes tienen contratado el servicio,
-// en qué plan, y cuántos alumnos activos tiene cada una. Solo lectura.
+// Tablero de clientes del panel admin: sedes, plan, alumnos activos y módulos activos por cliente.
 import { useEffect, useMemo, useState } from 'react'
+import { MODULOS_PLAN } from '@/lib/modulos-plan'
+import { MODULOS_SIEMPRE } from '@/lib/modulos-efectivos'
 
 type Cliente = {
   id: string
@@ -12,6 +13,8 @@ type Cliente = {
   activo: boolean
   created_at: string
   alumnos_activos: number
+  modulos_activos: string[]
+  modulos_override: Record<string, boolean>
 }
 
 const NOMBRE_PLAN: Record<string, string> = { standard: 'Standard', premium: 'Premium', basico: 'Básico' }
@@ -21,6 +24,9 @@ export default function TableroClientes({ clave, onVolver }: { clave: string; on
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState('')
   const [filtroPlan, setFiltroPlan] = useState<'todos' | 'standard' | 'premium'>('todos')
+  const [abierto, setAbierto] = useState<string | null>(null)
+  const [guardando, setGuardando] = useState('')
+  const [errorModulo, setErrorModulo] = useState('')
 
   useEffect(() => {
     fetch('/api/admin-resumen', { headers: { 'x-admin-key': clave } })
@@ -43,12 +49,42 @@ export default function TableroClientes({ clave, onVolver }: { clave: string; on
   const activos = clientes.filter(c => c.activo).length
   const porPlan = (p: string) => clientes.filter(c => c.plan === p).length
 
+  // Guarda un módulo (o vuelve todo al plan) y actualiza el cliente con la respuesta del servidor
+  const enviarAjuste = async (c: Cliente, body: Record<string, unknown>, clave2: string) => {
+    setGuardando(clave2)
+    setErrorModulo('')
+    try {
+      const res = await fetch('/api/admin-modulos-cliente', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-admin-key': clave },
+        body: JSON.stringify({ instituto_id: c.id, ...body }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'No se pudo guardar')
+      setClientes(prev => prev.map(x => x.id === c.id
+        ? { ...x, modulos_activos: json.modulos_activos, modulos_override: json.modulos_override }
+        : x))
+    } catch (e: any) {
+      setErrorModulo(e.message)
+    } finally {
+      setGuardando('')
+    }
+  }
+
+  const toggleModulo = (c: Cliente, modulo: string) => {
+    const activoAhora = c.modulos_activos.includes(modulo)
+    enviarAjuste(c, { modulo, activo: !activoAhora }, c.id + ':' + modulo)
+  }
+
+  const volverAlPlan = (c: Cliente) => enviarAjuste(c, { reset: true }, c.id + ':reset')
+
   const card = { background: '#fff', borderRadius: '14px', padding: '16px', border: '1px solid #e8e0f4' } as const
   const label = { fontSize: '11px', fontWeight: 700, color: '#9b8eaa', textTransform: 'uppercase' as const, letterSpacing: '.05em' }
+  const COLS = ['Instituto', 'Ciudad', 'Plan', 'Estado', 'Alumnos activos', 'Módulos']
 
   return (
     <div style={{ minHeight: '100vh', background: '#f4f0fa', padding: '24px 16px' }}>
-      <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+      <div style={{ maxWidth: '1000px', margin: '0 auto' }}>
 
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
           <div>
@@ -62,7 +98,6 @@ export default function TableroClientes({ clave, onVolver }: { clave: string; on
           </button>
         </div>
 
-        {/* Resumen */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '12px', marginBottom: '16px' }}>
           <div style={card}>
             <div style={label}>Clientes</div>
@@ -86,7 +121,6 @@ export default function TableroClientes({ clave, onVolver }: { clave: string; on
           </div>
         </div>
 
-        {/* Filtro por plan */}
         <div style={{ display: 'flex', gap: '6px', marginBottom: '12px', flexWrap: 'wrap' }}>
           {(['todos', 'standard', 'premium'] as const).map(p => (
             <button key={p} onClick={() => setFiltroPlan(p)}
@@ -97,7 +131,10 @@ export default function TableroClientes({ clave, onVolver }: { clave: string; on
           ))}
         </div>
 
-        {/* Tabla */}
+        {errorModulo && (
+          <div style={{ ...card, marginBottom: '12px', color: '#c0392b', fontSize: '13px' }}>⚠ {errorModulo}</div>
+        )}
+
         <div style={{ ...card, padding: 0, overflow: 'hidden' }}>
           {cargando ? (
             <div style={{ padding: '32px', textAlign: 'center', color: '#9b8eaa', fontSize: '14px' }}>Cargando...</div>
@@ -110,31 +147,22 @@ export default function TableroClientes({ clave, onVolver }: { clave: string; on
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
                 <thead>
                   <tr style={{ background: '#f9f5fd', textAlign: 'left' }}>
-                    {['Instituto', 'Ciudad', 'Plan', 'Estado', 'Alumnos activos'].map((h, i) => (
+                    {COLS.map((h, i) => (
                       <th key={h} style={{ padding: '10px 14px', fontSize: '11px', fontWeight: 700, color: '#9b8eaa', textTransform: 'uppercase', letterSpacing: '.05em', textAlign: i === 4 ? 'right' : 'left' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {visibles.map(c => (
-                    <tr key={c.id} style={{ borderTop: '1px solid #f0eaf8' }}>
-                      <td style={{ padding: '11px 14px', fontWeight: 600, color: '#1a1020' }}>{c.nombre}</td>
-                      <td style={{ padding: '11px 14px', color: '#6b5e7b' }}>{c.ciudad || '—'}</td>
-                      <td style={{ padding: '11px 14px' }}>
-                        <span style={{ padding: '2px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, background: '#f0e6fa', color: '#652f8d' }}>
-                          {NOMBRE_PLAN[c.plan || ''] || c.plan || 'Sin plan'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '11px 14px' }}>
-                        <span style={{ fontSize: '12px', fontWeight: 600, color: c.activo ? '#2d7a4f' : '#9b8eaa' }}>
-                          {c.activo ? '● Activo' : '○ Inactivo'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '11px 14px', textAlign: 'right', fontWeight: 700, color: '#1a1020' }}>
-                        {c.alumnos_activos.toLocaleString('es-AR')}
-                      </td>
-                    </tr>
-                  ))}
+                  {visibles.map(c => {
+                    const ajustados = Object.keys(c.modulos_override || {}).length
+                    return (
+                      <FilaCliente key={c.id} c={c} abierto={abierto === c.id} ajustados={ajustados}
+                        onAbrir={() => setAbierto(abierto === c.id ? null : c.id)}
+                        onToggle={modulo => toggleModulo(c, modulo)}
+                        onReset={() => volverAlPlan(c)}
+                        guardando={guardando} />
+                    )
+                  })}
                 </tbody>
               </table>
             </div>
@@ -142,5 +170,71 @@ export default function TableroClientes({ clave, onVolver }: { clave: string; on
         </div>
       </div>
     </div>
+  )
+}
+
+function FilaCliente({ c, abierto, ajustados, onAbrir, onToggle, onReset, guardando }: {
+  c: Cliente; abierto: boolean; ajustados: number
+  onAbrir: () => void; onToggle: (modulo: string) => void; onReset: () => void; guardando: string
+}) {
+  return (
+    <>
+      <tr style={{ borderTop: '1px solid #f0eaf8' }}>
+        <td style={{ padding: '11px 14px', fontWeight: 600, color: '#1a1020' }}>{c.nombre}</td>
+        <td style={{ padding: '11px 14px', color: '#6b5e7b' }}>{c.ciudad || '—'}</td>
+        <td style={{ padding: '11px 14px' }}>
+          <span style={{ padding: '2px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, background: '#f0e6fa', color: '#652f8d' }}>
+            {NOMBRE_PLAN[c.plan || ''] || c.plan || 'Sin plan'}
+          </span>
+        </td>
+        <td style={{ padding: '11px 14px' }}>
+          <span style={{ fontSize: '12px', fontWeight: 600, color: c.activo ? '#2d7a4f' : '#9b8eaa' }}>
+            {c.activo ? '● Activo' : '○ Inactivo'}
+          </span>
+        </td>
+        <td style={{ padding: '11px 14px', textAlign: 'right', fontWeight: 700, color: '#1a1020' }}>
+          {c.alumnos_activos.toLocaleString('es-AR')}
+        </td>
+        <td style={{ padding: '11px 14px' }}>
+          <button onClick={onAbrir}
+            style={{ padding: '5px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', border: '1.5px solid #652f8d', background: abierto ? '#652f8d' : '#fff', color: abierto ? '#fff' : '#652f8d' }}>
+            {abierto ? 'Cerrar' : 'Módulos'}{ajustados > 0 ? ` · ${ajustados} ajuste${ajustados > 1 ? 's' : ''}` : ''}
+          </button>
+        </td>
+      </tr>
+      {abierto && (
+        <tr>
+          <td colSpan={6} style={{ padding: '12px 18px 16px', background: '#faf7fd' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+              <div style={{ fontSize: '12px', color: '#6b5e7b' }}>
+                Activá o desactivá módulos para este cliente. Lo que no toques sigue el plan {NOMBRE_PLAN[c.plan || ''] || ''}.
+              </div>
+              {ajustados > 0 && (
+                <button onClick={onReset} disabled={guardando === c.id + ':reset'}
+                  style={{ padding: '5px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600, cursor: 'pointer', border: '1.5px solid #e0d8f0', background: '#fff', color: '#652f8d' }}>
+                  Volver todo al plan
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: '8px 14px' }}>
+              {MODULOS_PLAN.map(m => {
+                const activo = c.modulos_activos.includes(m.id)
+                const fijo = MODULOS_SIEMPRE.includes(m.id)
+                const ajustado = c.modulos_override && c.modulos_override[m.id] !== undefined
+                const cargando = guardando === c.id + ':' + m.id
+                return (
+                  <label key={m.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', color: '#1a1020', cursor: fijo ? 'default' : 'pointer', opacity: cargando ? 0.5 : 1 }}>
+                    <input type="checkbox" checked={activo} disabled={fijo || cargando} onChange={() => onToggle(m.id)} />
+                    <span style={{ flex: 1 }}>{m.label}</span>
+                    {ajustado && <span style={{ fontSize: '10px', fontWeight: 700, color: '#b45309', background: '#fef3cd', padding: '1px 6px', borderRadius: '6px' }}>AJUSTADO</span>}
+                    {fijo && <span style={{ fontSize: '10px', color: '#9b8eaa' }}>siempre</span>}
+                  </label>
+                )
+              })}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
   )
 }

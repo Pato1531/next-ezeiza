@@ -55,6 +55,8 @@ interface Instituto {
   logo_url?: string | null
   plantillas_whatsapp?: Record<string, string> | null
   config_alertas?: Record<string, any> | null
+  // Módulos activos del cliente (plan + ajustes de soporte). Si no viene, no se restringe.
+  modulos_activos?: string[] | null
 }
 
 interface AuthContextType {
@@ -111,11 +113,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const puedeVer = useCallback(
     (modulo: string) => {
       if (!usuario) return false
+      // Primero: el módulo tiene que estar activo para el cliente (plan + ajustes de soporte)
+      const activosCliente = instituto?.modulos_activos
+      if (Array.isArray(activosCliente) && !activosCliente.includes(modulo)) return false
       const custom = permisosCustomPorUsuario[usuario.id]
       if (Array.isArray(custom) && custom.length > 0) return custom.includes(modulo)
       return PERMISOS[usuario.rol]?.includes(modulo) ?? false
     },
-    [usuario, permisosCustomPorUsuario]
+    [usuario, instituto, permisosCustomPorUsuario]
   )
 
   const cargarUsuario = useCallback(async (uid: string) => {

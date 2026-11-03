@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { modulosEfectivos } from '@/lib/modulos-efectivos'
 
 function sb() {
   return createClient(
@@ -43,10 +44,14 @@ export async function POST(req: NextRequest) {
     const { data: slugExiste } = await supabase.from('institutos').select('id').eq('slug', slug).single()
     if (slugExiste) slug = slug + '-' + Math.floor(Math.random() * 9000 + 1000)
 
+    // Módulos del plan elegido (sin ajustes al crear)
+    const { data: planRow } = await supabase.from('planes').select('modulos').eq('codigo', plan).single()
+    const modulosActivos = planRow ? modulosEfectivos(planRow.modulos || [], {}) : null
+
     // 2. Crear instituto
     const { data: instituto, error: errInst } = await supabase
       .from('institutos')
-      .insert({ nombre: instituto_nombre.trim(), slug, plan, ciudad, activo: true })
+      .insert({ nombre: instituto_nombre.trim(), slug, plan, ciudad, activo: true, modulos_activos: modulosActivos })
       .select().single()
 
     if (errInst) {
