@@ -77,6 +77,8 @@ export default function Profesoras() {
   const puedeEditar = usuario?.rol === 'director'
   const puedeCargarLicencias = usuario?.rol === 'director' || usuario?.rol === 'coordinadora'
   const soloLectura = usuario?.rol === 'coordinadora'
+  // Coordinadora: no ve números de la compañía (liquidaciones, tarifas, totales)
+  const ocultarNumerosCompania = usuario?.rol === 'coordinadora'
   const selLive = profesoras.find(p => p.id === selId)
   const selRef = useRef<any>(null)
   if (selLive) selRef.current = selLive
@@ -238,12 +240,12 @@ export default function Profesoras() {
         <SL>{profesoras.length} colaboradores</SL>
         <div style={{display:'flex',gap:'8px',alignItems:'center'}}>
           {soloLectura && <Badge cls="b-purple">Solo lectura</Badge>}
-          <button
+          {!ocultarNumerosCompania && <button
             onClick={() => setModalResumenLiq(true)}
             style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'12.5px',fontWeight:600,cursor:'pointer'}}>
             <svg width="13" height="13" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="14" height="13" rx="2"/><path d="M3 8h14M7 12h2M11 12h2M7 15h2"/></svg>
             Resumen de liquidaciones
-          </button>
+          </button>}
           <button
             onClick={() => setModalInforme(true)}
             style={{display:'flex',alignItems:'center',gap:'6px',padding:'8px 14px',background:'var(--white)',color:'var(--v)',border:'1.5px solid var(--v)',borderRadius:'10px',fontSize:'12.5px',fontWeight:600,cursor:'pointer'}}>
@@ -261,7 +263,7 @@ export default function Profesoras() {
         </div>
       </div>
       {/* ── Modal Resumen de Liquidaciones (todas las colaboradoras, un mes) ── */}
-      {modalResumenLiq && (() => {
+      {modalResumenLiq && !ocultarNumerosCompania && (() => {
         const fmt$ = (n: number) => `$${(n||0).toLocaleString('es-AR')}`
         const filasOrdenadas = profesoras.map((p:any) => {
           const liq = resumenLiqs.find((l:any) => l.profesora_id === p.id)
@@ -453,8 +455,8 @@ export default function Profesoras() {
               <div class="nombre">${p.nombre} ${p.apellido}${p.tipo_colaborador&&p.tipo_colaborador!=='docente'?`<span class="rol">${p.tipo_colaborador}</span>`:''}</div>
               <div class="grid">
                 <div class="field"><label>Horas/semana</label><span>${(p as any).horas_semana||0}hs</span></div>
-                <div class="field"><label>Tarifa</label><span>${(p as any).tipo_contrato==='fijo'?`$${((p as any).sueldo_fijo||0).toLocaleString('es-AR')} fijo`:`$${((p as any).tarifa_hora||0).toLocaleString('es-AR')}/h`}</span></div>
-                <div class="field"><label>${liqLabel}</label><span>$${liq.toLocaleString('es-AR')}</span></div>
+                ${ocultarNumerosCompania ? '' : `<div class="field"><label>Tarifa</label><span>${(p as any).tipo_contrato==='fijo'?`$${((p as any).sueldo_fijo||0).toLocaleString('es-AR')} fijo`:`$${((p as any).tarifa_hora||0).toLocaleString('es-AR')}/h`}</span></div>
+                <div class="field"><label>${liqLabel}</label><span>$${liq.toLocaleString('es-AR')}</span></div>`}
                 <div class="field"><label>Fecha de nac.</label><span>${fmtF(p.fecha_nacimiento)}${e?` (${e} años)`:''}</span></div>
                 <div class="field"><label>Antigüedad</label><span>${antiguedad(p)}</span></div>
                 <div class="field"><label>Email</label><span>${p.email||'—'}</span></div>
@@ -501,7 +503,7 @@ export default function Profesoras() {
                 {[
                   {label:'Docentes',     val:docentes.length, color:'var(--v)',   bg:'var(--vl)'},
                   {label:'Administrativos', val:admins.length, color:'#1a73e8', bg:'#e8f0fe'},
-                  {label:'Liq. total est.', val:`$${Math.round(totalLiq/1000)}k`, color:'var(--green)', bg:'var(--greenl)'},
+                  ...(ocultarNumerosCompania ? [] : [{label:'Liq. total est.', val:`$${Math.round(totalLiq/1000)}k`, color:'var(--green)', bg:'var(--greenl)'}]),
                 ].map(k => (
                   <div key={k.label} style={{background:k.bg,borderRadius:'10px',padding:'10px 12px',textAlign:'center'}}>
                     <div style={{fontSize:'20px',fontWeight:800,color:k.color}}>{k.val}</div>
@@ -547,7 +549,7 @@ export default function Profesoras() {
                           {label:'Nacimiento',      val:p.fecha_nacimiento ? `${fmtF(p.fecha_nacimiento)}${e?` (${e}a)`:'' }` : '—'},
                           {label:'Antigüedad',      val:antiguedad(p)},
                           {label:'Teléfono',        val:p.telefono||'—'},
-                        ].map((f:any) => (
+                        ].filter((f:any) => !(ocultarNumerosCompania && ['Tarifa','Liq. estimada','Última liq.'].includes(f.label))).map((f:any) => (
                           <div key={f.label} style={{background:'var(--bg)',borderRadius:'8px',padding:'7px 9px'}}>
                             <div style={{fontSize:'9.5px',fontWeight:700,color:'var(--text3)',textTransform:'uppercase',letterSpacing:'.04em',marginBottom:'2px'}}>{f.label}</div>
                             <div style={{fontSize:'12px',color:'var(--text)',fontWeight:500}}>{f.val}</div>

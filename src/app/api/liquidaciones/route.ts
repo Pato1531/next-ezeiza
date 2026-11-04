@@ -14,7 +14,8 @@ export async function POST(req: NextRequest) {
     const rl = rateLimit(ip + ':liquidaciones', { limit: 30, windowMs: 60000 })
     if (!rl.ok) return rateLimitResponse(rl.resetMs)
 
-    const authError = await verificarAuthRol(req, ['director', 'coordinadora'])
+    // Solo director: las liquidaciones son números de la compañía
+    const authError = await verificarAuthRol(req, ['director'])
     if (authError) return authError
 
     const institutoId = getInstitutoId(req)
@@ -48,7 +49,8 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const authError = await verificarAuthRol(req, ['director', 'coordinadora'])
+    // Solo director: las liquidaciones son números de la compañía
+    const authError = await verificarAuthRol(req, ['director'])
     if (authError) return authError
 
     const { id, accion, ...campos } = await req.json()
